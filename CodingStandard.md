@@ -29,7 +29,7 @@
 - Use bracket includes for files that cross project boundaries. <ProjectA/MyHeader.h>
 
 ### Formatting
-- Defer to the configured visual studio formatting rules. (Simply 'ctrl+a' 'ctrl+k, f' to format a file)
+- Defer to the clang format file associated with the project. Visual Studio should pick it up automatically.
 
 ### Constness
 - Apply const in a right to left fashion.
