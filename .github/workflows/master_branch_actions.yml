@@ -1,6 +1,4 @@
-# This is a basic workflow to help you get started with Actions
-
-name: CI
+name: Build Projects
 
 # Controls when the action will run. Triggers the workflow on push or pull request
 # events but only for the master branch
@@ -21,15 +19,17 @@ jobs:
     steps:
       # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
       - uses: actions/checkout@v2
-      - name: setup-msbuild
+      - name: Setup MSBuild
         uses: microsoft/setup-msbuild@v1.0.1
-      - name: set-path
+      - name: Set Path
         run: cd $GITHUB_WORKSPACE
-      - name: build IBEngine Debug|x64
+      - name: clang-format lint
+        uses: DoozyX/clang-format-lint-action@v0.10
+      - name: Build IBEngine Debug|x64
         run: msbuild VisualStudio\IceBox.sln -t:IBEngine -p:Configuration=Debug -p:Platform="x64" -m
-      - name: build IBEngine Release|x64
+      - name: Build IBEngine Release|x64
         run: msbuild VisualStudio\IceBox.sln -t:IBEngine -p:Configuration=Release -p:Platform="x64" -m
-      - name: build Sample01 Debug|x64
+      - name: Build Sample01 Debug|x64
         run: msbuild VisualStudio\IceBox.sln -t:Sample01 -p:Configuration=Debug -p:Platform="x64" -m
-      - name: build Sample01 Release|x64
+      - name: Build Sample01 Release|x64
         run: msbuild VisualStudio\IceBox.sln -t:Sample01 -p:Configuration=Release -p:Platform="x64" -m
