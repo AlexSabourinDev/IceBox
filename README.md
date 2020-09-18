@@ -33,3 +33,9 @@
 
 ### Formatting
 - Defer to the configured visual studio formatting rules. (Simply 'ctrl+a' 'ctrl+k, f' to format a file)
+
+### Constness
+- Apply const in a right to left fashion.
+- int* const is a constant pointer to a mutable int
+- int const* is a mutable pointer to a constant int
+- int const* const is a constant pointer to a constant int
