@@ -30,7 +30,7 @@ namespace IB
 		Quit
 	};
 
-	// bool = keep looping?
+	// returns whether or not there are more messages to consume.
 	bool consumeMessageQueue(PlatformMessage* message);
 	void sendQuitMessage();
 } // namespace IB
