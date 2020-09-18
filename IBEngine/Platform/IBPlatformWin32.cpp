@@ -48,7 +48,7 @@ namespace
 
 namespace IB
 {
-	Window* createWindow(WindowDesc desc)
+	WindowHandle createWindow(WindowDesc desc)
 	{
 		HINSTANCE hinstance = GetModuleHandle(NULL);
 
@@ -92,12 +92,13 @@ namespace IB
 		}
 		assert(i < MaxActiveWindows);
 
-		return reinterpret_cast<Window*>(hwnd);
+		return WindowHandle{i};
 	}
 
-	void destroyWindow(Window* window)
+	void destroyWindow(WindowHandle window)
 	{
-		DestroyWindow(reinterpret_cast<HWND>(window));
+		DestroyWindow(ActiveWindows[window.value].WindowHandle);
+		ActiveWindows[window.value] = {};
 	}
 
 	bool consumeMessageQueue(PlatformMessage* message)

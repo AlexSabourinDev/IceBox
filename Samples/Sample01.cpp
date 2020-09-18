@@ -7,7 +7,7 @@ int main()
 	winDesc.Width = 500;
 	winDesc.Height = 150;
 	winDesc.OnCloseRequested = [](void*) { IB::sendQuitMessage(); };
-	IB::Window* window = IB::createWindow(winDesc);
+	IB::WindowHandle window = IB::createWindow(winDesc);
 
 	IB::PlatformMessage message = IB::PlatformMessage::None;
 	while (message != IB::PlatformMessage::Quit)

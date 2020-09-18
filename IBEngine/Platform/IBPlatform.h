@@ -5,7 +5,7 @@
 namespace IB
 {
 	// Windowing API
-	struct Window {};
+	struct WindowHandle { uintptr_t value; };
 	struct WindowDesc
 	{
 		void(*OnCloseRequested)(void*) = nullptr;
@@ -16,8 +16,8 @@ namespace IB
 		int32_t Height = 0;
 	};
 
-	Window* createWindow(WindowDesc desc);
-	void destroyWindow(Window* window);
+	WindowHandle createWindow(WindowDesc desc);
+	void destroyWindow(WindowHandle window);
 
 	// Messaging API
 	// IceBox's platform abstraction is a message queue.
