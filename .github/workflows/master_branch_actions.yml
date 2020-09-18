@@ -24,7 +24,7 @@ jobs:
       - name: Set Path
         run: cd $GITHUB_WORKSPACE
       - name: clang-format lint
-        uses: DoozyX/clang-format-lint-action@v0.10
+        uses: yshui/git-clang-format-lint@v1.3
       - name: Build IBEngine Debug|x64
         run: msbuild VisualStudio\IceBox.sln -t:IBEngine -p:Configuration=Debug -p:Platform="x64" -m
       - name: Build IBEngine Release|x64
