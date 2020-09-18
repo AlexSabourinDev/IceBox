@@ -4,33 +4,36 @@
 
 namespace IB
 {
-	// Windowing API
-	struct WindowHandle { uintptr_t value; };
-	struct WindowDesc
-	{
-		void(*OnCloseRequested)(void*) = nullptr;
-		void* CallbackState = nullptr;
+    // Windowing API
+    struct WindowHandle
+    {
+        uintptr_t value;
+    };
+    struct WindowDesc
+    {
+        void (*OnCloseRequested)(void *) = nullptr;
+        void *CallbackState = nullptr;
 
-		char const* Name = nullptr;
-		int32_t Width = 0;
-		int32_t Height = 0;
-	};
+        char const *Name = nullptr;
+        int32_t Width = 0;
+        int32_t Height = 0;
+    };
 
-	WindowHandle createWindow(WindowDesc desc);
-	void destroyWindow(WindowHandle window);
+    WindowHandle createWindow(WindowDesc desc);
+    void destroyWindow(WindowHandle window);
 
-	// Messaging API
-	// IceBox's platform abstraction is a message queue.
-	// You can send messages to the queue and windows can also generate messages
-	// The concept is very similar to Window's message queue, time will tell if it will map
-	// to other platforms.
-	enum class PlatformMessage
-	{
-		None,
-		Quit
-	};
+    // Messaging API
+    // IceBox's platform abstraction is a message queue.
+    // You can send messages to the queue and windows can also generate messages
+    // The concept is very similar to Window's message queue, time will tell if it will map
+    // to other platforms.
+    enum class PlatformMessage
+    {
+        None,
+        Quit
+    };
 
-	// returns whether or not there are more messages to consume.
-	bool consumeMessageQueue(PlatformMessage* message);
-	void sendQuitMessage();
+    // returns whether or not there are more messages to consume.
+    bool consumeMessageQueue(PlatformMessage *message);
+    void sendQuitMessage();
 } // namespace IB
