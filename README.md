@@ -19,7 +19,7 @@
 
 ### Namespaces
 - All engine code will be included in the IB namespace.
-- Namespaces can be nested, but be considerate. Too many namespaces made programming no fun.
+- Namespaces can be nested, but be considerate. Too many namespaces make programming no fun.
 
 ### Headers
 - Use #pragma once as include guards.
