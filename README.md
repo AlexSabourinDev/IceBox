@@ -4,6 +4,11 @@
 - TODO: Move to new markdown file.
 - TODO: Flesh the rest of this out.
 
+### File And Folder Naming
+- Engine files will be prefixed with IB.
+- Top level engine folders will be prefixed with IB.
+- Sample and game files should not use the IB prefix.
+
 ### Naming
 - External variables will be upper camel cased. (MyVariable) This includes member variables, global variables and static variables.
 - Local variables will be lower camel cased. (myVariable) This includes local function variables and function arguments.
