@@ -3,12 +3,9 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio 15
 VisualStudioVersion = 15.0.28307.572
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Sample01", "..\Samples\SampleCore.vcxproj", "{24EC78DC-20B9-4A1B-BA91-E0F915E819C4}"
-	ProjectSection(ProjectDependencies) = postProject
-		{ECCDB929-1C4D-4436-90B1-32202C679E77} = {ECCDB929-1C4D-4436-90B1-32202C679E77}
-	EndProjectSection
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "IBEngine", "..\Engine\IBEngine.vcxproj", "{ECCDB929-1C4D-4436-90B1-32202C679E77}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "IBEngine", "..\Engine\Engine.vcxproj", "{ECCDB929-1C4D-4436-90B1-32202C679E77}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Sample01", "..\Samples\Sample01.vcxproj", "{24EC78DC-20B9-4A1B-BA91-E0F915E819C4}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -18,6 +15,12 @@ Global
 		Release|x86 = Release|x86
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{ECCDB929-1C4D-4436-90B1-32202C679E77}.Debug|x64.ActiveCfg = Debug|x64
+		{ECCDB929-1C4D-4436-90B1-32202C679E77}.Debug|x64.Build.0 = Debug|x64
+		{ECCDB929-1C4D-4436-90B1-32202C679E77}.Debug|x86.ActiveCfg = Debug|x64
+		{ECCDB929-1C4D-4436-90B1-32202C679E77}.Release|x64.ActiveCfg = Release|x64
+		{ECCDB929-1C4D-4436-90B1-32202C679E77}.Release|x64.Build.0 = Release|x64
+		{ECCDB929-1C4D-4436-90B1-32202C679E77}.Release|x86.ActiveCfg = Release|x64
 		{24EC78DC-20B9-4A1B-BA91-E0F915E819C4}.Debug|x64.ActiveCfg = Debug|x64
 		{24EC78DC-20B9-4A1B-BA91-E0F915E819C4}.Debug|x64.Build.0 = Debug|x64
 		{24EC78DC-20B9-4A1B-BA91-E0F915E819C4}.Debug|x86.ActiveCfg = Debug|Win32
@@ -26,12 +29,6 @@ Global
 		{24EC78DC-20B9-4A1B-BA91-E0F915E819C4}.Release|x64.Build.0 = Release|x64
 		{24EC78DC-20B9-4A1B-BA91-E0F915E819C4}.Release|x86.ActiveCfg = Release|Win32
 		{24EC78DC-20B9-4A1B-BA91-E0F915E819C4}.Release|x86.Build.0 = Release|Win32
-		{ECCDB929-1C4D-4436-90B1-32202C679E77}.Debug|x64.ActiveCfg = Debug|x64
-		{ECCDB929-1C4D-4436-90B1-32202C679E77}.Debug|x64.Build.0 = Debug|x64
-		{ECCDB929-1C4D-4436-90B1-32202C679E77}.Debug|x86.ActiveCfg = Debug|x64
-		{ECCDB929-1C4D-4436-90B1-32202C679E77}.Release|x64.ActiveCfg = Release|x64
-		{ECCDB929-1C4D-4436-90B1-32202C679E77}.Release|x64.Build.0 = Release|x64
-		{ECCDB929-1C4D-4436-90B1-32202C679E77}.Release|x86.ActiveCfg = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
