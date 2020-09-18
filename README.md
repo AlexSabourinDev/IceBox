@@ -39,3 +39,16 @@
 - int* const is a constant pointer to a mutable int
 - int const* is a mutable pointer to a constant int
 - int const* const is a constant pointer to a constant int
+
+### Templates
+- Prefer templates in .cpp files
+- Attempt to minimize templates in .h files
+
+### Argument Passing
+- Use constant reference for immutable non-copied arguments
+- Use pointers for mutable arguments
+- Use value types for smaller values
+
+### Disallowed
+- mutable. mutable is threading unfriendly and can cause surprising behaviour.
+- const_cast
