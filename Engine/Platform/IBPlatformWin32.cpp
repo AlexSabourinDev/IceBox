@@ -3,22 +3,45 @@
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
 #include <assert.h>
+#include <stdint.h>
 
 namespace
 {
+	struct ActiveWindow
+	{
+		HWND WindowHandle = NULL;
+
+		void(*OnCloseRequested)(void*) = nullptr;
+		void* State = nullptr;
+	};
+
+	constexpr uint32_t MaxActiveWindows = 10;
+	ActiveWindow ActiveWindows[MaxActiveWindows] = {};
+
 	LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 	{
+		ActiveWindow* activeWindow = nullptr;
+		for (uint32_t i = 0; i < MaxActiveWindows; i++)
+		{
+			if (ActiveWindows[i].WindowHandle == hwnd)
+			{
+				activeWindow = &ActiveWindows[i];
+				break;
+			}
+		}
+
 		switch (msg)
 		{
 		case WM_CLOSE:
-			DestroyWindow(hwnd);
-			break;
-		case WM_DESTROY:
-			PostQuitMessage(0);
+			if (activeWindow != nullptr && activeWindow->OnCloseRequested != nullptr)
+			{
+				activeWindow->OnCloseRequested(activeWindow->State);
+			}
 			break;
 		default:
 			return DefWindowProc(hwnd, msg, wParam, lParam);
 		}
+		
 		return 0;
 	}
 }
@@ -56,6 +79,19 @@ namespace IB
 		result = ShowWindow(hwnd, SW_SHOWNORMAL);
 		UpdateWindow(hwnd);
 
+		uint32_t i = 0;
+		for (; i < MaxActiveWindows; i++)
+		{
+			if (ActiveWindows[i].WindowHandle == NULL)
+			{
+				ActiveWindows[i].WindowHandle = hwnd;
+				ActiveWindows[i].State = desc.CallbackState;
+				ActiveWindows[i].OnCloseRequested = desc.OnCloseRequested;
+				break;
+			}
+		}
+		assert(i < MaxActiveWindows);
+
 		return reinterpret_cast<Window*>(hwnd);
 	}
 
@@ -64,24 +100,27 @@ namespace IB
 		DestroyWindow(reinterpret_cast<HWND>(window));
 	}
 
-	WindowState tickWindow(Window* /*window*/)
+	bool consumeMessageQueue(PlatformMessage* message)
 	{
-		WindowState state = WindowState::Active;
-
 		MSG msg;
-		while (PeekMessageW(&msg, NULL, 0, 0, PM_REMOVE))
+
+		bool hasMessage = PeekMessageW(&msg, NULL, 0, 0, PM_REMOVE);
+		if (hasMessage)
 		{
 			if (msg.message == WM_QUIT)
 			{
-				state = WindowState::Closing;
+				*message = PlatformMessage::Quit;
 			}
-			else
-			{
-				TranslateMessage(&msg);
-				DispatchMessage(&msg);
-			}
+
+			TranslateMessage(&msg);
+			DispatchMessage(&msg);
 		}
 
-		return state;
+		return hasMessage;
+	}
+
+	void sendQuitMessage()
+	{
+		PostQuitMessage(0);
 	}
 }

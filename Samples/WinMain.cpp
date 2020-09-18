@@ -2,15 +2,17 @@
 
 int main()
 {
-	IB::WindowDesc winDesc;
+	IB::WindowDesc winDesc = {};
 	winDesc.Name = "Ice Box";
 	winDesc.Width = 500;
 	winDesc.Height = 150;
+	winDesc.OnCloseRequested = [](void*) { IB::sendQuitMessage(); };
 	IB::Window* window = IB::createWindow(winDesc);
 
-	while (IB::tickWindow(window) != IB::WindowState::Closing)
+	IB::PlatformMessage message = IB::PlatformMessage::None;
+	while (message != IB::PlatformMessage::Quit)
 	{
-
+		IB::consumeMessageQueue(&message);
 	}
 
 	IB::destroyWindow(window);
