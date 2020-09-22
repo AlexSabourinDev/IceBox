@@ -44,54 +44,59 @@ namespace
 
         return 0;
     }
+
+	IB::WindowHandle createWindowWin32(IB::WindowDesc desc, HWND parentWindowHandle, DWORD style)
+	{
+		HINSTANCE hinstance = GetModuleHandle(NULL);
+
+		WNDCLASS wndClass = {};
+		wndClass.lpfnWndProc = WndProc;
+		wndClass.hInstance = hinstance;
+		wndClass.lpszClassName = desc.Name;
+		ATOM classAtom = RegisterClass(&wndClass);
+		assert(classAtom != 0);
+
+		RECT rect = { 0, 0, desc.Width, desc.Height };
+		BOOL result = AdjustWindowRect(&rect, style, FALSE);
+		assert(result == TRUE);
+
+		HWND hwnd = CreateWindowEx(
+			0,
+			desc.Name,
+			desc.Name,
+			style,
+			CW_USEDEFAULT, CW_USEDEFAULT, rect.right - rect.left, rect.bottom - rect.top,
+			parentWindowHandle,
+			NULL,
+			hinstance,
+			NULL);
+		assert(hwnd != NULL);
+
+		result = ShowWindow(hwnd, SW_SHOWNORMAL);
+		UpdateWindow(hwnd);
+
+		uint32_t i = 0;
+		for (; i < MaxActiveWindows; i++)
+		{
+			if (ActiveWindows[i].WindowHandle == NULL)
+			{
+				ActiveWindows[i].WindowHandle = hwnd;
+				ActiveWindows[i].State = desc.CallbackState;
+				ActiveWindows[i].OnCloseRequested = desc.OnCloseRequested;
+				break;
+			}
+		}
+		assert(i < MaxActiveWindows);
+
+		return IB::WindowHandle{ i };
+	}
 } // namespace
 
 namespace IB
 {
     WindowHandle createWindow(WindowDesc desc)
     {
-        HINSTANCE hinstance = GetModuleHandle(NULL);
-
-        WNDCLASS wndClass = {};
-        wndClass.lpfnWndProc = WndProc;
-        wndClass.hInstance = hinstance;
-        wndClass.lpszClassName = desc.Name;
-        ATOM classAtom = RegisterClass(&wndClass);
-        assert(classAtom != 0);
-
-        RECT rect = {0, 0, desc.Width, desc.Height};
-        BOOL result = AdjustWindowRect(&rect, WS_OVERLAPPEDWINDOW, FALSE);
-        assert(result == TRUE);
-
-        HWND hwnd = CreateWindowEx(
-            0,
-            desc.Name,
-            desc.Name,
-            WS_OVERLAPPEDWINDOW,
-            CW_USEDEFAULT, CW_USEDEFAULT, rect.right - rect.left, rect.bottom - rect.top,
-            NULL,
-            NULL,
-            hinstance,
-            NULL);
-        assert(hwnd != NULL);
-
-        result = ShowWindow(hwnd, SW_SHOWNORMAL);
-        UpdateWindow(hwnd);
-
-        uint32_t i = 0;
-        for (; i < MaxActiveWindows; i++)
-        {
-            if (ActiveWindows[i].WindowHandle == NULL)
-            {
-                ActiveWindows[i].WindowHandle = hwnd;
-                ActiveWindows[i].State = desc.CallbackState;
-                ActiveWindows[i].OnCloseRequested = desc.OnCloseRequested;
-                break;
-            }
-        }
-        assert(i < MaxActiveWindows);
-
-        return WindowHandle{i};
+		return createWindowWin32(desc, nullptr, WS_OVERLAPPEDWINDOW);
     }
 
     void destroyWindow(WindowHandle window)
@@ -124,3 +129,31 @@ namespace IB
         PostQuitMessage(0);
     }
 } // namespace IB
+
+// Bridge
+extern "C"
+{
+	DLL_API void* IB_createWindow(void* parentWindowHandle, const char* name, int width, int height)
+	{
+		IB::WindowDesc desc = {};
+		desc.Name = name;
+		desc.Width = width;
+		desc.Height = height;
+		IB::WindowHandle handle = createWindowWin32(desc, reinterpret_cast<HWND>(parentWindowHandle), DS_CONTROL | WS_CHILD);
+		return ActiveWindows[handle.value].WindowHandle;
+	}
+
+	DLL_API void IB_destroyWindow(void* windowHandle)
+	{
+		DestroyWindow(reinterpret_cast<HWND>(windowHandle));
+
+		for (uint32_t i = 0; i < MaxActiveWindows; i++)
+		{
+			if (ActiveWindows[i].WindowHandle == windowHandle)
+			{
+				ActiveWindows[i] = {};
+				break;
+			}
+		}
+	}
+}

@@ -2,6 +2,8 @@
 
 #include <stdint.h>
 
+#define DLL_API __declspec(dllexport)
+
 namespace IB
 {
     // Windowing API
@@ -19,8 +21,8 @@ namespace IB
         int32_t Height = 0;
     };
 
-    WindowHandle createWindow(WindowDesc desc);
-    void destroyWindow(WindowHandle window);
+    DLL_API WindowHandle createWindow(WindowDesc desc);
+    DLL_API void destroyWindow(WindowHandle window);
 
     // Messaging API
     // IceBox's platform abstraction is a message queue.
@@ -34,6 +36,6 @@ namespace IB
     };
 
     // returns whether or not there are more messages to consume.
-    bool consumeMessageQueue(PlatformMessage *message);
-    void sendQuitMessage();
+    DLL_API bool consumeMessageQueue(PlatformMessage *message);
+    DLL_API void sendQuitMessage();
 } // namespace IB
