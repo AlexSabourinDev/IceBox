@@ -26,10 +26,12 @@ jobs:
       # Build our engine lib to make sure it's present for our samples.
       - name: Build IBEngine Debug|x64
         run: msbuild VisualStudio\IceBox.sln -t:IBEngine -p:Configuration=Debug -p:Platform="x64" -m
-      - name: Build IBEngine Release|x64
-        run: msbuild VisualStudio\IceBox.sln -t:IBEngine -p:Configuration=Release -p:Platform="x64" -m
       # Build our samples
       - name: Build Sample Win32 Debug|x64
-        run: msbuild VisualStudio\IceBox.sln -t:SampleWin32 -p:Configuration=Debug -p:Platform="x64" -m
+        run: msbuild VisualStudio\IceBox.sln -t:Samples/SampleWin32 -p:Configuration=Debug -p:Platform="x64" -m
       - name: Build Sample Win32 Release|x64
-        run: msbuild VisualStudio\IceBox.sln -t:SampleWin32 -p:Configuration=Release -p:Platform="x64" -m
+        run: msbuild VisualStudio\IceBox.sln -t:Samples/SampleWin32 -p:Configuration=Release -p:Platform="x64" -m
+      - name: Build Sample WPF Debug|x64
+        run: msbuild VisualStudio\IceBox.sln -t:Samples/SampleWPF -p:Configuration=Debug -p:Platform="x64" -m
+      - name: Build Sample WPF Release|x64
+        run: msbuild VisualStudio\IceBox.sln -t:Samples/SampleWPF -p:Configuration=Release -p:Platform="x64" -m
