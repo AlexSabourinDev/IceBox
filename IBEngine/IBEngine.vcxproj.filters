@@ -13,6 +13,7 @@
     <ClInclude Include="Platform\IBPlatform.h">
       <Filter>Platform</Filter>
     </ClInclude>
+    <ClInclude Include="IBEngineAPI.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Platform\IBPlatformWin32.cpp">

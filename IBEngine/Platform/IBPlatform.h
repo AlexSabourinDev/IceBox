@@ -1,8 +1,7 @@
 #pragma once
 
 #include <stdint.h>
-
-#define DLL_API __declspec(dllexport)
+#include "../IBEngineAPI.h"
 
 namespace IB
 {
@@ -21,8 +20,8 @@ namespace IB
         int32_t Height = 0;
     };
 
-    DLL_API WindowHandle createWindow(WindowDesc desc);
-    DLL_API void destroyWindow(WindowHandle window);
+    IB_API WindowHandle createWindow(WindowDesc desc);
+	IB_API void destroyWindow(WindowHandle window);
 
     // Messaging API
     // IceBox's platform abstraction is a message queue.
@@ -36,6 +35,6 @@ namespace IB
     };
 
     // returns whether or not there are more messages to consume.
-    DLL_API bool consumeMessageQueue(PlatformMessage *message);
-    DLL_API void sendQuitMessage();
+	IB_API bool consumeMessageQueue(PlatformMessage *message);
+	IB_API void sendQuitMessage();
 } // namespace IB

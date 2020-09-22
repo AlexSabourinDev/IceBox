@@ -133,7 +133,7 @@ namespace IB
 // Bridge
 extern "C"
 {
-	DLL_API void* IB_createWindow(void* parentWindowHandle, const char* name, int width, int height)
+	IB_API void* IB_createWindow(void* parentWindowHandle, const char* name, int width, int height)
 	{
 		IB::WindowDesc desc = {};
 		desc.Name = name;
@@ -143,7 +143,7 @@ extern "C"
 		return ActiveWindows[handle.value].WindowHandle;
 	}
 
-	DLL_API void IB_destroyWindow(void* windowHandle)
+	IB_API void IB_destroyWindow(void* windowHandle)
 	{
 		DestroyWindow(reinterpret_cast<HWND>(windowHandle));
 
