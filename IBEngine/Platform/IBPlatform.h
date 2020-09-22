@@ -21,7 +21,7 @@ namespace IB
     };
 
     IB_API WindowHandle createWindow(WindowDesc desc);
-	IB_API void destroyWindow(WindowHandle window);
+    IB_API void destroyWindow(WindowHandle window);
 
     // Messaging API
     // IceBox's platform abstraction is a message queue.
@@ -35,6 +35,6 @@ namespace IB
     };
 
     // returns whether or not there are more messages to consume.
-	IB_API bool consumeMessageQueue(PlatformMessage *message);
-	IB_API void sendQuitMessage();
+    IB_API bool consumeMessageQueue(PlatformMessage *message);
+    IB_API void sendQuitMessage();
 } // namespace IB
