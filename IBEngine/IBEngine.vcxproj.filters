@@ -15,11 +15,13 @@
     </ClInclude>
     <ClInclude Include="IBEngineAPI.h" />
     <ClInclude Include="IBLogging.h" />
+    <ClInclude Include="IBAllocator.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Platform\IBPlatformWin32.cpp">
       <Filter>Platform</Filter>
     </ClCompile>
+    <ClCompile Include="IBAllocator.cpp" />
     <ClCompile Include="IBLogging.cpp" />
   </ItemGroup>
 </Project>

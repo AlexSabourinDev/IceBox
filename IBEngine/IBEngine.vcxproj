@@ -11,11 +11,13 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="IBAllocator.h" />
     <ClInclude Include="IBEngineAPI.h" />
     <ClInclude Include="IBLogging.h" />
     <ClInclude Include="Platform\IBPlatform.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="IBAllocator.cpp" />
     <ClCompile Include="IBLogging.cpp" />
     <ClCompile Include="Platform\IBPlatformWin32.cpp" />
   </ItemGroup>

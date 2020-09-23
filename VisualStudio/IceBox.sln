@@ -17,6 +17,11 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SampleWPF", "..\Samples\Sam
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Samples", "Samples", "{440A356B-502C-4F37-848E-0CD8A431CF7F}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "SampleMemory", "..\Samples\SampleMemory\SampleMemory.vcxproj", "{F2E26C26-51F0-4981-8D2E-A5BA4E92DFEF}"
+	ProjectSection(ProjectDependencies) = postProject
+		{ECCDB929-1C4D-4436-90B1-32202C679E77} = {ECCDB929-1C4D-4436-90B1-32202C679E77}
+	EndProjectSection
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -57,6 +62,16 @@ Global
 		{B8FAD776-25E7-41A7-A42D-710008FB39CC}.Release|x64.Build.0 = Release|Any CPU
 		{B8FAD776-25E7-41A7-A42D-710008FB39CC}.Release|x86.ActiveCfg = Release|Any CPU
 		{B8FAD776-25E7-41A7-A42D-710008FB39CC}.Release|x86.Build.0 = Release|Any CPU
+		{F2E26C26-51F0-4981-8D2E-A5BA4E92DFEF}.Debug|Any CPU.ActiveCfg = Debug|Win32
+		{F2E26C26-51F0-4981-8D2E-A5BA4E92DFEF}.Debug|x64.ActiveCfg = Debug|x64
+		{F2E26C26-51F0-4981-8D2E-A5BA4E92DFEF}.Debug|x64.Build.0 = Debug|x64
+		{F2E26C26-51F0-4981-8D2E-A5BA4E92DFEF}.Debug|x86.ActiveCfg = Debug|Win32
+		{F2E26C26-51F0-4981-8D2E-A5BA4E92DFEF}.Debug|x86.Build.0 = Debug|Win32
+		{F2E26C26-51F0-4981-8D2E-A5BA4E92DFEF}.Release|Any CPU.ActiveCfg = Release|Win32
+		{F2E26C26-51F0-4981-8D2E-A5BA4E92DFEF}.Release|x64.ActiveCfg = Release|x64
+		{F2E26C26-51F0-4981-8D2E-A5BA4E92DFEF}.Release|x64.Build.0 = Release|x64
+		{F2E26C26-51F0-4981-8D2E-A5BA4E92DFEF}.Release|x86.ActiveCfg = Release|Win32
+		{F2E26C26-51F0-4981-8D2E-A5BA4E92DFEF}.Release|x86.Build.0 = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -64,6 +79,7 @@ Global
 	GlobalSection(NestedProjects) = preSolution
 		{24EC78DC-20B9-4A1B-BA91-E0F915E819C4} = {440A356B-502C-4F37-848E-0CD8A431CF7F}
 		{B8FAD776-25E7-41A7-A42D-710008FB39CC} = {440A356B-502C-4F37-848E-0CD8A431CF7F}
+		{F2E26C26-51F0-4981-8D2E-A5BA4E92DFEF} = {440A356B-502C-4F37-848E-0CD8A431CF7F}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {536F66C4-6ACB-48CE-A179-D12E8EFE98DE}
