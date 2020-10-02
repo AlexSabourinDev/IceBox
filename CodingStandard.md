@@ -51,3 +51,6 @@
 ### Disallowed
 - mutable. mutable is threading unfriendly and can cause surprising behaviour.
 - const_cast
+
+### Typedefs
+- Use typedefs sparingly. Consider: Do you really need this to be a typedef? Is it already a typedef? Please try not to double typedef.
