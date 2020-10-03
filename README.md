@@ -5,6 +5,9 @@
   * C++ Toolset
   * WPF Toolset
 
-## Issue Writting Guidelines
-* Add a set of deliverables that will define the issue as complete.
-* TODO: Define an issue template
+## Contribution Guidelines
+To contribute to the project:
+* Create a fork of the project
+* Submit a pull request to the master branch
+
+Direct pushes to the project are disallowed and frowned upon for those with access.
