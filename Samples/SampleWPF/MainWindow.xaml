@@ -3,10 +3,131 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        xmlns:local="clr-namespace:SampleWPF"
-        mc:Ignorable="d"
+        xmlns:local="clr-namespace:SampleWPF" xmlns:xcad="http://schemas.xceed.com/wpf/xaml/avalondock"
+        mc:Ignorable="d" Loaded="Window_Loaded" Unloaded="Window_Unloaded"
         Title="MainWindow" Height="450" Width="800">
-    <Grid Name="WindowReserve">
-        
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+        <Menu Grid.Row="0">
+            <MenuItem Header="File">
+                <MenuItem Header="New" Click="MenuItem_Click" />
+                <MenuItem Header="Open" Click="MenuItem_Click" />
+                <MenuItem Header="Save" Click="MenuItem_Click" />
+                <Separator />
+                <MenuItem Header="Exit" Click="MenuItem_Click" />
+            </MenuItem>
+            <MenuItem Header="Edit" >
+                <MenuItem Header="New" Click="MenuItem_Click" />
+                <MenuItem Header="Open" Click="MenuItem_Click" />
+                <MenuItem Header="Save" Click="MenuItem_Click" />
+                <Separator />
+                <MenuItem Header="Exit" Click="MenuItem_Click" />
+            </MenuItem>
+            <MenuItem Header="View" >
+                <MenuItem Header="New" Click="MenuItem_Click" />
+                <MenuItem Header="Open" Click="MenuItem_Click" />
+                <MenuItem Header="Save" Click="MenuItem_Click" />
+                <Separator />
+                <MenuItem Header="Exit" Click="MenuItem_Click" />
+            </MenuItem>
+        </Menu>
+
+        <xcad:DockingManager Grid.Row="1" Name="_dockingManager">
+            <xcad:LayoutRoot>
+                <xcad:LayoutRoot.LeftSide>
+                    <xcad:LayoutAnchorSide>
+                        <xcad:LayoutAnchorGroup>
+                            <xcad:LayoutAnchorable Title="Toolbox" ContentId="Tollbox">
+                                <StackPanel Grid.Column="0">
+                                    <Button Content="Click Me!"/>
+                                    <Button Content="Click Me too!"/>
+                                </StackPanel>
+                            </xcad:LayoutAnchorable>
+                            <xcad:LayoutAnchorable Title="Scene Hierarchy" ContentId="SceneHierarchy">
+                                <StackPanel Grid.Column="0">
+                                    <Button Content="Click Me!"/>
+                                    <Button Content="Click Me too!"/>
+                                </StackPanel>
+                            </xcad:LayoutAnchorable>
+                        </xcad:LayoutAnchorGroup>
+                    </xcad:LayoutAnchorSide>
+                </xcad:LayoutRoot.LeftSide>
+                <xcad:LayoutPanel>
+                    <xcad:LayoutDocumentPane>
+                        <xcad:LayoutDocument Title="Game Window" ContentId="GameView">
+                            <local:WindowHost />
+                        </xcad:LayoutDocument>
+                    </xcad:LayoutDocumentPane>
+                </xcad:LayoutPanel>
+                <xcad:LayoutRoot.RightSide>
+                    <xcad:LayoutAnchorSide>
+                        <xcad:LayoutAnchorGroup>
+                            <xcad:LayoutAnchorable Title="Inspector" ContentId="Inspector" IsFloatingAsTopMost="False" >
+                                <StackPanel Grid.Column="0">
+                                    <Button Content="Click Me!"/>
+                                    <Button Content="Click Me too!"/>
+                                </StackPanel>
+                            </xcad:LayoutAnchorable>
+                            <xcad:LayoutAnchorable Title="Settings" ContentId="Settings" IsFloatingAsTopMost="False" >
+                                <StackPanel Grid.Column="0">
+                                    <Button Content="Click Me!"/>
+                                    <Button Content="Click Me too!"/>
+                                </StackPanel>
+                            </xcad:LayoutAnchorable>
+                        </xcad:LayoutAnchorGroup>
+                    </xcad:LayoutAnchorSide>
+                </xcad:LayoutRoot.RightSide>
+            </xcad:LayoutRoot>
+        </xcad:DockingManager>
     </Grid>
+    <!--<DockPanel LastChildFill="True">
+        <Menu DockPanel.Dock="Top">
+            <MenuItem Header="File">
+                <MenuItem Header="New" Click="MenuItem_Click" />
+                <MenuItem Header="Open" Click="MenuItem_Click" />
+                <MenuItem Header="Save" Click="MenuItem_Click" />
+                <Separator />
+                <MenuItem Header="Exit" Click="MenuItem_Click" />
+            </MenuItem>
+            <MenuItem Header="Edit" >
+                <MenuItem Header="New" Click="MenuItem_Click" />
+                <MenuItem Header="Open" Click="MenuItem_Click" />
+                <MenuItem Header="Save" Click="MenuItem_Click" />
+                <Separator />
+                <MenuItem Header="Exit" Click="MenuItem_Click" />
+            </MenuItem>
+            <MenuItem Header="View" >
+                <MenuItem Header="New" Click="MenuItem_Click" />
+                <MenuItem Header="Open" Click="MenuItem_Click" />
+                <MenuItem Header="Save" Click="MenuItem_Click" />
+                <Separator />
+                <MenuItem Header="Exit" Click="MenuItem_Click" />
+            </MenuItem>
+        </Menu>
+        <StatusBar DockPanel.Dock="Bottom" Height="25">
+            <StatusBarItem Content="Test" />
+            <Separator />
+            <StatusBarItem Content="Test" />
+        </StatusBar>
+        <Grid Name="WindowReserve" DockPanel.Dock="Top">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+            <StackPanel Grid.Column="0">
+                <Button Content="Click Me!"/>
+                <Button Content="Click Me too!"/>
+            </StackPanel>
+            <Button Content="Click Me!" Grid.Column="1"/>
+            <local:WindowHost Grid.Column="1"/>
+            <StackPanel Grid.Column="2">
+                <Button Content="Click Me!"/>
+                <Button Content="Click Me too!"/>
+            </StackPanel>
+        </Grid>
+    </DockPanel>-->
 </Window>

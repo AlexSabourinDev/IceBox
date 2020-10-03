@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -14,6 +15,7 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Navigation;
 using System.Windows.Shapes;
+using Xceed.Wpf.AvalonDock.Layout.Serialization;
 
 namespace SampleWPF
 {
@@ -42,10 +44,37 @@ namespace SampleWPF
     /// </summary>
     public partial class MainWindow : Window
     {
+        private static readonly string avalonDockSaveFile = "AvalonDockSavedFile.txt";
         public MainWindow()
         {
             InitializeComponent();
-            WindowReserve.Children.Add(new WindowHost());
+        }
+
+        private void MenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            Application.Current.Shutdown();
+        }
+
+        private void Window_Loaded(object sender, RoutedEventArgs e)
+        {
+
+            if (File.Exists(avalonDockSaveFile))
+            {
+                using (var reader = new StreamReader(avalonDockSaveFile))
+                {
+                    var layoutSerializer = new XmlLayoutSerializer(_dockingManager);
+                    layoutSerializer.Deserialize(reader);
+                }
+            }
+        }
+
+        private void Window_Unloaded(object sender, RoutedEventArgs e)
+        {
+            using (var writer = new StreamWriter(avalonDockSaveFile))
+            {
+                var layoutSerializer = new XmlLayoutSerializer(_dockingManager);
+                layoutSerializer.Serialize(writer);
+            }
         }
     }
 }
