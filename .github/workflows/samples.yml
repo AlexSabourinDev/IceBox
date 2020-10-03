@@ -25,7 +25,7 @@ jobs:
         run: cd $GITHUB_WORKSPACE
       # Assure that our Nuget packages are present
       - name: Nuget Restore
-        run: msbuild -t:restore VisualStudio/IceBox.sln
+        run: msbuild -t:restore Samples/SampleWPF/SampleWPF.csproj
       # Build our engine lib to make sure it's present for our samples.
       - name: Build IBEngine Debug|x64
         run: msbuild VisualStudio\IceBox.sln -t:IBEngine -p:Configuration=Debug -p:Platform="x64" -m
