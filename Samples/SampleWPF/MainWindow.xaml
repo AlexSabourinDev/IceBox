@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        xmlns:local="clr-namespace:SampleWPF" xmlns:xcad="http://schemas.xceed.com/wpf/xaml/avalondock"
+        xmlns:local="clr-namespace:SampleWPF" xmlns:xcad="https://github.com/Dirkster99/AvalonDock"
         mc:Ignorable="d" Loaded="Window_Loaded" Unloaded="Window_Unloaded"
         Title="MainWindow" Height="450" Width="800">
     <Grid>
@@ -65,13 +65,13 @@
                 <xcad:LayoutRoot.RightSide>
                     <xcad:LayoutAnchorSide>
                         <xcad:LayoutAnchorGroup>
-                            <xcad:LayoutAnchorable Title="Inspector" ContentId="Inspector" IsFloatingAsTopMost="False" >
+                            <xcad:LayoutAnchorable Title="Inspector" ContentId="Inspector" >
                                 <StackPanel Grid.Column="0">
                                     <Button Content="Click Me!"/>
                                     <Button Content="Click Me too!"/>
                                 </StackPanel>
                             </xcad:LayoutAnchorable>
-                            <xcad:LayoutAnchorable Title="Settings" ContentId="Settings" IsFloatingAsTopMost="False" >
+                            <xcad:LayoutAnchorable Title="Settings" ContentId="Settings" >
                                 <StackPanel Grid.Column="0">
                                     <Button Content="Click Me!"/>
                                     <Button Content="Click Me too!"/>
