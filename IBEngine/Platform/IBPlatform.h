@@ -37,4 +37,6 @@ namespace IB
     // returns whether or not there are more messages to consume.
     IB_API bool consumeMessageQueue(PlatformMessage *message);
     IB_API void sendQuitMessage();
+
+    IB_API void debugBreak();
 } // namespace IB

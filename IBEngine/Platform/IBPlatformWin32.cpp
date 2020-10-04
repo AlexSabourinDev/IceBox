@@ -1,8 +1,9 @@
 #include "IBPlatform.h"
 
+#include "../IBLogging.h"
+
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
-#include <assert.h>
 #include <stdint.h>
 
 namespace
@@ -54,11 +55,11 @@ namespace
         wndClass.hInstance = hinstance;
         wndClass.lpszClassName = desc.Name;
         ATOM classAtom = RegisterClass(&wndClass);
-        assert(classAtom != 0);
+        IB_ASSERT(classAtom != 0, "Failed to register window class.");
 
         RECT rect = {0, 0, desc.Width, desc.Height};
         BOOL result = AdjustWindowRect(&rect, style, FALSE);
-        assert(result == TRUE);
+        IB_ASSERT(result == TRUE, "Failed to adjust our window's rect.");
 
         HWND hwnd = CreateWindowEx(
             0,
@@ -70,7 +71,7 @@ namespace
             NULL,
             hinstance,
             NULL);
-        assert(hwnd != NULL);
+        IB_ASSERT(hwnd != NULL, "Failed to create our window");
 
         result = ShowWindow(hwnd, SW_SHOWNORMAL);
         UpdateWindow(hwnd);
@@ -86,7 +87,7 @@ namespace
                 break;
             }
         }
-        assert(i < MaxActiveWindows);
+        IB_ASSERT(i < MaxActiveWindows, "Failed to add our window to our list of windows.");
 
         return IB::WindowHandle{i};
     }
@@ -127,6 +128,11 @@ namespace IB
     void sendQuitMessage()
     {
         PostQuitMessage(0);
+    }
+
+    IB_API void debugBreak()
+    {
+        DebugBreak();
     }
 } // namespace IB
 
