@@ -12,9 +12,11 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="IBEngineAPI.h" />
+    <ClInclude Include="IBLogging.h" />
     <ClInclude Include="Platform\IBPlatform.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="IBLogging.cpp" />
     <ClCompile Include="Platform\IBPlatformWin32.cpp" />
   </ItemGroup>
   <PropertyGroup Label="Globals">

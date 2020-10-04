@@ -1,4 +1,5 @@
 #include <IBEngine/Platform/IBPlatform.h>
+#include <IBEngine/IBLogging.h>
 
 int main()
 {
@@ -8,6 +9,7 @@ int main()
     winDesc.Height = 150;
     winDesc.OnCloseRequested = [](void *) { IB::sendQuitMessage(); };
     IB::WindowHandle window = IB::createWindow(winDesc);
+    IB_LOG(IB::LogLevel::Log, "Sample", "Window created!");
 
     IB::PlatformMessage message = IB::PlatformMessage::None;
     while (message != IB::PlatformMessage::Quit)
@@ -16,4 +18,5 @@ int main()
     }
 
     IB::destroyWindow(window);
+    IB_LOG(IB::LogLevel::Log, "Sample", "Window destroyed!");
 }
