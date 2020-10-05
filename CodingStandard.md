@@ -8,6 +8,17 @@
 - Top level engine folders will be prefixed with IB.
 - Sample and game files should not use the IB prefix.
 
+### Module Structure
+- Systems/Modules should be contained in as few files as necessary.
+  - Many small files impacts compile time overhead.
+  - Many small files increase cognitive overhead.
+  - Single files per classes are discouraged.
+- Module header files should contain as minimal of an API as the module needs to function.
+  - Begin with a coarser API and refine it based on use-case.
+- Implementation details should remain in cpp files as much as possible.
+  - This does mean that private members to a class are discouraged. Consider if the class needs to be in a header at all.
+  - Includes that are only relevant to the implementation should be in a cpp file as much as possible.
+
 ### Naming
 - External variables will be upper camel cased. (MyVariable) This includes member variables, global variables and static variables.
 - Local variables will be lower camel cased. (myVariable) This includes local function variables and function arguments.
@@ -24,6 +35,7 @@
 - Use #pragma once as include guards.
 - Using namespace statements in headers are disallowed.
 - A header shall not depend on headers being included before it in a cpp file.
+- Private static functions in headers are discouraged.
 
 ### Includes
 - Unnecessary includes for the contents of a headers are disallowed. Even for convenience.
