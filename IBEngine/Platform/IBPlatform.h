@@ -3,6 +3,11 @@
 #include <stdint.h>
 #include "../IBEngineAPI.h"
 
+#ifdef _MSC_VER
+#include <intrin.h>
+#define IB_POPCOUNT(value) static_cast<uint8_t>(__popcnt64(value))
+#endif // _MSC_VER
+
 namespace IB
 {
     // Windowing API
@@ -37,6 +42,29 @@ namespace IB
     // returns whether or not there are more messages to consume.
     IB_API bool consumeMessageQueue(PlatformMessage *message);
     IB_API void sendQuitMessage();
+
+    // Allocation API
+    IB_API uint32_t memoryPageSize();
+    IB_API void *reserveMemoryPages(uint32_t pageCount);
+    // Commits reserved memory.
+    IB_API void commitMemoryPages(void *pages, uint32_t pageCount);
+    // Returns the page to reserve state.
+    IB_API void decommitMemoryPages(void *pages, uint32_t pageCount);
+    // Releases reserved memory.
+    IB_API void freeMemoryPages(void *pages, uint32_t pageCount);
+
+    // When requesting large blocks of memory, consider using a memory mapping
+    IB_API void *mapLargeMemoryBlock(size_t size);
+    IB_API void unmapLargeMemoryBlock(void *memory);
+
+    // Atomic API
+    struct AtomicU32
+    {
+        volatile uint32_t value;
+    };
+
+    IB_API uint32_t atomicIncrement(AtomicU32 *atomic);
+    IB_API uint32_t atomicDecrement(AtomicU32 *atomic);
 
     IB_API void debugBreak();
 } // namespace IB
