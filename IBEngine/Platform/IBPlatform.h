@@ -13,7 +13,7 @@ namespace IB
     // Windowing API
     struct WindowHandle
     {
-        uintptr_t value;
+        uintptr_t Value;
     };
     struct WindowDesc
     {
@@ -60,11 +60,42 @@ namespace IB
     // Atomic API
     struct AtomicU32
     {
-        volatile uint32_t value;
+        uint32_t volatile Value;
+    };
+
+    struct AtomicPtr
+    {
+        void* volatile Value;
     };
 
     IB_API uint32_t atomicIncrement(AtomicU32 *atomic);
     IB_API uint32_t atomicDecrement(AtomicU32 *atomic);
+    IB_API uint32_t atomicCompareExchange(AtomicU32 *atomic, uint32_t compare, uint32_t exchange);
+    IB_API void* atomicCompareExchange(AtomicPtr *atomic, void* compare, void* exchange);
+
+    // Threading API
+    struct ThreadHandle
+    {
+        uintptr_t Value;
+    };
+
+    using ThreadFunc = void(void *);
+    IB_API uint32_t processorCount();
+    IB_API ThreadHandle createThread(ThreadFunc *threadFunc, void *threadData);
+    IB_API void destroyThread(ThreadHandle thread);
+    IB_API void waitOnThreads(ThreadHandle* threads, uint32_t threadCount);
+
+    struct ThreadEvent
+    {
+        uintptr_t Value;
+    };
+
+    IB_API ThreadEvent createThreadEvent();
+    IB_API void destroyThreadEvent(ThreadEvent threadEvent);
+    IB_API void signalThreadEvent(ThreadEvent threadEvent);
+    IB_API void waitOnThreadEvent(ThreadEvent threadEvent);
+
+    IB_API void threadStoreFence();
 
     IB_API void debugBreak();
 } // namespace IB

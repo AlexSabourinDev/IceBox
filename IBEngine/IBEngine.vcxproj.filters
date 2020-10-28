@@ -16,6 +16,7 @@
     <ClInclude Include="IBEngineAPI.h" />
     <ClInclude Include="IBLogging.h" />
     <ClInclude Include="IBAllocator.h" />
+    <ClInclude Include="IBJobs.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Platform\IBPlatformWin32.cpp">
@@ -23,5 +24,6 @@
     </ClCompile>
     <ClCompile Include="IBAllocator.cpp" />
     <ClCompile Include="IBLogging.cpp" />
+    <ClCompile Include="IBJobs.cpp" />
   </ItemGroup>
 </Project>

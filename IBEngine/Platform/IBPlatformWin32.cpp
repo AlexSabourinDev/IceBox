@@ -101,6 +101,25 @@ namespace
 
     constexpr uint32_t MaxFileMappingCount = 1024;
     ActiveFileMapping ActiveFileMappings[MaxFileMappingCount];
+
+    struct ActiveThread
+    {
+        IB::ThreadFunc *Func = nullptr;
+        void *Data = nullptr;
+        HANDLE Thread = NULL;
+    };
+    constexpr uint32_t MaxThreadCount = 1024;
+    ActiveThread ActiveThreads[MaxThreadCount];
+
+    DWORD WINAPI ThreadProc(LPVOID data)
+    {
+        ActiveThread* activeThread = reinterpret_cast<ActiveThread*>(data);
+        activeThread->Func(activeThread->Data);
+        return 0;
+    }
+
+    constexpr uint32_t MaxEventCount = 1024;
+    HANDLE ActiveEvents[MaxEventCount];
 } // namespace
 
 namespace IB
@@ -112,8 +131,8 @@ namespace IB
 
     void destroyWindow(WindowHandle window)
     {
-        DestroyWindow(ActiveWindows[window.value].WindowHandle);
-        ActiveWindows[window.value] = {};
+        DestroyWindow(ActiveWindows[window.Value].WindowHandle);
+        ActiveWindows[window.Value] = {};
     }
 
     bool consumeMessageQueue(PlatformMessage *message)
@@ -179,7 +198,7 @@ namespace IB
         IB_ASSERT(result == TRUE, "Failed to release memory!");
     }
 
-    IB_API void *mapLargeMemoryBlock(size_t size)
+    void *mapLargeMemoryBlock(size_t size)
     {
         HANDLE fileMapping = CreateFileMapping(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE | SEC_COMMIT, static_cast<DWORD>(size >> 32), static_cast<DWORD>(size & 0xFFFFFFFF), NULL);
         void *map = MapViewOfFile(fileMapping, FILE_MAP_ALL_ACCESS, 0, 0, 0);
@@ -197,7 +216,7 @@ namespace IB
         return map;
     }
 
-    IB_API void unmapLargeMemoryBlock(void *memory)
+    void unmapLargeMemoryBlock(void *memory)
     {
         for (uint32_t i = 0; i < MaxFileMappingCount; i++)
         {
@@ -211,17 +230,100 @@ namespace IB
         }
     }
 
-    IB_API uint32_t atomicIncrement(AtomicU32 *atomic)
+    uint32_t atomicIncrement(AtomicU32 *atomic)
     {
-        return InterlockedIncrementNoFence(&atomic->value);
+        return InterlockedIncrementNoFence(&atomic->Value);
     }
 
-    IB_API uint32_t atomicDecrement(AtomicU32 *atomic)
+    uint32_t atomicDecrement(AtomicU32 *atomic)
     {
-        return InterlockedDecrementNoFence(&atomic->value);
+        return InterlockedDecrementNoFence(&atomic->Value);
     }
 
-    IB_API void debugBreak()
+    uint32_t atomicCompareExchange(AtomicU32 *atomic, uint32_t compare, uint32_t exchange)
+    {
+        return InterlockedCompareExchangeNoFence(&atomic->Value, exchange, compare);
+    }
+
+    void* atomicCompareExchange(AtomicPtr *atomic, void* compare, void* exchange)
+    {
+        return InterlockedCompareExchangePointerNoFence(&atomic->Value, exchange, compare);
+    }
+
+    uint32_t processorCount()
+    {
+        SYSTEM_INFO systemInfo;
+        GetSystemInfo(&systemInfo);
+
+        return systemInfo.dwNumberOfProcessors;
+    }
+
+    ThreadHandle createThread(ThreadFunc *threadFunc, void *threadData)
+    {
+        uintptr_t index = 0;
+        for (index; index < MaxThreadCount; index++)
+        {
+            // TODO: Not threadsafe, is that ok?
+            if (ActiveThreads[index].Thread == NULL)
+            {
+                ActiveThreads[index].Func = threadFunc;
+                ActiveThreads[index].Data = threadData;
+                ActiveThreads[index].Thread = CreateThread(NULL, 0, &ThreadProc, &ActiveThreads[index], 0, NULL);
+                IB_ASSERT(ActiveThreads[index].Thread != NULL, "Failed to create thread.");
+                break;
+            }
+        }
+
+        IB_ASSERT(index != MaxThreadCount, "Failed to create thread.");
+        return ThreadHandle{index};
+    }
+
+    void destroyThread(ThreadHandle thread)
+    {
+        CloseHandle(ActiveThreads[thread.Value].Thread);
+        ActiveThreads[thread.Value] = {};
+    }
+
+    IB_API void waitOnThreads(ThreadHandle* threads, uint32_t threadCount)
+    {
+        HANDLE threadHandles[MaxThreadCount];
+        for (uint32_t i = 0; i < threadCount; i++)
+        {
+            threadHandles[i] = ActiveThreads[threads[i].Value].Thread;
+        }
+
+        DWORD result = WaitForMultipleObjects(threadCount, threadHandles, TRUE, INFINITE);
+        IB_ASSERT(result != WAIT_FAILED, "Failed to wait on our threads!");
+    }
+
+    ThreadEvent createThreadEvent()
+    {
+        return ThreadEvent{ reinterpret_cast<uintptr_t>(CreateEvent(NULL, FALSE, FALSE, NULL)) };
+    }
+
+    void destroyThreadEvent(ThreadEvent threadEvent)
+    {
+        CloseHandle(reinterpret_cast<HANDLE>(threadEvent.Value));
+    }
+
+    void signalThreadEvent(ThreadEvent threadEvent)
+    {
+        BOOL result = SetEvent(reinterpret_cast<HANDLE>(threadEvent.Value));
+        IB_ASSERT(result, "Failed to set our event!");
+    }
+
+    void waitOnThreadEvent(ThreadEvent threadEvent)
+    {
+        DWORD result = WaitForSingleObject(reinterpret_cast<HANDLE>(threadEvent.Value), INFINITE);
+        IB_ASSERT(result != WAIT_FAILED, "Failed to wait on our event!");
+    }
+
+    void threadStoreFence()
+    {
+        _mm_sfence();
+    }
+
+    void debugBreak()
     {
         DebugBreak();
     }
@@ -238,7 +340,7 @@ extern "C"
         desc.Width = width;
         desc.Height = height;
         IB::WindowHandle handle = createWindowWin32(desc, reinterpret_cast<HWND>(parentWindowHandle), DS_CONTROL | WS_CHILD);
-        return ActiveWindows[handle.value].WindowHandle;
+        return ActiveWindows[handle.Value].WindowHandle;
     }
 
     IB_API void IB_destroyWindow(void *windowHandle)
