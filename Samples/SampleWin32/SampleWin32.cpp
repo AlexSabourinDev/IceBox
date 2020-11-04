@@ -14,7 +14,10 @@ int main()
     IB::PlatformMessage message = IB::PlatformMessage::None;
     while (message != IB::PlatformMessage::Quit)
     {
-        IB::consumeMessageQueue(&message);
+        IB::consumeMessageQueue([](void *data, IB::PlatformMessage message)
+        {
+            *reinterpret_cast<IB::PlatformMessage*>(data) = message;
+        }, &message);
     }
 
     IB::destroyWindow(window);

@@ -8,16 +8,38 @@
 #define IB_POPCOUNT(value) static_cast<uint8_t>(__popcnt64(value))
 #endif // _MSC_VER
 
+#if defined(_WIN32) || defined(_WIN64)
+#define IB_WINDOWS
+#endif // _WIN32 || _WIN64
+
 namespace IB
 {
     // Windowing API
+    struct WindowMessage
+    {
+        enum
+        {
+            Resize,
+        } Type;
+
+        union
+        {
+            struct
+            {
+                uint32_t Width;
+                uint32_t Height;
+            } Resize;
+        } Data;
+    };
+
     struct WindowHandle
     {
         uintptr_t Value;
     };
     struct WindowDesc
     {
-        void (*OnCloseRequested)(void *) = nullptr;
+        void (*OnCloseRequested)(void *data) = nullptr;
+        void(*OnWindowMessage)(void *data, WindowMessage message) = nullptr;
         void *CallbackState = nullptr;
 
         char const *Name = nullptr;
@@ -40,7 +62,7 @@ namespace IB
     };
 
     // returns whether or not there are more messages to consume.
-    IB_API bool consumeMessageQueue(PlatformMessage *message);
+    IB_API void consumeMessageQueue(void (*consumerFunc)(void *data, PlatformMessage message), void *data);
     IB_API void sendQuitMessage();
 
     // Allocation API

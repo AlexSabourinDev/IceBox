@@ -14,6 +14,7 @@ namespace
         HWND WindowHandle = NULL;
 
         void (*OnCloseRequested)(void *) = nullptr;
+        void(*OnWindowMessage)(void *data, IB::WindowMessage message) = nullptr;
         void *State = nullptr;
     };
 
@@ -38,6 +39,16 @@ namespace
             if (activeWindow != nullptr && activeWindow->OnCloseRequested != nullptr)
             {
                 activeWindow->OnCloseRequested(activeWindow->State);
+            }
+            break;
+        case WM_SIZE:
+            if (activeWindow != nullptr && activeWindow->OnWindowMessage != nullptr)
+            {
+                IB::WindowMessage message;
+                message.Type = IB::WindowMessage::Resize;
+                message.Data.Resize.Width = LOWORD(lParam);
+                message.Data.Resize.Height = HIWORD(lParam);
+                activeWindow->OnWindowMessage(activeWindow->State, message);
             }
             break;
         default:
@@ -85,6 +96,7 @@ namespace
                 ActiveWindows[i].WindowHandle = hwnd;
                 ActiveWindows[i].State = desc.CallbackState;
                 ActiveWindows[i].OnCloseRequested = desc.OnCloseRequested;
+                ActiveWindows[i].OnWindowMessage = desc.OnWindowMessage;
                 break;
             }
         }
@@ -113,7 +125,7 @@ namespace
 
     DWORD WINAPI ThreadProc(LPVOID data)
     {
-        ActiveThread* activeThread = reinterpret_cast<ActiveThread*>(data);
+        ActiveThread *activeThread = reinterpret_cast<ActiveThread *>(data);
         activeThread->Func(activeThread->Data);
         return 0;
     }
@@ -124,6 +136,16 @@ namespace
 
 namespace IB
 {
+    namespace Win32
+    {
+        // Must be externed for access
+        void getWindowHandleAndInstance(WindowHandle handle, HWND *window, HINSTANCE *instance)
+        {
+            *instance = GetModuleHandle(NULL);
+            *window = ActiveWindows[handle.Value].WindowHandle;
+        }
+    } // namespace Win32
+
     WindowHandle createWindow(WindowDesc desc)
     {
         return createWindowWin32(desc, nullptr, WS_OVERLAPPEDWINDOW);
@@ -135,30 +157,26 @@ namespace IB
         ActiveWindows[window.Value] = {};
     }
 
-    bool consumeMessageQueue(PlatformMessage *message)
+    void consumeMessageQueue(void (*consumerFunc)(void *data, PlatformMessage message), void *data)
     {
         MSG msg;
 
-        bool hasMessage = PeekMessageW(&msg, NULL, 0, 0, PM_REMOVE);
-        if (hasMessage)
+        while (PeekMessageW(&msg, NULL, 0, 0, PM_REMOVE))
         {
             if (msg.message == WM_QUIT)
             {
-                *message = PlatformMessage::Quit;
+                consumerFunc(data, PlatformMessage::Quit);
             }
 
             TranslateMessage(&msg);
             DispatchMessage(&msg);
         }
-
-        return hasMessage;
     }
 
     void sendQuitMessage()
     {
         PostQuitMessage(0);
     }
-
 
     uint32_t memoryPageSize()
     {
@@ -245,7 +263,7 @@ namespace IB
         return InterlockedCompareExchangeNoFence(&atomic->Value, exchange, compare);
     }
 
-    void* atomicCompareExchange(AtomicPtr *atomic, void* compare, void* exchange)
+    void *atomicCompareExchange(AtomicPtr *atomic, void *compare, void *exchange)
     {
         return InterlockedCompareExchangePointerNoFence(&atomic->Value, exchange, compare);
     }
@@ -284,7 +302,7 @@ namespace IB
         ActiveThreads[thread.Value] = {};
     }
 
-    IB_API void waitOnThreads(ThreadHandle* threads, uint32_t threadCount)
+    IB_API void waitOnThreads(ThreadHandle *threads, uint32_t threadCount)
     {
         HANDLE threadHandles[MaxThreadCount];
         for (uint32_t i = 0; i < threadCount; i++)
@@ -298,7 +316,7 @@ namespace IB
 
     ThreadEvent createThreadEvent()
     {
-        return ThreadEvent{ reinterpret_cast<uintptr_t>(CreateEvent(NULL, FALSE, FALSE, NULL)) };
+        return ThreadEvent{reinterpret_cast<uintptr_t>(CreateEvent(NULL, FALSE, FALSE, NULL))};
     }
 
     void destroyThreadEvent(ThreadEvent threadEvent)
