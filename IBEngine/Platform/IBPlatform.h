@@ -17,9 +17,56 @@ namespace IB
     // Windowing API
     struct WindowMessage
     {
+        struct Key
+        {
+            enum Code
+            {
+                Unknown = 0x00,
+                Left = 0x01,
+                Right = 0x02,
+                Up = 0x03,
+                Down = 0x04,
+                Shift = 0x05,
+                Control = 0x06,
+                Escape = 0x07,
+                Return = 0x0D,
+                Space = ' ',
+                Num0 = '0',
+                Num9 = '9',
+                A = 'A',
+                Z = 'Z',
+            };
+
+            enum State
+            {
+                Pressed,
+                Released,
+            };
+        };
+
+        struct Mouse
+        {
+            enum Button
+            {
+                Left,
+                Right,
+                Middle
+            };
+
+            enum State
+            {
+                Pressed,
+                Released
+            };
+        };
+
         enum
         {
             Resize,
+            Close,
+            Key,
+            MouseClick,
+            MouseMove,
         } Type;
 
         union
@@ -29,6 +76,25 @@ namespace IB
                 uint32_t Width;
                 uint32_t Height;
             } Resize;
+
+            struct
+            {
+                Key::State State;
+                Key::Code Code;
+                bool Alt;
+            } Key;
+
+            struct
+            {
+                Mouse::Button Button;
+                Mouse::State State;
+            } MouseClick;
+
+            struct
+            {
+                uint32_t X;
+                uint32_t Y;
+            } MouseMove;
         } Data;
     };
 
@@ -38,7 +104,6 @@ namespace IB
     };
     struct WindowDesc
     {
-        void (*OnCloseRequested)(void *data) = nullptr;
         void(*OnWindowMessage)(void *data, WindowMessage message) = nullptr;
         void *CallbackState = nullptr;
 

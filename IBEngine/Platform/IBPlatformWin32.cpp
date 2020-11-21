@@ -14,14 +14,14 @@ namespace
         HWND WindowHandle = NULL;
 
         void (*OnCloseRequested)(void *) = nullptr;
-        void(*OnWindowMessage)(void *data, IB::WindowMessage message) = nullptr;
+        void (*OnWindowMessage)(void *data, IB::WindowMessage message) = nullptr;
         void *State = nullptr;
     };
 
     constexpr uint32_t MaxActiveWindows = 10;
     ActiveWindow ActiveWindows[MaxActiveWindows] = {};
 
-    LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
+    LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     {
         ActiveWindow *activeWindow = nullptr;
         for (uint32_t i = 0; i < MaxActiveWindows; i++)
@@ -36,9 +36,12 @@ namespace
         switch (msg)
         {
         case WM_CLOSE:
-            if (activeWindow != nullptr && activeWindow->OnCloseRequested != nullptr)
+            if (activeWindow != nullptr && activeWindow->OnWindowMessage != nullptr)
             {
-                activeWindow->OnCloseRequested(activeWindow->State);
+                IB::WindowMessage message;
+                message.Type = IB::WindowMessage::Close;
+
+                activeWindow->OnWindowMessage(activeWindow->State, message);
             }
             break;
         case WM_SIZE:
@@ -51,6 +54,118 @@ namespace
                 activeWindow->OnWindowMessage(activeWindow->State, message);
             }
             break;
+        case WM_LBUTTONDOWN:
+        case WM_MBUTTONDOWN:
+        case WM_RBUTTONDOWN:
+        case WM_LBUTTONUP:
+        case WM_MBUTTONUP:
+        case WM_RBUTTONUP:
+        {
+            IB::WindowMessage message;
+            message.Type = IB::WindowMessage::MouseClick;
+
+            switch (msg)
+            {
+            case WM_LBUTTONDOWN:
+            case WM_LBUTTONUP:
+                message.Data.MouseClick.Button = IB::WindowMessage::Mouse::Left;
+                break;
+            case WM_MBUTTONDOWN:
+            case WM_MBUTTONUP:
+                message.Data.MouseClick.Button = IB::WindowMessage::Mouse::Middle;
+                break;
+            case WM_RBUTTONDOWN:
+            case WM_RBUTTONUP:
+                message.Data.MouseClick.Button = IB::WindowMessage::Mouse::Right;
+                break;
+            }
+
+            switch (msg)
+            {
+            case WM_LBUTTONUP:
+            case WM_MBUTTONUP:
+            case WM_RBUTTONUP:
+                message.Data.MouseClick.State = IB::WindowMessage::Mouse::Released;
+                break;
+            case WM_LBUTTONDOWN:
+            case WM_MBUTTONDOWN:
+            case WM_RBUTTONDOWN:
+                message.Data.MouseClick.State = IB::WindowMessage::Mouse::Pressed;
+                break;
+            }
+            activeWindow->OnWindowMessage(activeWindow->State, message);
+        }
+        break;
+        case WM_MOUSEMOVE:
+        {
+            IB::WindowMessage message;
+            message.Type = IB::WindowMessage::MouseMove;
+            message.Data.MouseMove.X = LOWORD(lParam);
+            message.Data.MouseMove.Y = HIWORD(lParam);
+            activeWindow->OnWindowMessage(activeWindow->State, message);
+        }
+        break;
+        case WM_SYSKEYDOWN:
+        case WM_KEYDOWN:
+        case WM_SYSKEYUP:
+        case WM_KEYUP:
+        {
+            if (activeWindow != nullptr && activeWindow->OnWindowMessage != nullptr)
+            {
+                IB::WindowMessage message;
+                message.Type = IB::WindowMessage::Key;
+
+                uint32_t conversionMapping[0xFF] = {};
+                conversionMapping[VK_LEFT] = IB::WindowMessage::Key::Code::Left;
+                conversionMapping[VK_RIGHT] = IB::WindowMessage::Key::Code::Right;
+                conversionMapping[VK_UP] = IB::WindowMessage::Key::Code::Up;
+                conversionMapping[VK_DOWN] = IB::WindowMessage::Key::Code::Down;
+                conversionMapping[VK_SHIFT] = IB::WindowMessage::Key::Code::Shift;
+                conversionMapping[VK_CONTROL] = IB::WindowMessage::Key::Code::Control;
+                conversionMapping[VK_RETURN] = IB::WindowMessage::Key::Code::Return;
+                conversionMapping[VK_SPACE] = IB::WindowMessage::Key::Code::Space;
+                conversionMapping[VK_ESCAPE] = IB::WindowMessage::Key::Code::Escape;
+                for (uint32_t i = 0; i < 10; i++)
+                {
+                    conversionMapping['0' + i] = IB::WindowMessage::Key::Code::Num0 + i;
+                }
+
+                for (uint32_t i = 0; i < 26; i++)
+                {
+                    conversionMapping['A' + i] = IB::WindowMessage::Key::Code::A + i;
+                }
+
+                message.Data.Key.Code = static_cast<IB::WindowMessage::Key::Code>(conversionMapping[wParam]);
+
+                switch (msg)
+                {
+                case WM_SYSKEYDOWN:
+                case WM_KEYDOWN:
+                    message.Data.Key.State = IB::WindowMessage::Key::Pressed;
+                    break;
+                case WM_SYSKEYUP:
+                case WM_KEYUP:
+                default:
+                    message.Data.Key.State = IB::WindowMessage::Key::Released;
+                    break;
+                }
+
+                message.Data.Key.Alt = (msg == WM_SYSKEYDOWN);
+                if (message.Data.Key.State == IB::WindowMessage::Key::Pressed)
+                {
+                    bool isFirstDown = (lParam & (1 << 30)) == 0; // 30th bit represents if the key was down before this message was sent.
+                    if (isFirstDown)
+                    {
+                        activeWindow->OnWindowMessage(activeWindow->State, message);
+                    }
+                }
+                else
+                {
+                    activeWindow->OnWindowMessage(activeWindow->State, message);
+                }
+            }
+        }
+        break;
         default:
             return DefWindowProc(hwnd, msg, wParam, lParam);
         }
@@ -63,7 +178,7 @@ namespace
         HINSTANCE hinstance = GetModuleHandle(NULL);
 
         WNDCLASS wndClass = {};
-        wndClass.lpfnWndProc = WndProc;
+        wndClass.lpfnWndProc = wndProc;
         wndClass.hInstance = hinstance;
         wndClass.lpszClassName = desc.Name;
         ATOM classAtom = RegisterClass(&wndClass);
@@ -95,7 +210,6 @@ namespace
             {
                 ActiveWindows[i].WindowHandle = hwnd;
                 ActiveWindows[i].State = desc.CallbackState;
-                ActiveWindows[i].OnCloseRequested = desc.OnCloseRequested;
                 ActiveWindows[i].OnWindowMessage = desc.OnWindowMessage;
                 break;
             }
