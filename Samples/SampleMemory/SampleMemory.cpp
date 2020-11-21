@@ -144,4 +144,7 @@ int main()
 
     TestObject* t = IB::allocate<TestObject>(5);
     IB::deallocate(t);
+
+    TestObject* tArray = IB::allocateArray<TestObject>(10, 5);
+    IB::deallocateArray(tArray);
 }

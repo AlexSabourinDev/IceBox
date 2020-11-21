@@ -17,6 +17,8 @@
     <ClInclude Include="IBLogging.h" />
     <ClInclude Include="IBMath.h" />
     <ClInclude Include="IBRenderer.h" />
+    <ClInclude Include="IBRendererFrontend.h" />
+    <ClInclude Include="IBSerialization.h" />
     <ClInclude Include="Platform\IBPlatform.h" />
   </ItemGroup>
   <ItemGroup>
@@ -24,6 +26,8 @@
     <ClCompile Include="IBJobs.cpp" />
     <ClCompile Include="IBLogging.cpp" />
     <ClCompile Include="IBRenderer.cpp" />
+    <ClCompile Include="IBRendererFrontend.cpp" />
+    <ClCompile Include="IBSerialization.cpp" />
     <ClCompile Include="Platform\IBPlatformWin32.cpp" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
@@ -63,9 +67,13 @@
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <TargetName>$(ProjectName)</TargetName>
+    <OutDir>$(SolutionDir)..\Bin\</OutDir>
+    <IntDir>$(SolutionDir)..\Intermediate\</IntDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <TargetName>$(ProjectName)</TargetName>
+    <OutDir>$(SolutionDir)..\Bin\</OutDir>
+    <IntDir>$(SolutionDir)..\Intermediate\</IntDir>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>

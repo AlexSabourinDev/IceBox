@@ -32,6 +32,11 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "SampleGraphics", "..\Sample
 		{ECCDB929-1C4D-4436-90B1-32202C679E77} = {ECCDB929-1C4D-4436-90B1-32202C679E77}
 	EndProjectSection
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ContentProcessor", "..\Tools\ContentProcessor\ContentProcessor.vcxproj", "{DB0B7B75-1FED-4895-BC48-ADCD43EF5426}"
+	ProjectSection(ProjectDependencies) = postProject
+		{ECCDB929-1C4D-4436-90B1-32202C679E77} = {ECCDB929-1C4D-4436-90B1-32202C679E77}
+	EndProjectSection
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -102,6 +107,16 @@ Global
 		{9763325F-8010-4389-92D5-C33710D5C067}.Release|x64.Build.0 = Release|x64
 		{9763325F-8010-4389-92D5-C33710D5C067}.Release|x86.ActiveCfg = Release|Win32
 		{9763325F-8010-4389-92D5-C33710D5C067}.Release|x86.Build.0 = Release|Win32
+		{DB0B7B75-1FED-4895-BC48-ADCD43EF5426}.Debug|Any CPU.ActiveCfg = Debug|Win32
+		{DB0B7B75-1FED-4895-BC48-ADCD43EF5426}.Debug|x64.ActiveCfg = Debug|x64
+		{DB0B7B75-1FED-4895-BC48-ADCD43EF5426}.Debug|x64.Build.0 = Debug|x64
+		{DB0B7B75-1FED-4895-BC48-ADCD43EF5426}.Debug|x86.ActiveCfg = Debug|Win32
+		{DB0B7B75-1FED-4895-BC48-ADCD43EF5426}.Debug|x86.Build.0 = Debug|Win32
+		{DB0B7B75-1FED-4895-BC48-ADCD43EF5426}.Release|Any CPU.ActiveCfg = Release|Win32
+		{DB0B7B75-1FED-4895-BC48-ADCD43EF5426}.Release|x64.ActiveCfg = Release|x64
+		{DB0B7B75-1FED-4895-BC48-ADCD43EF5426}.Release|x64.Build.0 = Release|x64
+		{DB0B7B75-1FED-4895-BC48-ADCD43EF5426}.Release|x86.ActiveCfg = Release|Win32
+		{DB0B7B75-1FED-4895-BC48-ADCD43EF5426}.Release|x86.Build.0 = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
