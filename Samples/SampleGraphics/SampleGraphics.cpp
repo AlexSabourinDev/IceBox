@@ -17,12 +17,16 @@ int main()
     winDesc.Name = "Ice Box";
     winDesc.Width = 500;
     winDesc.Height = 500;
-    winDesc.OnCloseRequested = [](void *) { IB::sendQuitMessage(); };
     winDesc.OnWindowMessage = [](void *data, IB::WindowMessage message)
     {
-        if (message.Type == IB::WindowMessage::Resize)
+        switch (message.Type)
         {
+        case IB::WindowMessage::Resize:
             *reinterpret_cast<bool*>(data) = message.Data.Resize.Width > 0;
+            break;
+        case IB::WindowMessage::Close:
+            IB::sendQuitMessage();
+            break;
         }
     };
     winDesc.CallbackState = &windowVisible;
