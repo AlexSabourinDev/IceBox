@@ -69,8 +69,7 @@ namespace IB
             MouseMove,
         } Type;
 
-        union
-        {
+        union {
             struct
             {
                 uint32_t Width;
@@ -104,7 +103,7 @@ namespace IB
     };
     struct WindowDesc
     {
-        void(*OnWindowMessage)(void *data, WindowMessage message) = nullptr;
+        void (*OnWindowMessage)(void *data, WindowMessage message) = nullptr;
         void *CallbackState = nullptr;
 
         char const *Name = nullptr;
@@ -152,13 +151,13 @@ namespace IB
 
     struct AtomicPtr
     {
-        void* volatile Value;
+        void *volatile Value;
     };
 
     IB_API uint32_t atomicIncrement(AtomicU32 *atomic);
     IB_API uint32_t atomicDecrement(AtomicU32 *atomic);
     IB_API uint32_t atomicCompareExchange(AtomicU32 *atomic, uint32_t compare, uint32_t exchange);
-    IB_API void* atomicCompareExchange(AtomicPtr *atomic, void* compare, void* exchange);
+    IB_API void *atomicCompareExchange(AtomicPtr *atomic, void *compare, void *exchange);
 
     // Threading API
     struct ThreadHandle
@@ -170,7 +169,7 @@ namespace IB
     IB_API uint32_t processorCount();
     IB_API ThreadHandle createThread(ThreadFunc *threadFunc, void *threadData);
     IB_API void destroyThread(ThreadHandle thread);
-    IB_API void waitOnThreads(ThreadHandle* threads, uint32_t threadCount);
+    IB_API void waitOnThreads(ThreadHandle *threads, uint32_t threadCount);
 
     struct ThreadEvent
     {
@@ -185,4 +184,34 @@ namespace IB
     IB_API void threadStoreFence();
 
     IB_API void debugBreak();
+
+    // File API
+    struct File
+    {
+        uintptr_t Value;
+    };
+    constexpr File InvalidFile = File{0};
+
+    struct OpenFileOptions
+    {
+        enum
+        {
+            Read = 0x01,
+            Write = 0x02,
+            Create = 0x04,
+            Overwrite = 0x08
+        };
+    };
+
+    IB_API File openFile(char const *filepath, uint32_t options);
+    IB_API void closeFile(File file);
+    IB_API void *mapFile(File file);
+    IB_API void unmapFile(File file);
+    IB_API void writeToFile(File file, void *data, size_t size);
+    IB_API void appendToFile(File file, void *data, size_t size);
+    IB_API size_t fileSize(File file);
+
+    // File system
+    IB_API bool isDirectory(char const* path);
+    IB_API void setWorkingDirectory(char const* path);
 } // namespace IB

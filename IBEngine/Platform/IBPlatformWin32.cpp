@@ -221,9 +221,13 @@ namespace
 
     struct ActiveFileMapping
     {
-        HANDLE Handle = NULL;
+        HANDLE FileHandle = NULL;
+        HANDLE MapHandle = NULL;
         void *Mapping = nullptr;
     };
+
+    constexpr uint32_t MaxMemoryFileMappingCount = 1024;
+    ActiveFileMapping ActiveMemoryFileMappings[MaxMemoryFileMappingCount];
 
     constexpr uint32_t MaxFileMappingCount = 1024;
     ActiveFileMapping ActiveFileMappings[MaxFileMappingCount];
@@ -243,9 +247,6 @@ namespace
         activeThread->Func(activeThread->Data);
         return 0;
     }
-
-    constexpr uint32_t MaxEventCount = 1024;
-    HANDLE ActiveEvents[MaxEventCount];
 } // namespace
 
 namespace IB
@@ -335,12 +336,12 @@ namespace IB
         HANDLE fileMapping = CreateFileMapping(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE | SEC_COMMIT, static_cast<DWORD>(size >> 32), static_cast<DWORD>(size & 0xFFFFFFFF), NULL);
         void *map = MapViewOfFile(fileMapping, FILE_MAP_ALL_ACCESS, 0, 0, 0);
 
-        for (uint32_t i = 0; i < MaxFileMappingCount; i++)
+        for (uint32_t i = 0; i < MaxMemoryFileMappingCount; i++)
         {
-            if (ActiveFileMappings[i].Handle == NULL)
+            if (ActiveMemoryFileMappings[i].MapHandle == NULL)
             {
-                ActiveFileMappings[i].Handle = fileMapping;
-                ActiveFileMappings[i].Mapping = map;
+                ActiveMemoryFileMappings[i].MapHandle = fileMapping;
+                ActiveMemoryFileMappings[i].Mapping = map;
                 break;
             }
         }
@@ -350,13 +351,13 @@ namespace IB
 
     void unmapLargeMemoryBlock(void *memory)
     {
-        for (uint32_t i = 0; i < MaxFileMappingCount; i++)
+        for (uint32_t i = 0; i < MaxMemoryFileMappingCount; i++)
         {
-            if (ActiveFileMappings[i].Mapping == memory)
+            if (ActiveMemoryFileMappings[i].Mapping == memory)
             {
                 UnmapViewOfFile(memory);
-                CloseHandle(ActiveFileMappings[i].Handle);
-                ActiveFileMappings[i] = {};
+                CloseHandle(ActiveMemoryFileMappings[i].MapHandle);
+                ActiveMemoryFileMappings[i] = {};
                 break;
             }
         }
@@ -460,6 +461,116 @@ namespace IB
         DebugBreak();
     }
 
+    File openFile(char const *filepath, uint32_t options)
+    {
+        DWORD access = 0;
+        if ((options & OpenFileOptions::Read) != 0)
+        {
+            access |= GENERIC_READ;
+        }
+
+        if ((options & OpenFileOptions::Write) != 0)
+        {
+            access |= GENERIC_WRITE;
+        }
+
+        DWORD open = OPEN_EXISTING;
+        if ((options & OpenFileOptions::Overwrite) != 0)
+        {
+            open = CREATE_ALWAYS;
+        }
+        else if ((options & OpenFileOptions::Create) != 0)
+        {
+            open = OPEN_ALWAYS;
+        }
+
+        HANDLE fileHandle = CreateFile(filepath, access, 0, NULL, open, FILE_ATTRIBUTE_NORMAL, NULL);
+        if (fileHandle == INVALID_HANDLE_VALUE)
+        {
+            return File{};
+        }
+
+        return File{reinterpret_cast<uintptr_t>(fileHandle)};
+    }
+
+    void closeFile(File file)
+    {
+        CloseHandle(reinterpret_cast<HANDLE>(file.Value));
+    }
+
+    void *mapFile(File file)
+    {
+        HANDLE fileHandle = reinterpret_cast<HANDLE>(file.Value);
+        HANDLE fileMapping = CreateFileMapping(fileHandle, NULL, PAGE_READONLY, 0, 0, NULL);
+        void *map = MapViewOfFile(fileMapping, FILE_MAP_READ, 0, 0, 0);
+
+        for (uint32_t i = 0; i < MaxFileMappingCount; i++)
+        {
+            if (ActiveFileMappings[i].MapHandle == NULL)
+            {
+                ActiveFileMappings[i].MapHandle = fileMapping;
+                ActiveFileMappings[i].FileHandle = fileHandle;
+                ActiveFileMappings[i].Mapping = map;
+                break;
+            }
+        }
+
+        return map;
+    }
+
+    void unmapFile(File file)
+    {
+        for (uint32_t i = 0; i < MaxFileMappingCount; i++)
+        {
+            if (ActiveFileMappings[i].FileHandle == reinterpret_cast<HANDLE>(file.Value))
+            {
+                UnmapViewOfFile(ActiveFileMappings[i].Mapping);
+                CloseHandle(ActiveFileMappings[i].MapHandle);
+                ActiveFileMappings[i] = {};
+                break;
+            }
+        }
+    }
+
+    void writeToFile(File file, void *data, size_t size)
+    {
+        HANDLE fileHandle = reinterpret_cast<HANDLE>(file.Value);
+        DWORD bytesWritten;
+        BOOL result = WriteFile(fileHandle, data, static_cast<DWORD>(size), &bytesWritten, NULL);
+        IB_ASSERT(result == TRUE, "Failed to write to file.");
+    }
+
+    void appendToFile(File file, void *data, size_t size)
+    {
+        HANDLE fileHandle = reinterpret_cast<HANDLE>(file.Value);
+
+        SetFilePointer(fileHandle, 0, NULL, FILE_END);
+        DWORD bytesWritten;
+        BOOL result = WriteFile(fileHandle, data, static_cast<DWORD>(size), &bytesWritten, NULL);
+        IB_ASSERT(result == TRUE, "Failed to write to file.");
+
+        SetFilePointer(fileHandle, 0, NULL, FILE_BEGIN);
+    }
+
+    size_t fileSize(File file)
+    {
+        HANDLE fileHandle = reinterpret_cast<HANDLE>(file.Value);
+
+        DWORD high;
+        DWORD low;
+        low = GetFileSize(fileHandle, &high);
+        return (static_cast<size_t>(high) << 32) | low;
+    }
+
+    bool isDirectory(char const* path)
+    {
+        return (GetFileAttributes(path) & FILE_ATTRIBUTE_DIRECTORY) != 0;
+    }
+
+    void setWorkingDirectory(char const* path)
+    {
+        SetCurrentDirectory(path);
+    }
 } // namespace IB
 
 // Bridge

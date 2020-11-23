@@ -509,10 +509,12 @@ namespace
                 BuddyChunks[buddyChunkIndex].AllocatedBlocks[BuddyChunks[buddyChunkIndex].AllocatedBlockCount] = currentBlock;
                 BuddyChunks[buddyChunkIndex].AllocatedBlockCount++;
 
-                ptrdiff_t memoryOffset = blockSize * currentBlock.Index;
+                size_t layerSize = getSizeFromLayer(currentBlock.Layer);
+                ptrdiff_t memoryOffset = layerSize * currentBlock.Index;
                 uintptr_t memoryAddress = reinterpret_cast<uintptr_t>(BuddyChunks[buddyChunkIndex].MemoryPages) + memoryOffset;
 
                 uintptr_t alignedMemoryAddress = memoryAddress / IB::memoryPageSize() * IB::memoryPageSize();
+                // Use blockSize in our memory page count, we don't need to commit all of our unused buddy space.
                 uint32_t memoryPageCount = static_cast<uint32_t>(blockSize / IB::memoryPageSize()) + (blockSize % IB::memoryPageSize() != 0 ? 1 : 0);
 
                 IB::commitMemoryPages(reinterpret_cast<void *>(alignedMemoryAddress), memoryPageCount);

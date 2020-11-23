@@ -1,6 +1,8 @@
 #define _CRT_SECURE_NO_WARNINGS
 
 #include <IBEngine/IBRenderer.h>
+#include <IBEngine/IBRendererFrontend.h>
+#include <IBEngine/IBSerialization.h>
 #include <IBEngine/Platform/IBPlatform.h>
 
 #include <stdio.h>
@@ -32,33 +34,25 @@ int main()
     winDesc.CallbackState = &windowVisible;
     IB::WindowHandle window = IB::createWindow(winDesc);
 
-    FILE *file = fopen("../Assets/Raw/SampleForwardVert.spv", "rb");
-    fseek(file, 0, SEEK_END);
-    long fileSize = ftell(file);
-    fseek(file, 0, SEEK_SET);
+    IB::File vertFile = IB::openFile("../Assets/Raw/SampleForwardVert.spv", IB::OpenFileOptions::Read);
+    void* vertSource = IB::mapFile(vertFile);
 
-    void *vertSource = malloc(fileSize);
-    unsigned int vertSize = fileSize;
-    fread(vertSource, fileSize, 1, file);
-    fclose(file);
-
-    file = fopen("../Assets/Raw/SampleForwardFrag.spv", "rb");
-    fseek(file, 0, SEEK_END);
-    fileSize = ftell(file);
-    fseek(file, 0, SEEK_SET);
-
-    void *fragSource = malloc(fileSize);
-    unsigned int fragSize = fileSize;
-    fread(fragSource, fileSize, 1, file);
-    fclose(file);
+    IB::File fragFile = IB::openFile("../Assets/Raw/SampleForwardFrag.spv", IB::OpenFileOptions::Read);
+    void* fragSource = IB::mapFile(fragFile);
 
     IB::RendererDesc rendererDesc = {};
     rendererDesc.Window = &window;
     rendererDesc.Materials.Forward.VShader = reinterpret_cast<uint8_t *>(vertSource);
-    rendererDesc.Materials.Forward.VShaderSize = vertSize;
+    rendererDesc.Materials.Forward.VShaderSize = static_cast<uint32_t>(IB::fileSize(vertFile));
     rendererDesc.Materials.Forward.FShader = reinterpret_cast<uint8_t *>(fragSource);
-    rendererDesc.Materials.Forward.FShaderSize = fragSize;
+    rendererDesc.Materials.Forward.FShaderSize = static_cast<uint32_t>(IB::fileSize(fragFile));
     IB::initRenderer(&rendererDesc);
+
+    // Can unmap shaders now
+    IB::unmapFile(vertFile);
+    IB::closeFile(vertFile);
+    IB::unmapFile(fragFile);
+    IB::closeFile(fragFile);
 
     uint8_t imageTexels[] = {80, 180, 255, 255, 80, 180, 255, 255, 80, 180, 255, 255, 255, 180, 80, 255};
 
@@ -75,64 +69,24 @@ int main()
     matDesc.AlbedoImage = albedoImage;
     IB::MaterialHandle someMaterial = IB::createMaterial(&matDesc);
 
-    IB::Vertex vertices[] =
-        {
-            // Front
-            {{-1.0f, -1.0f, -1.0f, 0.0f},
-             {0.0f, 0.0f, -1.0f, 0.0f}},
-            {{1.0f, -1.0f, -1.0f, 1.0f},
-             {0.0f, 0.0f, -1.0f, 0.0f}},
-            {{1.0f, 1.0f, -1.0f, 1.0f},
-             {0.0f, 0.0f, -1.0f, 1.0f}},
-            {{-1.0f, 1.0f, -1.0f, 0.0f},
-             {0.0f, 0.0f, -1.0f, 1.0f}},
+    IB::File meshFile = IB::openFile("../Assets/Compiled/Box.c.msh", IB::OpenFileOptions::Read);
+    void* meshData = IB::mapFile(meshFile);
 
-            // Back
-            {{-1.0f, -1.0f, 1.0f, 0.0f},
-             {0.0f, 0.0f, 1.0f, 0.0f}},
-            {{1.0f, -1.0f, 1.0f, 1.0f},
-             {0.0f, 0.0f, 1.0f, 0.0f}},
-            {{1.0f, 1.0f, 1.0f, 1.0f},
-             {0.0f, 0.0f, 1.0f, 1.0f}},
-            {{-1.0f, 1.0f, 1.0f, 0.0f},
-             {0.0f, 0.0f, 1.0f, 1.0f}},
-
-            // Left Corners
-            {{-1.0f, -1.0f, -1.0f, 0.0f},
-             {-1.0f, 0.0f, 0.0f, 0.0f}},
-            {{-1.0f, 1.0f, -1.0f, 0.0f},
-             {-1.0f, 0.0f, 0.0f, 1.0f}},
-            {{-1.0f, -1.0f, 1.0f, 1.0f},
-             {-1.0f, 0.0f, 0.0f, 0.0f}},
-            {{-1.0f, 1.0f, 1.0f, 1.0f},
-             {-1.0f, 0.0f, 0.0f, 1.0f}},
-
-            // Right Corners
-            {{1.0f, -1.0f, -1.0f, 0.0f},
-             {1.0f, 0.0f, 0.0f, 0.0f}},
-            {{1.0f, 1.0f, -1.0f, 0.0f},
-             {1.0f, 0.0f, 0.0f, 1.0f}},
-            {{1.0f, -1.0f, 1.0f, 1.0f},
-             {1.0f, 0.0f, 0.0f, 0.0f}},
-            {{1.0f, 1.0f, 1.0f, 1.0f},
-             {1.0f, 0.0f, 0.0f, 1.0f}},
-        };
-
-    uint16_t indices[] =
-        {
-            0, 1, 2, 0, 2, 3,      // Front Face
-            4, 7, 6, 4, 6, 5,      // Back Face
-            8, 9, 10, 10, 9, 11,   // Left Face
-            12, 14, 13, 14, 15, 13 // Right Face
-        };
+    IB::MeshAsset mesh = {};
+    IB::MemoryStream readStream{ reinterpret_cast<uint8_t*>(meshData) };
+    fromBinary(&readStream, &mesh);
 
     IB::MeshDesc meshDesc = {};
-    meshDesc.Vertices.Data = vertices;
-    meshDesc.Vertices.Count = 16;
-    meshDesc.Indices.Data = indices;
-    meshDesc.Indices.Count = 24;
+    meshDesc.Vertices.Data = mesh.Vertices;
+    meshDesc.Vertices.Count = mesh.VertexCount;
+    meshDesc.Indices.Data = mesh.Indices;
+    meshDesc.Indices.Count = mesh.IndexCount;
 
     IB::MeshHandle someMesh = IB::createMesh(&meshDesc);
+
+    // Don't need mesh memory anymore, it's fed to the GPU
+    IB::unmapFile(meshFile);
+    IB::closeFile(meshFile);
 
     float fov = 1.0f / tanf(3.1415f * 0.25);
     const float f = 45.0f;
