@@ -27,3 +27,7 @@ jobs:
         run: msbuild VisualStudio\IceBox.sln -t:IBEngine -p:Configuration=Debug -p:Platform="x64" -m
       - name: Build IBEngine Release|x64
         run: msbuild VisualStudio\IceBox.sln -t:IBEngine -p:Configuration=Release -p:Platform="x64" -m
+      - name: Build Content Processor Debug|x64
+        run: msbuild VisualStudio\IceBox.sln -t:ContentProcessor -p:Configuration=Debug -p:Platform="x64" -m
+      - name: Build Content Processor Release|x64
+        run: msbuild VisualStudio\IceBox.sln -t:ContentProcessor -p:Configuration=Release -p:Platform="x64" -m
