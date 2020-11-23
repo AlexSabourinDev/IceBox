@@ -9,10 +9,9 @@
 #include <assimp/scene.h>
 #include <assimp/postprocess.h>
 
-constexpr uint32_t toFourCC(char const *string)
-{
-    return (string[0] << 24) | (string[1] << 16) | (string[2] << 8) | string[3];
-}
+#include <Windows.h>
+#include <wrl.h>
+#include <dxc/dxcapi.h>
 
 void processMesh(char const *rawPath, char const *compiledPath)
 {
@@ -61,12 +60,98 @@ void processMesh(char const *rawPath, char const *compiledPath)
     }
 
     IB::File file = IB::openFile(compiledPath, IB::OpenFileOptions::Overwrite | IB::OpenFileOptions::Write);
-    IB::FileStream fileStream{ file };
+    IB::Serialization::FileStream fileStream{ file };
     toBinary(&fileStream, asset);
     flush(&fileStream);
 
     IB::deallocateArray(asset.Vertices);
     IB::deallocateArray(asset.Indices);
+}
+
+void processShader(char const *rawPath, char const *compiledPath)
+{
+    using namespace Microsoft::WRL;
+
+    ComPtr<IDxcCompiler3> compiler;
+    DxcCreateInstance(CLSID_DxcCompiler, IID_PPV_ARGS(&compiler));
+
+    IB::File shaderFile = IB::openFile(rawPath, IB::OpenFileOptions::Read);
+    void *shaderData = IB::mapFile(shaderFile);
+    DxcBuffer shaderBuffer;
+    shaderBuffer.Ptr = shaderData;
+    shaderBuffer.Size = IB::fileSize(shaderFile);
+    shaderBuffer.Encoding = DXC_CP_ACP;
+
+    ComPtr<IDxcBlob> vertShader;
+    ComPtr<IDxcBlob> fragShader;
+
+    {
+        wchar_t const* args[] =
+        {
+            L"-spirv",
+            L"-T",
+            L"vs_6_6",
+            L"-E",
+            L"vertexMain",
+            L"-fspv-target-env=vulkan1.0",
+            L"-WX",
+            L"-O3",
+        };
+
+        ComPtr<IDxcResult> compileResult;
+        compiler->Compile(&shaderBuffer, args, sizeof(args) / sizeof(args[0]), nullptr, IID_PPV_ARGS(&compileResult));
+
+        ComPtr<IDxcBlobUtf16> shaderName;
+        compileResult->GetOutput(DXC_OUT_OBJECT, IID_PPV_ARGS(&vertShader), &shaderName);
+
+        ComPtr<IDxcBlobUtf8> errors = nullptr;
+        compileResult->GetOutput(DXC_OUT_ERRORS, IID_PPV_ARGS(&errors), nullptr);
+        if (errors != nullptr && errors->GetStringLength() != 0)
+        {
+            printf("Warnings and Errors:\n%s\n", errors->GetStringPointer());
+        }
+    }
+
+    {
+        wchar_t const* args[] =
+        {
+            L"-spirv",
+            L"-T",
+            L"ps_6_6",
+            L"-E",
+            L"fragMain",
+            L"-fspv-target-env=vulkan1.0",
+            L"-WX",
+            L"-O3",
+        };
+
+        ComPtr<IDxcResult> compileResult;
+        compiler->Compile(&shaderBuffer, args, sizeof(args) / sizeof(args[0]), nullptr, IID_PPV_ARGS(&compileResult));
+
+        ComPtr<IDxcBlobUtf16> shaderName;
+        compileResult->GetOutput(DXC_OUT_OBJECT, IID_PPV_ARGS(&fragShader), &shaderName);
+
+        ComPtr<IDxcBlobUtf8> errors = nullptr;
+        compileResult->GetOutput(DXC_OUT_ERRORS, IID_PPV_ARGS(&errors), nullptr);
+        if (errors != nullptr && errors->GetStringLength() != 0)
+        {
+            printf("Warnings and Errors:\n%s\n", errors->GetStringPointer());
+        }
+    }
+
+    IB::ShaderAsset shaderAsset;
+    shaderAsset.VertexShader = reinterpret_cast<uint8_t*>(vertShader->GetBufferPointer());
+    shaderAsset.VertexShaderSize = static_cast<uint32_t>(vertShader->GetBufferSize());
+    shaderAsset.FragShader = reinterpret_cast<uint8_t*>(fragShader->GetBufferPointer());
+    shaderAsset.FragShaderSize = static_cast<uint32_t>(fragShader->GetBufferSize());
+
+    IB::File writeFile = IB::openFile(compiledPath, IB::OpenFileOptions::Overwrite | IB::OpenFileOptions::Write);
+    IB::Serialization::FileStream fileStream{ writeFile };
+    toBinary(&fileStream, shaderAsset);
+    flush(&fileStream);
+
+    IB::unmapFile(shaderFile);
+    IB::closeFile(shaderFile);
 }
 
 int main(int argc, char const *argv[])
@@ -84,7 +169,6 @@ int main(int argc, char const *argv[])
         sprintf(rawPath, "%s/%s", rawDirectory, relativePath);
         IB_ASSERT(!IB::isDirectory(rawPath), "File is a directory. Support is not in yet.");
 
-        uint32_t extension = 0;
         uint32_t extensionIndex = 0;
         {
             uint32_t length = static_cast<uint32_t>(strlen(relativePath));
@@ -99,23 +183,19 @@ int main(int argc, char const *argv[])
 
             IB_ASSERT(extensionIndex > 0, "Failed to find extension!");
             extensionIndex--;
-
-            if (length - extensionIndex == 4)
-            {
-                extension = toFourCC(relativePath + extensionIndex);
-            }
         }
 
-        switch (extension)
-        {
-        case toFourCC(".obj"):
-        case toFourCC(".fbx"):
+        if (strcmp(".obj", relativePath + extensionIndex) == 0 || strcmp(".fbx", relativePath + extensionIndex) == 0)
         {
             char compiledPath[255];
             sprintf(compiledPath, "%s/%.*s.c.msh", compiledDirectory, extensionIndex, relativePath);
             processMesh(rawPath, compiledPath);
         }
-        break;
+        else if (strcmp(".hlsl", relativePath + extensionIndex) == 0)
+        {
+            char compiledPath[255];
+            sprintf(compiledPath, "%s/%.*s.c.hlsl", compiledDirectory, extensionIndex, relativePath);
+            processShader(rawPath, compiledPath);
         }
     }
 }

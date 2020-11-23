@@ -7,40 +7,43 @@
 
 namespace IB
 {
-    void toBinary(FileStream *stream, void *data, size_t size)
+    namespace Serialization
     {
-        if (stream->BufferCursor + size > FileStream::BufferSize)
+        void toBinary(FileStream *stream, void *data, size_t size)
         {
-            flush(stream);
+            if (stream->BufferCursor + size > FileStream::BufferSize)
+            {
+                flush(stream);
+            }
+
+            if (size > FileStream::BufferSize) // Large writes go direct to file
+            {
+                appendToFile(stream->File, data, size);
+            }
+            else
+            {
+                memcpy(stream->Buffer + stream->BufferCursor, data, size);
+                stream->BufferCursor += static_cast<uint32_t>(size);
+            }
         }
 
-        if (size > FileStream::BufferSize) // Large writes go direct to file
+        void flush(FileStream *stream)
         {
-            appendToFile(stream->File, data, size);
+            appendToFile(stream->File, stream->Buffer, stream->BufferCursor);
+            stream->BufferCursor = 0;
         }
-        else
+
+        void fromBinary(MemoryStream *stream, void *data, size_t size)
         {
-            memcpy(stream->Buffer + stream->BufferCursor, data, size);
-            stream->BufferCursor += static_cast<uint32_t>(size);
+            memcpy(data, stream->Memory, size);
+            stream->Memory += size;
         }
-    }
 
-    void flush(FileStream *stream)
-    {
-        appendToFile(stream->File, stream->Buffer, stream->BufferCursor);
-        stream->BufferCursor = 0;
-    }
-
-    void fromBinary(MemoryStream *stream, void *data, size_t size)
-    {
-        memcpy(data, stream->Memory, size);
-        stream->Memory += size;
-    }
-
-    void *fromBinary(MemoryStream *stream, size_t size)
-    {
-        void *memory = stream->Memory;
-        stream->Memory += size;
-        return memory;
+        void *fromBinary(MemoryStream *stream, size_t size)
+        {
+            void *memory = stream->Memory;
+            stream->Memory += size;
+            return memory;
+        }
     }
 } // namespace IB

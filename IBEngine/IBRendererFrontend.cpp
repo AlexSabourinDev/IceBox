@@ -3,21 +3,39 @@
 
 namespace IB
 {
-    void toBinary(FileStream *stream, MeshAsset const &mesh)
+    void toBinary(Serialization::FileStream *stream, MeshAsset const &mesh)
     {
-        toBinary(stream, mesh.VertexCount);
-        toBinary(stream, mesh.IndexCount);
+        Serialization::toBinary(stream, mesh.VertexCount);
+        Serialization::toBinary(stream, mesh.IndexCount);
 
-        toBinary(stream, mesh.Vertices, mesh.VertexCount * sizeof(Vertex));
-        toBinary(stream, mesh.Indices, mesh.IndexCount * sizeof(uint16_t));
+        Serialization::toBinary(stream, mesh.Vertices, mesh.VertexCount * sizeof(Vertex));
+        Serialization::toBinary(stream, mesh.Indices, mesh.IndexCount * sizeof(uint16_t));
     }
 
-    void fromBinary(MemoryStream *stream, MeshAsset *mesh)
+    void fromBinary(Serialization::MemoryStream *stream, MeshAsset *mesh)
     {
-        fromBinary(stream, &mesh->VertexCount);
-        fromBinary(stream, &mesh->IndexCount);
+        Serialization::fromBinary(stream, &mesh->VertexCount);
+        Serialization::fromBinary(stream, &mesh->IndexCount);
 
-        mesh->Vertices = fromBinary<Vertex>(stream, mesh->VertexCount * sizeof(Vertex));
-        mesh->Indices = fromBinary<uint16_t>(stream, mesh->IndexCount * sizeof(uint16_t));
+        mesh->Vertices = Serialization::fromBinary<Vertex*>(stream, mesh->VertexCount * sizeof(Vertex));
+        mesh->Indices = Serialization::fromBinary<uint16_t*>(stream, mesh->IndexCount * sizeof(uint16_t));
+    }
+
+    void toBinary(Serialization::FileStream *stream, ShaderAsset const &shaders)
+    {
+        Serialization::toBinary(stream, shaders.VertexShaderSize);
+        Serialization::toBinary(stream, shaders.FragShaderSize);
+
+        Serialization::toBinary(stream, shaders.VertexShader, shaders.VertexShaderSize);
+        Serialization::toBinary(stream, shaders.FragShader, shaders.FragShaderSize);
+    }
+
+    void fromBinary(Serialization::MemoryStream *stream, ShaderAsset *shaders)
+    {
+        Serialization::fromBinary(stream, &shaders->VertexShaderSize);
+        Serialization::fromBinary(stream, &shaders->FragShaderSize);
+
+        shaders->VertexShader = Serialization::fromBinary<uint8_t*>(stream, shaders->VertexShaderSize);
+        shaders->FragShader = Serialization::fromBinary<uint8_t*>(stream, shaders->FragShaderSize);
     }
 } // namespace IB

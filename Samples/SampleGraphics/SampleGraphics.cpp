@@ -34,25 +34,24 @@ int main()
     winDesc.CallbackState = &windowVisible;
     IB::WindowHandle window = IB::createWindow(winDesc);
 
-    IB::File vertFile = IB::openFile("../Assets/Raw/SampleForwardVert.spv", IB::OpenFileOptions::Read);
-    void* vertSource = IB::mapFile(vertFile);
+    IB::File forwardSampleFile = IB::openFile("../Assets/Compiled/SampleForward.c.hlsl", IB::OpenFileOptions::Read);
+    void* forwardSample = IB::mapFile(forwardSampleFile);
 
-    IB::File fragFile = IB::openFile("../Assets/Raw/SampleForwardFrag.spv", IB::OpenFileOptions::Read);
-    void* fragSource = IB::mapFile(fragFile);
+    IB::ShaderAsset shaders;
+    IB::Serialization::MemoryStream shaderReadStream{ reinterpret_cast<uint8_t*>(forwardSample) };
+    fromBinary(&shaderReadStream, &shaders);
 
     IB::RendererDesc rendererDesc = {};
     rendererDesc.Window = &window;
-    rendererDesc.Materials.Forward.VShader = reinterpret_cast<uint8_t *>(vertSource);
-    rendererDesc.Materials.Forward.VShaderSize = static_cast<uint32_t>(IB::fileSize(vertFile));
-    rendererDesc.Materials.Forward.FShader = reinterpret_cast<uint8_t *>(fragSource);
-    rendererDesc.Materials.Forward.FShaderSize = static_cast<uint32_t>(IB::fileSize(fragFile));
+    rendererDesc.Materials.Forward.VShader = shaders.VertexShader;
+    rendererDesc.Materials.Forward.VShaderSize = shaders.VertexShaderSize;
+    rendererDesc.Materials.Forward.FShader = shaders.FragShader;
+    rendererDesc.Materials.Forward.FShaderSize = shaders.FragShaderSize;
     IB::initRenderer(&rendererDesc);
 
     // Can unmap shaders now
-    IB::unmapFile(vertFile);
-    IB::closeFile(vertFile);
-    IB::unmapFile(fragFile);
-    IB::closeFile(fragFile);
+    IB::unmapFile(forwardSampleFile);
+    IB::closeFile(forwardSampleFile);
 
     uint8_t imageTexels[] = {80, 180, 255, 255, 80, 180, 255, 255, 80, 180, 255, 255, 255, 180, 80, 255};
 
@@ -73,7 +72,7 @@ int main()
     void* meshData = IB::mapFile(meshFile);
 
     IB::MeshAsset mesh = {};
-    IB::MemoryStream readStream{ reinterpret_cast<uint8_t*>(meshData) };
+    IB::Serialization::MemoryStream readStream{ reinterpret_cast<uint8_t*>(meshData) };
     fromBinary(&readStream, &mesh);
 
     IB::MeshDesc meshDesc = {};
