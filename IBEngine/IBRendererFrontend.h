@@ -7,8 +7,11 @@
 
 namespace IB
 {
-    struct FileStream;
-    struct MemoryStream;
+    namespace Serialization
+    {
+        struct FileStream;
+        struct MemoryStream;
+    }
 
     struct MeshAsset
     {
@@ -19,6 +22,18 @@ namespace IB
         uint32_t IndexCount;
     };
 
-    IB_API void toBinary(FileStream *stream, MeshAsset const &mesh);
-    IB_API void fromBinary(MemoryStream *stream, MeshAsset *mesh);
+    struct ShaderAsset
+    {
+        uint8_t *VertexShader;
+        uint32_t VertexShaderSize;
+
+        uint8_t *FragShader;
+        uint32_t FragShaderSize;
+    };
+
+    IB_API void toBinary(Serialization::FileStream *stream, MeshAsset const &mesh);
+    IB_API void fromBinary(Serialization::MemoryStream *stream, MeshAsset *mesh);
+
+    IB_API void toBinary(Serialization::FileStream *stream, ShaderAsset const &shaders);
+    IB_API void fromBinary(Serialization::MemoryStream *stream, ShaderAsset *shaders);
 } // namespace IB
