@@ -42,3 +42,11 @@ jobs:
         run: msbuild VisualStudio\IceBox.sln -t:Samples\SampleWPF -p:Configuration=Debug -p:Platform="x64" -m
       - name: Build Sample WPF Release|x64
         run: msbuild VisualStudio\IceBox.sln -t:Samples\SampleWPF -p:Configuration=Release -p:Platform="x64" -m
+      - name: Build Sample Graphics Debug|x64
+        run: msbuild VisualStudio\IceBox.sln -t:Samples\SampleGraphics -p:Configuration=Debug -p:Platform="x64" -m
+      - name: Build Sample Graphics Release|x64
+        run: msbuild VisualStudio\IceBox.sln -t:Samples\SampleGraphics -p:Configuration=Release -p:Platform="x64" -m
+      - name: Build Sample Threading Debug|x64
+        run: msbuild VisualStudio\IceBox.sln -t:Samples\SampleThreading -p:Configuration=Debug -p:Platform="x64" -m
+      - name: Build Sample Threading Release|x64
+        run: msbuild VisualStudio\IceBox.sln -t:Samples\SampleThreading -p:Configuration=Release -p:Platform="x64" -m
