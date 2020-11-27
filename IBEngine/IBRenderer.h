@@ -53,8 +53,9 @@ namespace IB
     struct Vertex
     {
         // UV in pos[3], normal[3]
-        float pos[4];
-        float normal[4];
+        float Pos[4];
+        float Normal[4];
+        float Color[4];
     };
 
     struct MeshDesc
@@ -112,15 +113,6 @@ namespace IB
 
     struct ViewDesc
     {
-        struct Materials
-        {
-            enum
-            {
-                Forward = 0,
-                Count
-            };
-        };
-
         struct MeshInstances
         {
             MeshHandle Mesh;
@@ -136,8 +128,24 @@ namespace IB
         };
 
         Mat4x4 ViewProj = Mat4x4::identity();
-        Batch *Batches[Materials::Count];
-        uint32_t BatchCounts[Materials::Count];
+
+        struct Pass
+        {
+            enum
+            {
+                Default,
+                DebugOverlay,
+                Count
+            };
+
+            Batch *Batches;
+            uint32_t BatchCount;
+        };
+
+        struct
+        {
+            Pass Passes[Pass::Count];
+        } Forward;
     };
 
     IB_API void initRenderer(RendererDesc const *desc);

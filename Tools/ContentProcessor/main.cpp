@@ -16,7 +16,7 @@
 void processMesh(char const *rawPath, char const *compiledPath)
 {
     Assimp::Importer importer;
-    const aiScene *scene = importer.ReadFile(rawPath, aiProcess_Triangulate | aiProcess_FlipUVs);
+    const aiScene *scene = importer.ReadFile(rawPath, aiProcess_Triangulate);
 
     if (scene == nullptr || (scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE) != 0 || scene->mRootNode == nullptr)
     {
@@ -34,15 +34,20 @@ void processMesh(char const *rawPath, char const *compiledPath)
         IB::Vertex *vertices = IB::allocateArray<IB::Vertex>(mesh->mNumVertices);
         for (unsigned int i = 0; i < mesh->mNumVertices; i++)
         {
-            vertices[i].pos[0] = mesh->mVertices[i].x;
-            vertices[i].pos[1] = mesh->mVertices[i].y;
-            vertices[i].pos[2] = mesh->mVertices[i].z;
-            vertices[i].pos[3] = mesh->mTextureCoords[0][i].x;
+            vertices[i].Pos[0] = mesh->mVertices[i].x;
+            vertices[i].Pos[1] = mesh->mVertices[i].y;
+            vertices[i].Pos[2] = mesh->mVertices[i].z;
+            vertices[i].Pos[3] = mesh->mTextureCoords[0][i].x;
 
-            vertices[i].normal[0] = mesh->mNormals[i].x;
-            vertices[i].normal[1] = mesh->mNormals[i].y;
-            vertices[i].normal[2] = mesh->mNormals[i].z;
-            vertices[i].normal[3] = mesh->mTextureCoords[0][i].y;
+            vertices[i].Normal[0] = mesh->mNormals[i].x;
+            vertices[i].Normal[1] = mesh->mNormals[i].y;
+            vertices[i].Normal[2] = mesh->mNormals[i].z;
+            vertices[i].Normal[3] = mesh->mTextureCoords[0][i].y;
+
+            vertices[i].Color[0] = 1.0f;
+            vertices[i].Color[1] = 1.0f;
+            vertices[i].Color[2] = 1.0f;
+            vertices[i].Color[3] = 1.0f;
         }
 
         uint16_t *indices = IB::allocateArray<uint16_t>(mesh->mNumFaces * 3);

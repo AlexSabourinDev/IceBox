@@ -2,6 +2,7 @@ struct Vertex
 {
 	float4 Pos;
 	float4 Normal;
+    float4 Color;
 };
 
 float2 unpackUV(Vertex v)
@@ -32,6 +33,7 @@ struct V2F
 	float4 NDCPos : SV_POSITION;
 	[[vk::location(0)]] float3 Normal : NORMAL0;
 	[[vk::location(1)]] float2 UV : TEXCOORD0;
+    [[vk::location(2)]] float4 Color : COLOR0;
 };
 
 V2F vertexMain(VertexInput input)
@@ -43,6 +45,7 @@ V2F vertexMain(VertexInput input)
 	output.NDCPos = mul(PerDraw.VP,mul(M4,float4(MeshData[index].Pos.xyz, 1.0f)));
 	output.Normal = mul(MeshData[index].Normal.xyz,rotation);
 	output.UV = unpackUV(MeshData[index]);
+    output.Color = MeshData[index].Color;
 	return output;
 }
 
@@ -62,5 +65,5 @@ Texture2D Textures[];
 
 float4 fragMain(V2F input) : SV_TARGET
 {
-	return Textures[Material.TextureIndex].Sample(TextureSampler, input.UV);
+	return Textures[Material.TextureIndex].Sample(TextureSampler, input.UV) * input.Color;
 }
