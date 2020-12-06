@@ -141,6 +141,7 @@ namespace
     {
         uint8_t Data[IB::MaxJobDataSize];
         IB::AtomicPtr Func = {nullptr};
+        uint32_t Generation = 0;
     };
 #pragma warning(default : 4324)
 
@@ -158,11 +159,93 @@ namespace
         IB::ThreadEvent SleepEvent;
         bool Alive = false;
     };
-    constexpr uint32_t MaxWorkerCount = 1024;
+    constexpr uint32_t MaxWorkerCount = 64;
     WorkerThread Workers[MaxWorkerCount];
 
     constexpr uint32_t MaxJobPoolCount = MaxJobCount * MaxWorkerCount;
     Job JobPool[MaxJobPoolCount] = {};
+
+    constexpr uint32_t MaxJobWaiters = 10;
+    struct
+    {
+        IB::AtomicU64 Waiters[MaxJobPoolCount][MaxJobWaiters];
+    } WaitList;
+
+    Job* takeJob(IB::JobDesc desc)
+    {
+        Job *job = nullptr;
+
+        // Get a job from our pool
+        // Many threads can be trying to pull from the pool at the same time
+        // Assure that we can commit one of the elements to ourselves using a compare exchange
+        uint32_t jobIndex = 0;
+        for (; jobIndex < MaxJobPoolCount; jobIndex++)
+        {
+            // Everyone is trying to get a job from the pool, make sure that we've taken it with a compare exchange.
+            if (atomicCompareExchange(&JobPool[jobIndex].Func, nullptr, desc.Func) == nullptr)
+            {
+                job = &JobPool[jobIndex];
+                break;
+            }
+        }
+
+        // Our job is free to be written to at this point.
+        IB_ASSERT(job != nullptr, "Failed to get a job from the job pool!");
+        static_assert(sizeof(job->Data) == sizeof(desc.JobData), "Job description data size doesn't match job data size.");
+        memcpy(job->Data, desc.JobData, sizeof(desc.JobData));
+
+        return job;
+    }
+
+    thread_local uint32_t NextWorker = 0;
+    void commitJob(Job* job)
+    {
+        // Keep trying to allocator to various workers.
+        // If all the worker queues are full, then we'll iterate until they aren't.
+        // If this ends up being a problem, we can add a thread event to make our thread sleep.
+        uint32_t commitedWorkerIndex = UINT32_MAX;
+        uint32_t commitedJobIndex = UINT32_MAX;
+        while (commitedWorkerIndex == UINT32_MAX) // Until we've commited to a worker.
+        {
+            // Simply increment our value, use the modulo as our indexing.
+            uint32_t worker = (NextWorker++) % WorkerCount;
+
+            // If our queue has space, try to commit our slot by doing a compare and exchange.
+            // If it succeeds then we've commited our producer index and moved the index forward.
+            // This will be visible to the worker thread,
+            // however it will simply wait to make sure that it has a job to do before
+            // it moves on to the next element.
+            uint32_t currentProducerIndex = Workers[worker].Queue.Producer.Value;
+            uint32_t nextProducerIndex = (currentProducerIndex + 1) % MaxJobCount;
+            while (nextProducerIndex != volatileLoad(&Workers[worker].Queue.Consumer)) // Do we still have space in this queue? Keep trying.
+            {
+                if (atomicCompareExchange(&Workers[worker].Queue.Producer, currentProducerIndex, nextProducerIndex) == currentProducerIndex)
+                {
+                    // If we succesfuly commited to our producer index, we can use these indices.
+                    commitedWorkerIndex = worker;
+                    commitedJobIndex = currentProducerIndex;
+                    break;
+                }
+                else
+                {
+                    currentProducerIndex = Workers[worker].Queue.Producer.Value;
+                    nextProducerIndex = (currentProducerIndex + 1) % MaxJobCount;
+                }
+            }
+        }
+
+        // If our thread is preempted before we set out job,
+        // then our worker thread will simply sleep until the job has actually been written to the variable.
+        // We will then wake it up after we're done writting it out.
+        IB_ASSERT(Workers[commitedWorkerIndex].Queue.Jobs[commitedJobIndex] == nullptr, "We're expecting our job to be null here! Did someone write to it before us?!?");        
+        volatileStore(&Workers[commitedWorkerIndex].Queue.Jobs[commitedJobIndex], job);
+
+        // Assure that our writes are globally visible before we wake up our worker thread.
+        // We can avoid having it iterate uselessly one more time.
+        // This fence is not neccessary but a convenience for our worker thread.
+        IB::threadStoreFence();
+        IB::signalThreadEvent(Workers[commitedWorkerIndex].SleepEvent); // Signal our sleeping worker
+    }
 
     void WorkerFunc(void *data)
     {
@@ -210,6 +293,16 @@ namespace
 
             Job *job = volatileLoad(&queue->Jobs[queue->Consumer]);
             reinterpret_cast<IB::JobFunc *>(job->Func.Value)(job->Data);
+
+            uint32_t generation = volatileLoad(&job->Generation);
+            volatileStore(&job->Generation, job->Generation+1);
+            volatileStore<Job *volatile>(&queue->Jobs[queue->Consumer], nullptr);
+            // Assure that our generation increment is visible before we return our job to the pool
+            // We also want to assure that we clear our job from the queue, that's how we know
+            // we have a job available.
+            // If it wasn't, our job could be pulled from the pool,
+            // and a handle created with the wrong generation index.
+            IB::threadStoreFence();
             volatileStore<void *volatile>(&job->Func.Value, nullptr);
 
             // Make sure other threads see our writes to the job queue before we move our consumer index forward.
@@ -217,16 +310,42 @@ namespace
             // asserts on the producer side to make sure producers aren't stomping on each other.
             IB::threadStoreFence();
             volatileStore(&queue->Consumer, (queue->Consumer + 1) % MaxJobCount);
+
+            // Attempt to signal all our waiting jobs
+            uint32_t jobIndex = static_cast<uint32_t>(job - JobPool);
+            for (uint32_t i = 0; i < MaxJobWaiters; i++)
+            {
+                uint64_t waitHandle = WaitList.Waiters[jobIndex][i].Value;
+                // If we fail this branch and move on,
+                // and then the continueJob writes to that slot for this job,
+                // then that means our generation index was already incremented.
+                // and as a result the continueJob function will immediatly commit the waiting job.
+                if (waitHandle != 0)
+                {
+                    uint32_t myGeneration = waitHandle >> 32;
+                    uint32_t theirIndex = (waitHandle & 0xFFFFFFFF) - 1;
+
+                    if (myGeneration == generation)
+                    {
+                        // Attempt to take the job from the list of waiters.
+                        // If we failed to take it, ignore it,
+                        // it means the job was committed by the "continueJob" call.
+                        if (atomicCompareExchange(&WaitList.Waiters[jobIndex][i], waitHandle, 0) == waitHandle)
+                        {
+                            commitJob(&JobPool[theirIndex]);
+                        }
+                    }
+                }
+            }
         }
     }
-
-    thread_local uint32_t NextWorker = 0;
 } // namespace
 
 namespace IB
 {
     void initJobSystem()
     {
+        memset(&WaitList, 0, sizeof(WaitList)); // Zero at runtime. Compiler hates zeroing this out.
         for (uint32_t i = 0; i < WorkerCount; i++)
         {
             Workers[i].Alive = true;
@@ -255,71 +374,58 @@ namespace IB
         }
     }
 
-    void launchJob(JobDesc desc)
+    JobHandle continueJob(JobDesc desc, JobHandle sourceJob)
     {
-        Job *job = nullptr;
+        Job* job = takeJob(desc);
+        uint32_t jobGeneration = volatileLoad(&job->Generation);
 
-        // Get a job from our pool
-        // Many threads can be trying to pull from the pool at the same time
-        // Assure that we can commit one of the elements to ourselves using a compare exchange
-        for (uint32_t i = 0; i < MaxJobPoolCount; i++)
+        uint32_t sourceJobIndex = sourceJob.Value & 0xFFFFFFFF;
+        uint32_t sourceJobGeneration = sourceJob.Value >> 32;
+
+        // We add 1 to our job index because we want to have a "no waiters" value.
+        uint64_t waitHandle = (static_cast<uint64_t>(sourceJobGeneration) << 32) | (static_cast<uint32_t>(job - JobPool) + 1);
+
+        uint32_t listIndex = UINT32_MAX;
+        while (listIndex == UINT32_MAX)
         {
-            // Everyone is trying to get a job from the pool, make sure that we've taken it with a compare exchange.
-            if (atomicCompareExchange(&JobPool[i].Func, nullptr, desc.Func) == nullptr)
+            for (uint32_t i = 0; i < MaxJobWaiters; i++)
             {
-                job = &JobPool[i];
-                break;
-            }
-        }
-
-        IB_ASSERT(job != nullptr, "Failed to get a job from the job pool!");
-        static_assert(sizeof(job->Data) == sizeof(desc.JobData), "Job description data size doesn't match job data size.");
-        memcpy(job->Data, desc.JobData, sizeof(desc.JobData));
-
-        // Keep trying to allocator to various workers.
-        // If all the worker queues are full, then we'll iterate until they aren't.
-        // If this ends up being a problem, we can add a thread event to make our thread sleep.
-        uint32_t commitedWorkerIndex = UINT32_MAX;
-        uint32_t commitedJobIndex = UINT32_MAX;
-        while (commitedWorkerIndex == UINT32_MAX) // Until we've commited to a worker.
-        {
-            // Simply increment our value, use the modulo as our indexing.
-            uint32_t worker = (NextWorker++) % WorkerCount;
-
-            // If our queue has space, try to commit our slot by doing a compare and exchange.
-            // If it succeeds then we've commited our producer index and moved the index forward.
-            // This will be visible to the worker thread,
-            // however it will simply wait to make sure that it has a job to do before
-            // it moves on to the next element.
-            uint32_t currentProducerIndex = Workers[worker].Queue.Producer.Value;
-            uint32_t nextProducerIndex = (currentProducerIndex + 1) % MaxJobCount;
-            while (nextProducerIndex != volatileLoad(&Workers[worker].Queue.Consumer)) // Do we still have space in this queue? Keep trying.
-            {
-                if (atomicCompareExchange(&Workers[worker].Queue.Producer, currentProducerIndex, nextProducerIndex) == currentProducerIndex)
+                if (atomicCompareExchange(&WaitList.Waiters[sourceJobIndex][i], 0, waitHandle) == 0)
                 {
-                    // If we succesfuly commited to our producer index, we can use these indices.
-                    commitedWorkerIndex = worker;
-                    commitedJobIndex = currentProducerIndex;
+                    listIndex = i;
                     break;
                 }
-                else
-                {
-                    currentProducerIndex = Workers[worker].Queue.Producer.Value;
-                    nextProducerIndex = (currentProducerIndex + 1) % MaxJobCount;
-                }
             }
         }
 
-        // If our thread is preempted before we set out job,
-        // then our worker thread will simply sleep until the job has actually been written to the variable.
-        // We will then wake it up after we're done writting it out.
-        IB_ASSERT(Workers[commitedWorkerIndex].Queue.Jobs[commitedJobIndex] == nullptr, "We're expecting our job to be null here! Did someone write to it before us?!?");
-        volatileStore(&Workers[commitedWorkerIndex].Queue.Jobs[commitedJobIndex], job);
+        // At this point, we could get preempted and the job could take our job from the wait list
 
-        // Assure that our writes are globally visible before we wake up our worker thread.
-        // We can avoid having it iterate uselessly one more time.
-        // This fence is not neccessary but a convenience for our worker thread.
-        threadStoreFence();
-        signalThreadEvent(Workers[commitedWorkerIndex].SleepEvent); // Signal our sleeping worker
+        // If our job has moved on from our generation, that means it's complete.
+        if (JobPool[sourceJobIndex].Generation > sourceJobGeneration)
+        {
+            // At this point, there's 3 possibilities.
+            // 1. No one is contending with us, we simply clear our wait index and commit our job
+            // 2. The job preempted us and commited the job for us
+            // 3. The job preempted us, commited the job for us and then someone else added their job to the list
+
+            // waitHandle cannot be equal to our handle for another job at this point because we've taken that job
+            // index from the job pool.
+            if (atomicCompareExchange(&WaitList.Waiters[sourceJobIndex][listIndex], waitHandle, 0) == waitHandle)
+            {
+                commitJob(job);
+            }
+        }
+
+        return { (static_cast<uint64_t>(jobGeneration) << 32) | static_cast<uint32_t>(job - JobPool) };
+    }
+
+    JobHandle launchJob(JobDesc desc)
+    {
+        Job* job = takeJob(desc);
+        // Grab our job generation before we commit it.
+        // The job generation might increment if we get preempted before our return.
+        uint32_t jobGeneration = volatileLoad(&job->Generation);
+        commitJob(job);
+        return { (static_cast<uint64_t>(jobGeneration) << 32) | static_cast<uint32_t>(job - JobPool) };
     }
 } // namespace IB

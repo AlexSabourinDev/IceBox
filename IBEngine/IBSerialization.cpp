@@ -45,5 +45,10 @@ namespace IB
             stream->Memory += size;
             return memory;
         }
+
+        void advance(MemoryStream* stream, size_t size)
+        {
+            stream->Memory += size;
+        }
     }
 } // namespace IB

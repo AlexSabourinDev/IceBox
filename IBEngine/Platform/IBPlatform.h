@@ -151,6 +151,11 @@ namespace IB
         uint32_t volatile Value;
     };
 
+    struct AtomicU64
+    {
+        uint64_t volatile Value;
+    };
+
     struct AtomicPtr
     {
         void *volatile Value;
@@ -159,6 +164,7 @@ namespace IB
     IB_API uint32_t atomicIncrement(AtomicU32 *atomic);
     IB_API uint32_t atomicDecrement(AtomicU32 *atomic);
     IB_API uint32_t atomicCompareExchange(AtomicU32 *atomic, uint32_t compare, uint32_t exchange);
+    IB_API uint64_t atomicCompareExchange(AtomicU64 *atomic, uint64_t compare, uint64_t exchange);
     IB_API void *atomicCompareExchange(AtomicPtr *atomic, void *compare, void *exchange);
 
     // Threading API

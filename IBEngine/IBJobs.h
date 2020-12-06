@@ -30,23 +30,45 @@ namespace IB
         uint8_t JobData[MaxJobDataSize] = {};
     };
 
+    struct JobHandle
+    {
+        uint64_t Value;
+    };
+
     IB_API void initJobSystem();
     IB_API void killJobSystem();
-    IB_API void launchJob(JobDesc desc);
+    IB_API JobHandle launchJob(JobDesc desc);
+    IB_API JobHandle continueJob(JobDesc desc, JobHandle sourceJob);
 
     template <typename T>
-    void launchJob(const T &functor)
+    JobHandle launchJob(const T &functor)
     {
         static_assert(sizeof(T) <= MaxJobDataSize, "Functor is too large for job. Consider allocating it on the heap.");
 
         JobDesc desc;
         desc.Func = [](void *functor) { (*reinterpret_cast<T *>(functor))(); };
         memcpy(desc.JobData, &functor, sizeof(T));
-        launchJob(desc);
+        return launchJob(desc);
     }
 
-    inline void launchJob(JobFunc *job, void *data)
+    inline JobHandle launchJob(JobFunc *job, void *data)
     {
-        launchJob([job, data]() { job(data); });
+        return launchJob([job, data]() { job(data); });
+    }
+
+    template <typename T>
+    JobHandle continueJob(const T &functor, JobHandle sourceJob)
+    {
+        static_assert(sizeof(T) <= MaxJobDataSize, "Functor is too large for job. Consider allocating it on the heap.");
+
+        JobDesc desc;
+        desc.Func = [](void *functor) { (*reinterpret_cast<T *>(functor))(); };
+        memcpy(desc.JobData, &functor, sizeof(T));
+        return continueJob(desc, sourceJob);
+    }
+
+    inline JobHandle continueJob(JobFunc *job, void *data, JobHandle sourceJob)
+    {
+        return continueJob([job, data]() { job(data); }, sourceJob);
     }
 } // namespace IB
