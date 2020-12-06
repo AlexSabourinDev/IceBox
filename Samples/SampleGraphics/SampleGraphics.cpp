@@ -4,7 +4,7 @@
 #include <IBEngine/IBRendererFrontend.h>
 #include <IBEngine/IBSerialization.h>
 #include <IBEngine/IBLogging.h>
-#include <IBEngine/Platform/IBPlatform.h>
+#include <IBEngine/IBPlatform.h>
 
 #include <stdio.h>
 #include <string.h>
@@ -155,7 +155,7 @@ int main()
     winDesc.CallbackState = &sampleState;
     IB::WindowHandle window = IB::createWindow(winDesc);
 
-    IB::File forwardSampleFile = IB::openFile("../Assets/Compiled/SampleForward.c.hlsl", IB::OpenFileOptions::Read);
+    IB::File forwardSampleFile = IB::openFile("../Assets/Compiled/SampleForward.c.shdr", IB::OpenFileOptions::Read);
     void *forwardSample = IB::mapFile(forwardSampleFile);
 
     IB::ShaderAsset shaders;
@@ -168,7 +168,7 @@ int main()
     rendererDesc.Materials.Forward.VShaderSize = shaders.VertexShaderSize;
     rendererDesc.Materials.Forward.FShader = shaders.FragShader;
     rendererDesc.Materials.Forward.FShaderSize = shaders.FragShaderSize;
-    IB::initRenderer(&rendererDesc);
+    IB::initRenderer(rendererDesc);
 
     // Can unmap shaders now
     IB::unmapFile(forwardSampleFile);
@@ -181,13 +181,13 @@ int main()
     imageDesc.Width = 2;
     imageDesc.Height = 2;
     imageDesc.Data = imageTexels;
-    IB::ImageHandle albedoImage = IB::createImage(&imageDesc);
+    IB::ImageHandle albedoImage = IB::createImage(imageDesc);
 
     float tint[4] = {1.0f, 1.0f, 1.0f, 1.0f};
     IB::ForwardDesc matDesc = {};
     memcpy(matDesc.AlbedoTint, tint, sizeof(float) * 4);
     matDesc.AlbedoImage = albedoImage;
-    IB::MaterialHandle someMaterial = IB::createMaterial(&matDesc);
+    IB::MaterialHandle someMaterial = IB::createMaterial(matDesc);
 
     uint8_t whiteImageTexels[] = {255, 255, 255, 255};
 
@@ -196,12 +196,12 @@ int main()
     whiteImageDesc.Width = 1;
     whiteImageDesc.Height = 1;
     whiteImageDesc.Data = whiteImageTexels;
-    IB::ImageHandle whiteImage = IB::createImage(&whiteImageDesc);
+    IB::ImageHandle whiteImage = IB::createImage(whiteImageDesc);
 
     IB::ForwardDesc gizmoMatDesc = {};
     memcpy(gizmoMatDesc.AlbedoTint, tint, sizeof(float) * 4);
     gizmoMatDesc.AlbedoImage = whiteImage;
-    IB::MaterialHandle gizmoMaterial = IB::createMaterial(&gizmoMatDesc);
+    IB::MaterialHandle gizmoMaterial = IB::createMaterial(gizmoMatDesc);
 
     IB::File meshFile = IB::openFile("../Assets/Compiled/Box.c.msh", IB::OpenFileOptions::Read);
     void *meshData = IB::mapFile(meshFile);
@@ -224,7 +224,7 @@ int main()
     meshDesc.Indices.Data = mesh.Indices;
     meshDesc.Indices.Count = mesh.IndexCount;
 
-    IB::MeshHandle someMesh = IB::createMesh(&meshDesc);
+    IB::MeshHandle someMesh = IB::createMesh(meshDesc);
 
     // Don't need mesh memory anymore, it's fed to the GPU
     IB::unmapFile(meshFile);
@@ -344,7 +344,7 @@ int main()
         meshDesc.Indices.Data = indices;
         meshDesc.Indices.Count = axisIndexCount * 3;
 
-        gizmoMesh = IB::createMesh(&meshDesc);
+        gizmoMesh = IB::createMesh(meshDesc);
     }
 
     float fov = 1.0f / tanf(3.1415f * 0.25);
@@ -425,6 +425,10 @@ int main()
             viewDesc.ViewProj = sampleState.ViewProj;
             viewDesc.Forward.Passes[IB::ViewDesc::Pass::Default] = worldPass;
 
+            IB::ViewDesc::MeshInstances gizmoInstance = {};
+            IB::ViewDesc::Batch gizmoBatch = {};
+            IB::ViewDesc::Pass gizmoPass;
+            IB::Mat3x4 gizmoTransform;
             if (!sampleState.CullGizmo)
             {
                 sampleState.GizmoPos = sampleState.MeshPos;
@@ -436,31 +440,28 @@ int main()
                 sampleState.GizmoPos.y = 5.0f + cameraPos.y;
                 sampleState.GizmoPos.z = sampleState.GizmoPos.z * similarTrianglesScale + cameraPos.z * (1.0f - similarTrianglesScale);
 
-                IB::Mat3x4 gizmoTransform =
+                gizmoTransform =
                 {
                     {{1.0f, 0.0f, 0.0f, sampleState.GizmoPos.x},
                      {0.0f, 1.0f, 0.0f, sampleState.GizmoPos.y},
                      {0.0f, 0.0f, 1.0f, sampleState.GizmoPos.z}},
                 };
 
-                IB::ViewDesc::MeshInstances gizmoInstance = {};
                 gizmoInstance.Mesh = gizmoMesh;
                 gizmoInstance.Transforms = &gizmoTransform;
                 gizmoInstance.Count = 1;
 
-                IB::ViewDesc::Batch gizmoBatch = {};
                 gizmoBatch.Material = gizmoMaterial;
                 gizmoBatch.Meshes = &gizmoInstance;
                 gizmoBatch.MeshCount = 1;
 
-                IB::ViewDesc::Pass gizmoPass;
                 gizmoPass.Batches = &gizmoBatch;
                 gizmoPass.BatchCount = 1;
 
                 viewDesc.Forward.Passes[IB::ViewDesc::Pass::DebugOverlay] = gizmoPass;
             }
 
-            IB::drawView(&viewDesc);
+            IB::drawView(viewDesc);
         }
     }
 

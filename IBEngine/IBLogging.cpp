@@ -1,6 +1,6 @@
 #include "IBLogging.h"
 
-#include "Platform/IBPlatform.h"
+#include "IBPlatform.h"
 
 #include <stdio.h>
 #include <stdint.h>

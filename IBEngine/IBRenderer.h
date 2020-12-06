@@ -37,14 +37,14 @@ namespace IB
     struct WindowHandle;
     struct RendererDesc
     {
-        WindowHandle *Window;
+        WindowHandle const*Window;
         struct
         {
             struct
             {
-                uint8_t *VShader = nullptr;
+                uint8_t const*VShader = nullptr;
                 uint32_t VShaderSize = 0;
-                uint8_t *FShader = nullptr;
+                uint8_t const*FShader = nullptr;
                 uint32_t FShaderSize = 0;
             } Forward;
         } Materials;
@@ -62,13 +62,13 @@ namespace IB
     {
         struct
         {
-            Vertex *Data = nullptr;
+            Vertex const*Data = nullptr;
             uint32_t Count = 0; // number of vertices
         } Vertices;
 
         struct
         {
-            uint16_t *Data = nullptr;
+            uint16_t const*Data = nullptr;
             uint32_t Count = 0; // number of indices
         } Indices;
     };
@@ -148,10 +148,10 @@ namespace IB
         } Forward;
     };
 
-    IB_API void initRenderer(RendererDesc const *desc);
+    IB_API void initRenderer(RendererDesc const &desc);
     IB_API void killRenderer();
-    IB_API MeshHandle createMesh(MeshDesc const *desc);
-    IB_API ImageHandle createImage(ImageDesc const *desc);
-    IB_API MaterialHandle createMaterial(ForwardDesc const *desc);
-    IB_API void drawView(ViewDesc const *view);
+    IB_API MeshHandle createMesh(MeshDesc const &desc);
+    IB_API ImageHandle createImage(ImageDesc const &desc);
+    IB_API MaterialHandle createMaterial(ForwardDesc const &desc);
+    IB_API void drawView(ViewDesc const &view);
 } // namespace IB

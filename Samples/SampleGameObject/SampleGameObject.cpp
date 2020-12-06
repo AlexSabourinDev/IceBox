@@ -3,146 +3,281 @@
 #include <IBEngine/IBSerialization.h>
 #include <IBEngine/IBJobs.h>
 #include <IBEngine/IBRendererFrontend.h>
+#include <IBEngine/IBAllocator.h>
+#include <IBEngine/IBLogging.h>
+#include <IBEngine/IBAsset.h>
 #include <stddef.h>
 #include <string.h>
 #include <Windows.h>
-
-struct TransformProperty
-{
-    IB::Mat3x4 Local;
-};
 
 struct EntityID
 {
     uint32_t Value;
 };
 
-uint32_t EntityTable[1024];
-
 IB::Mat3x4 LocalTransforms[1024];
 IB::Mat3x4 WorldTransforms[1024];
 EntityID EntityMap[1024];
 uint32_t ActiveTransforms = 0;
 
-struct LoadContext
+struct RendererProperty
 {
-    IB::Serialization::MemoryStream Stream;
-    uint64_t ParentAsset;
+    IB::Asset::ResourceHandle MeshResource;
+};
+RendererProperty RendererProperties[1024];
+uint32_t ActiveRendererProps = 0;
+
+class RendererPropertyAssetStreamer : public IB::Asset::IStreamer
+{
+public:
+    IB::Asset::LoadContinuation loadAsync(IB::Asset::LoadContext *context) override
+    {
+        enum
+        {
+            LoadMesh = 0,
+            Complete
+        };
+
+        if (context->State == LoadMesh)
+        {
+            context->Data = ActiveRendererProps++;
+
+            char const *path;
+            fromBinary(&context->Stream, &path);
+
+            IB::JobHandle meshJob = IB::Asset::loadResourceAsync(path, IB::Asset::toFourCC("MESH"), &RendererProperties[context->Data].MeshResource);
+            return IB::Asset::wait(&meshJob, 1, Complete);
+        }
+        else
+        {
+            return IB::Asset::complete({context->Data});
+        }
+    }
+
+    void saveThreadSafe(IB::Asset::SaveContext *context) override
+    {
+        RendererProperty renderer = RendererProperties[context->Asset.Value];
+        char const *resourcePath = IB::Asset::GetResourcePath(renderer.MeshResource);
+        toBinary(context->Stream, resourcePath);
+    }
+
+    void unloadThreadSafe(IB::Asset::AssetHandle asset) override
+    {
+        IB::Asset::releaseResourceAsync(RendererProperties[asset.Value].MeshResource);
+    }
 };
 
-void loadAssetAsync(IB::Serialization::MemoryStream stream, uint32_t type, uint64_t parentAsset);
-void loadAssetAsync(char const *assetPath, uint32_t type, uint64_t parentAsset);
-
-void onMeshAssetLoad(LoadContext context)
+class TransformPropertyAssetStreamer : public IB::Asset::IStreamer
 {
-    IB::MeshAsset mesh;
-    fromBinary(&context.Stream, &mesh);
-}
-
-void onRendererPropertyLoad(LoadContext context)
-{
-    uint32_t stringSize;
-    fromBinary(&context.Stream, &stringSize);
-
-    char const* path = reinterpret_cast<char const*>(fromBinary(&context.Stream, stringSize));
-
-    loadAssetAsync(path, 'MESH', context.ParentAsset);
-}
-
-void onTransformPropertyLoad(LoadContext context)
-{
-    TransformProperty asset = {};
-    fromBinary(&context.Stream, &asset);
-
-    LocalTransforms[ActiveTransforms] = asset.Local;
-    WorldTransforms[ActiveTransforms] = asset.Local;
-    EntityMap[ActiveTransforms] = {static_cast<uint32_t>(context.ParentAsset)};
-    ActiveTransforms++;
-}
-
-void onEntityAssetLoad(LoadContext context)
-{
-    EntityID entity;
-    fromBinary(&context.Stream, &entity);
-    EntityTable[0] = entity.Value;
-
-    uint32_t propertyCount;
-    fromBinary(&context.Stream, &propertyCount);
-
-    for (uint32_t i = 0; i < propertyCount; i++)
+public:
+    IB::Asset::LoadContinuation loadAsync(IB::Asset::LoadContext *context) override
     {
-        uint32_t type;
-        fromBinary(&context.Stream, &type);
-        uint32_t offset;
-        fromBinary(&context.Stream, &offset);
-        loadAssetAsync(context.Stream, type, entity.Value);
-        advance(&context.Stream, offset);
+        IB::Mat3x4 localTransform;
+        fromBinary(&context->Stream, &localTransform);
+
+        LocalTransforms[ActiveTransforms] = localTransform;
+        WorldTransforms[ActiveTransforms] = localTransform;
+        EntityMap[ActiveTransforms] = {static_cast<uint32_t>(context->ParentAsset.Value)};
+        return IB::Asset::complete({ActiveTransforms++});
     }
-}
 
-void loadAsset(IB::Serialization::MemoryStream stream, uint32_t type, uint64_t parentAsset)
-{
-    LoadContext context = { stream, parentAsset };
-
-    switch (type)
+    void saveThreadSafe(IB::Asset::SaveContext *context) override
     {
-    case 'ENTT':
-        onEntityAssetLoad(context);
-        break;
-    case 'TFRM':
-        onTransformPropertyLoad(context);
-        break;
-    case 'RNDR':
-        onRendererPropertyLoad(context);
-        break;
-    case 'MESH':
-        onMeshAssetLoad(context);
-        break;
+        IB::Mat3x4 transform = LocalTransforms[context->Asset.Value];
+        toBinary(context->Stream, transform);
     }
-}
 
-void loadAssetAsync(IB::Serialization::MemoryStream stream, uint32_t type, uint64_t parentAsset)
+    void unloadThreadSafe(IB::Asset::AssetHandle) override
+    {
+        // Nothing to do here. (at least, not right now)
+    }
+};
+
+struct EntityProperty
 {
-    IB::launchJob([stream, type, parentAsset]() {
-        loadAsset(stream, type, parentAsset);
-    });
-}
+    IB::Asset::FourCC Type;
+    IB::Asset::AssetHandle Asset;
+};
 
-void loadAssetAsync(char const *assetPath, uint32_t type, uint64_t parentAsset)
+struct EntityAsset
 {
-    IB::launchJob([assetPath, type, parentAsset]() {
-        IB::File file = IB::openFile(assetPath, IB::OpenFileOptions::Read);
-        void *memory = IB::mapFile(file);
-        IB::Serialization::MemoryStream stream = {reinterpret_cast<uint8_t *>(memory)};
+    EntityID Id;
+    EntityProperty *Properties;
+    uint32_t PropertyCount;
+};
 
-        loadAsset(stream, type, parentAsset);
-    });
-}
+EntityAsset EntityAssets[100];
+
+class EntityAssetStreamer : public IB::Asset::IStreamer
+{
+public:
+    IB::Asset::LoadContinuation loadAsync(IB::Asset::LoadContext *context) override
+    {
+        enum State
+        {
+            LoadProperties = 0,
+            Log
+        };
+
+        if (context->State == LoadProperties)
+        {
+            fromBinary(&context->Stream, &EntityAssets[0].Id);
+            fromBinary(&context->Stream, &EntityAssets[0].PropertyCount);
+
+            EntityAssets[0].Properties = IB::allocateArray<EntityProperty>(EntityAssets[0].PropertyCount);
+
+            IB_ASSERT(EntityAssets[0].PropertyCount <= IB::Asset::MaxDependencyCount, "Too many properties!");
+            IB::JobHandle loadHandles[IB::Asset::MaxDependencyCount];
+            uint32_t handleCount = 0;
+            for (uint32_t i = 0; i < EntityAssets[0].PropertyCount; i++)
+            {
+                fromBinary(&context->Stream, &EntityAssets[0].Properties[i].Type);
+                uint32_t offset;
+                fromBinary(&context->Stream, &offset);
+                loadHandles[handleCount++] = IB::Asset::loadSubAssetAsync(context->Stream, EntityAssets[0].Properties[i].Type, {EntityAssets[0].Id.Value}, &EntityAssets[0].Properties[i].Asset);
+                advance(&context->Stream, offset);
+            }
+
+            context->Data = 0;
+            return IB::Asset::wait(loadHandles, handleCount, Log);
+        }
+        else
+        {
+            IB_LOG(IB::LogLevel::Log, "Asset", "Entity Load Complete");
+            return IB::Asset::complete({context->Data});
+        }
+    }
+
+    void saveThreadSafe(IB::Asset::SaveContext *context) override
+    {
+        uint32_t entityIndex = static_cast<uint32_t>(context->Asset.Value);
+        toBinary(context->Stream, EntityAssets[entityIndex].Id);
+        toBinary(context->Stream, EntityAssets[entityIndex].PropertyCount);
+        for (uint32_t i = 0; i < EntityAssets[entityIndex].PropertyCount; i++)
+        {
+            toBinary(context->Stream, EntityAssets[entityIndex].Properties[i].Type);
+
+            uint32_t dummyWriteSize = 0;
+            toBinary(context->Stream, dummyWriteSize);
+            uint32_t writeStart = flush(context->Stream);
+            IB::Asset::saveSubAssetThreadSafe(context->Stream, EntityAssets[entityIndex].Properties[i].Type, EntityAssets[entityIndex].Properties[i].Asset);
+            uint32_t writeEnd = flush(context->Stream);
+
+            // Write our written size right before our sub asset.
+            uint32_t writeSize = writeEnd - writeStart;
+            IB::writeToFile(context->Stream->File, &writeSize, sizeof(uint32_t), writeStart - sizeof(uint32_t));
+        }
+    }
+
+    void unloadThreadSafe(IB::Asset::AssetHandle assetHandle) override
+    {
+        IB_ASSERT(EntityAssets[assetHandle.Value].PropertyCount > 0, "");
+        IB::deallocateArray(EntityAssets[assetHandle.Value].Properties, EntityAssets[assetHandle.Value].PropertyCount);
+    }
+};
+
+EntityAssetStreamer EntityStreamer;
+RendererPropertyAssetStreamer RendererPropertyStreamer;
+TransformPropertyAssetStreamer TransformPropertyStreamer;
 
 int main()
 {
-    IB::initJobSystem();
+    IB::WindowDesc winDesc = {};
+    winDesc.Name = "Ice Box";
+    winDesc.Width = 500;
+    winDesc.Height = 500;
+    winDesc.OnWindowMessage = [](void * /*data*/, IB::WindowMessage message) {
+        switch (message.Type)
+        {
+        case IB::WindowMessage::Close:
+            IB::sendQuitMessage();
+            break;
+        }
+    };
+    IB::WindowHandle window = IB::createWindow(winDesc);
 
-#pragma pack(1)
-    struct EntityAssetFile
-    {
-        EntityID Entity;
-        uint32_t PropertyCount = 2;
-        uint32_t TFRM = 'TFRM';
-        uint32_t NextOffset1 = sizeof(TransformProperty);
-        TransformProperty Transform;
-        uint32_t RNDR = 'RNDR';
-        uint32_t NextOffset2 = sizeof(uint32_t) + 29;
-        uint32_t StringSize = 29;
-        char Path[29] = "../Assets/Compiled/Box.c.msh";
+    IB::Serialization::initSerialization();
+    IB::initJobSystem();
+    IB::initRendererFrontend({&window});
+    IB::Asset::addStreamer(IB::Asset::toFourCC("ENTT"), &EntityStreamer);
+    IB::Asset::addStreamer(IB::Asset::toFourCC("TFRM"), &TransformPropertyStreamer);
+    IB::Asset::addStreamer(IB::Asset::toFourCC("RNDR"), &RendererPropertyStreamer);
+
+    auto waitOnJob = [](IB::JobHandle job) {
+        IB::ThreadEvent threadEvent = IB::createThreadEvent();
+        continueJob([threadEvent]() {
+            IB::signalThreadEvent(threadEvent);
+            return IB::JobResult::Complete;
+        },
+                    &job, 1);
+        IB::waitOnThreadEvent(threadEvent);
+        IB::destroyThreadEvent(threadEvent);
     };
 
-    EntityAssetFile asset;
-    asset.Entity = {5};
-    asset.Transform = {{{{1.0f, 0.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f, 0.0f}}}};
-    IB::Serialization::MemoryStream stream = {reinterpret_cast<uint8_t *>(&asset)};
-    loadAssetAsync(stream, 'ENTT', 0);
+    // Test double asset loading
+    {
+        IB::Asset::ResourceHandle meshAsset1;
+        IB::Asset::ResourceHandle meshAsset2;
 
-    Sleep(100000);
+        IB::Asset::loadResourceAsync("Box.msh", IB::Asset::toFourCC("MESH"), &meshAsset1);
+        IB::JobHandle meshJobHandle = IB::Asset::loadResourceAsync("Box.msh", IB::Asset::toFourCC("MESH"), &meshAsset2);
+        waitOnJob(meshJobHandle);
+
+        IB_ASSERT(meshAsset1.Hash == meshAsset2.Hash, "Loaded the same asset.");
+        IB::Asset::releaseResourceAsync(meshAsset2);
+        IB::Asset::releaseResourceAsync(meshAsset1);
+    }
+
+    // Create our renderer property
+    IB::Asset::AssetHandle rendererPropertyAsset = {0};
+    {
+        IB::JobHandle meshJobHandle = IB::Asset::loadResourceAsync("Box.msh", IB::Asset::toFourCC("MESH"), &RendererProperties[0].MeshResource);
+        waitOnJob(meshJobHandle);
+    }
+
+    // Create our transform property
+    IB::Asset::AssetHandle transformPropertyAsset = {0};
+    {
+        LocalTransforms[0] = {};
+    }
+
+    // Create our entity asset
+    IB::Asset::AssetHandle entityAsset = {0};
+    {
+        EntityProperty *properties = IB::allocateArray<EntityProperty>(2);
+        properties[0] = {IB::Asset::toFourCC("RNDR"), rendererPropertyAsset};
+        properties[1] = {IB::Asset::toFourCC("TFRM"), transformPropertyAsset};
+
+        EntityAssets[0].Id = {0};
+        EntityAssets[0].Properties = properties;
+        EntityAssets[0].PropertyCount = 2;
+    }
+
+    // Save our resource
+    {
+        IB::Asset::ResourceHandle entityResource = IB::Asset::createResourceThreadSafe("TestEntity.entt", IB::Asset::toFourCC("ENTT"), entityAsset);
+        IB::JobHandle saveJobHandle = saveResourceAsync(entityResource);
+
+        waitOnJob(saveJobHandle);
+
+        IB::Asset::ResourceHandle savedEntityResource;
+        IB::JobHandle entityJobHandle = IB::Asset::loadResourceAsync("TestEntity.entt", IB::Asset::toFourCC("ENTT"), &savedEntityResource);
+        waitOnJob(entityJobHandle);
+        IB_ASSERT(savedEntityResource.Hash == entityResource.Hash, "Failed to load the same asset!");
+
+        IB::Asset::releaseResourceAsync(entityResource);
+        IB::Asset::releaseResourceAsync(savedEntityResource);
+    }
+
+    {
+        IB::Asset::ResourceHandle entityResource;
+        IB::JobHandle entityJobHandle = IB::Asset::loadResourceAsync("TestEntity.entt", IB::Asset::toFourCC("ENTT"), &entityResource);
+        waitOnJob(entityJobHandle);
+        IB::Asset::releaseResourceAsync(entityResource);
+    }
+
+    IB::killRendererFrontend();
+    IB::destroyWindow(window);
     IB::killJobSystem();
+    IB::Serialization::killSerialization();
 }

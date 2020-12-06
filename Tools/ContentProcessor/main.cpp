@@ -1,5 +1,5 @@
 #define _CRT_SECURE_NO_WARNINGS
-#include <IBEngine/Platform/IBPlatform.h>
+#include <IBEngine/IBPlatform.h>
 #include <IBEngine/IBLogging.h>
 #include <IBEngine/IBRendererFrontend.h>
 #include <IBEngine/IBSerialization.h>
@@ -69,8 +69,8 @@ void processMesh(char const *rawPath, char const *compiledPath)
     toBinary(&fileStream, asset);
     flush(&fileStream);
 
-    IB::deallocateArray(asset.Vertices);
-    IB::deallocateArray(asset.Indices);
+    IB::deallocateArray(asset.Vertices, asset.VertexCount);
+    IB::deallocateArray(asset.Indices, asset.IndexCount);
 }
 
 void processShader(char const *rawPath, char const *compiledPath)
@@ -193,13 +193,13 @@ int main(int argc, char const *argv[])
         if (strcmp(".obj", relativePath + extensionIndex) == 0 || strcmp(".fbx", relativePath + extensionIndex) == 0)
         {
             char compiledPath[255];
-            sprintf(compiledPath, "%s/%.*s.c.msh", compiledDirectory, extensionIndex, relativePath);
+            sprintf(compiledPath, "%s/%.*s.msh", compiledDirectory, extensionIndex, relativePath);
             processMesh(rawPath, compiledPath);
         }
         else if (strcmp(".hlsl", relativePath + extensionIndex) == 0)
         {
             char compiledPath[255];
-            sprintf(compiledPath, "%s/%.*s.c.hlsl", compiledDirectory, extensionIndex, relativePath);
+            sprintf(compiledPath, "%s/%.*s.shdr", compiledDirectory, extensionIndex, relativePath);
             processShader(rawPath, compiledPath);
         }
     }
