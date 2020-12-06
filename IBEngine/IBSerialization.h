@@ -36,6 +36,7 @@ namespace IB
 
         IB_API void fromBinary(MemoryStream *stream, void *data, size_t size);
         IB_API void *fromBinary(MemoryStream *stream, size_t size);
+        IB_API void advance(MemoryStream* stream, size_t size);
 
         template <typename T>
         void fromBinary(MemoryStream *stream, T *value)

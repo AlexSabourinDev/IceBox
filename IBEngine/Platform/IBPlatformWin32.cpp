@@ -382,6 +382,11 @@ namespace IB
         return InterlockedCompareExchangeNoFence(&atomic->Value, exchange, compare);
     }
 
+    uint64_t atomicCompareExchange(AtomicU64 *atomic, uint64_t compare, uint64_t exchange)
+    {
+        return InterlockedCompareExchangeNoFence64(reinterpret_cast<int64_t volatile *>(&atomic->Value), exchange, compare);
+    }
+
     void *atomicCompareExchange(AtomicPtr *atomic, void *compare, void *exchange)
     {
         return InterlockedCompareExchangePointerNoFence(&atomic->Value, exchange, compare);
