@@ -30,6 +30,7 @@ namespace IB
 
         struct IB_API MemoryStream
         {
+            MemoryStream() = default;
             MemoryStream(uint8_t *memory) : Memory(memory) {}
             uint8_t *Memory = nullptr;
         };

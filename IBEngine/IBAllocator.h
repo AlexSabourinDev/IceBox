@@ -38,7 +38,7 @@ namespace IB
     T *allocate(TArgs &&... args)
     {
         void *memory = memoryAllocate(sizeof(T), alignof(T));
-        return new (memory) T(std::forward<TArgs>(args)...);
+        return new (memory) T{ std::forward<TArgs>(args)... };
     }
 
     template <typename T>

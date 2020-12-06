@@ -3,9 +3,160 @@
 #include <IBEngine/IBSerialization.h>
 #include <IBEngine/IBJobs.h>
 #include <IBEngine/IBRendererFrontend.h>
+#include <IBEngine/IBAllocator.h>
+#include <IBEngine/IBLogging.h>
 #include <stddef.h>
 #include <string.h>
 #include <Windows.h>
+
+namespace IB
+{
+    namespace Asset
+    {
+        struct LoadContext
+        {
+            Serialization::MemoryStream Stream;
+            JobHandle Handle;
+            uint64_t ParentAsset = 0;
+            uint32_t State = 0;
+        };
+
+        struct LoadResult
+        {
+            enum
+            {
+                Advance,
+                Complete
+            };
+
+            JobHandle Dependencies[32];
+            uint32_t DependencyCount = 0;
+            uint32_t NextState;
+            uint32_t Continuation = Complete;
+        };
+
+        LoadResult wait(JobHandle* dependencies, uint32_t dependencyCount, uint32_t nextState)
+        {
+            LoadResult result = {};
+            memcpy(result.Dependencies, dependencies, sizeof(JobHandle) * dependencyCount);
+            result.DependencyCount = dependencyCount;
+            result.NextState = nextState;
+            result.Continuation = LoadResult::Advance;
+            return result;
+        }
+
+        LoadResult complete()
+        {
+            return {};
+        }
+
+        using LoadFunc = LoadResult(LoadContext* context);
+
+        struct Loader
+        {
+            LoadFunc* Load;
+            uint32_t Type = 0;
+        };
+        constexpr uint32_t MaxLoaderCount = 100;
+        Loader Loaders[MaxLoaderCount];
+
+        void addLoader(uint32_t type, LoadFunc load)
+        {
+            for (uint32_t i = 0; i < MaxLoaderCount; i++)
+            {
+                if (Loaders[i].Type == 0)
+                {
+                    Loaders[i].Type = type;
+                    Loaders[i].Load = load;
+                    break;
+                }
+            }
+        }
+
+        JobResult load(Loader* loader, LoadContext* context)
+        {
+            LoadResult result = loader->Load(context);
+            if (result.Continuation == LoadResult::Advance)
+            {
+                context->State = result.NextState;
+
+                IB_ASSERT(result.DependencyCount > 0, "If we want to advance, we need dependencies.");
+                // Resignal our job once our dependencies are complete.
+                continueJob(context->Handle, result.Dependencies, result.DependencyCount);
+                return JobResult::Sleep;
+            }
+            else
+            {
+                return JobResult::Complete;
+            }
+        }
+
+        JobHandle loadAsync(Serialization::MemoryStream stream, uint32_t type, uint64_t parentAsset)
+        {
+            LoadContext* context = allocate<LoadContext>( stream, parentAsset );
+            for (uint32_t i = 0; i < MaxLoaderCount; i++)
+            {
+                if (Loaders[i].Type == type)
+                {
+                    context->Handle = reserveJob([context, loader = &Loaders[i]]()
+                    {
+                        JobResult result = load(loader, context);
+                        if (result == JobResult::Complete)
+                        {
+                            deallocate(context);
+                        }
+                        return result;
+                    });
+                    launchJob(context->Handle);
+                }
+            }
+            return context->Handle;
+        }
+
+        IB::JobHandle loadAsync(char const *assetPath, uint32_t type, uint64_t parentAsset)
+        {
+            struct LoadFileData
+            {
+                File File;
+                void *Memory;
+                LoadContext Context;
+            };
+
+            Loader* loader = nullptr;
+            for (uint32_t i = 0; i < MaxLoaderCount; i++)
+            {
+                if (Loaders[i].Type == type)
+                {
+                    loader = &Loaders[i];
+                    break;
+                }
+            }
+
+            LoadFileData* loadFileData = allocate<LoadFileData>();
+            JobHandle fileJob = launchJob([assetPath, parentAsset, loadFileData]()
+            {
+                loadFileData->File = openFile(assetPath, OpenFileOptions::Read);
+                loadFileData->Memory = mapFile(loadFileData->File);
+                loadFileData->Context.Stream = { reinterpret_cast<uint8_t *>(loadFileData->Memory) };
+                loadFileData->Context.ParentAsset = parentAsset;
+                return JobResult::Complete;
+            });
+
+            loadFileData->Context.Handle = reserveJob([loadFileData, loader]()
+            {
+                JobResult result = load(loader, &loadFileData->Context);
+                if (result == JobResult::Complete)
+                {
+                    deallocate(loadFileData);
+                }
+                return result;
+            });
+            continueJob(loadFileData->Context.Handle, &fileJob, 1);
+
+            return loadFileData->Context.Handle;
+        }
+    }
+}
 
 struct TransformProperty
 {
@@ -24,104 +175,98 @@ IB::Mat3x4 WorldTransforms[1024];
 EntityID EntityMap[1024];
 uint32_t ActiveTransforms = 0;
 
-struct LoadContext
+IB::Asset::LoadResult onMeshAssetLoad(IB::Asset::LoadContext* context)
 {
-    IB::Serialization::MemoryStream Stream;
-    uint64_t ParentAsset;
-};
-
-void loadAssetAsync(IB::Serialization::MemoryStream stream, uint32_t type, uint64_t parentAsset);
-void loadAssetAsync(char const *assetPath, uint32_t type, uint64_t parentAsset);
-
-void onMeshAssetLoad(LoadContext context)
-{
+    printf("mesh\n");
     IB::MeshAsset mesh;
-    fromBinary(&context.Stream, &mesh);
+    fromBinary(&context->Stream, &mesh);
+    return IB::Asset::complete();
 }
 
-void onRendererPropertyLoad(LoadContext context)
+IB::Asset::LoadResult onRendererPropertyLoad(IB::Asset::LoadContext* context)
 {
-    uint32_t stringSize;
-    fromBinary(&context.Stream, &stringSize);
+    printf("renderer\n");
+    enum
+    {
+        LoadMesh = 0,
+        Complete
+    };
 
-    char const* path = reinterpret_cast<char const*>(fromBinary(&context.Stream, stringSize));
+    if (context->State == LoadMesh)
+    {
+        uint32_t stringSize;
+        fromBinary(&context->Stream, &stringSize);
 
-    loadAssetAsync(path, 'MESH', context.ParentAsset);
+        char const* path = reinterpret_cast<char const*>(fromBinary(&context->Stream, stringSize));
+
+        IB::JobHandle meshJob = IB::Asset::loadAsync(path, 'MESH', context->ParentAsset);
+        return IB::Asset::wait(&meshJob, 1, Complete);
+    }
+    else
+    {
+        return IB::Asset::complete();
+    }
 }
 
-void onTransformPropertyLoad(LoadContext context)
+IB::Asset::LoadResult onTransformPropertyLoad(IB::Asset::LoadContext *context)
 {
+    printf("transform\n");
     TransformProperty asset = {};
-    fromBinary(&context.Stream, &asset);
+    fromBinary(&context->Stream, &asset);
 
     LocalTransforms[ActiveTransforms] = asset.Local;
     WorldTransforms[ActiveTransforms] = asset.Local;
-    EntityMap[ActiveTransforms] = {static_cast<uint32_t>(context.ParentAsset)};
+    EntityMap[ActiveTransforms] = {static_cast<uint32_t>(context->ParentAsset)};
     ActiveTransforms++;
+    return IB::Asset::complete();
 }
 
-void onEntityAssetLoad(LoadContext context)
+IB::Asset::LoadResult onEntityLoad(IB::Asset::LoadContext *context)
 {
-    EntityID entity;
-    fromBinary(&context.Stream, &entity);
-    EntityTable[0] = entity.Value;
-
-    uint32_t propertyCount;
-    fromBinary(&context.Stream, &propertyCount);
-
-    for (uint32_t i = 0; i < propertyCount; i++)
+    printf("entity\n");
+    enum State
     {
-        uint32_t type;
-        fromBinary(&context.Stream, &type);
-        uint32_t offset;
-        fromBinary(&context.Stream, &offset);
-        loadAssetAsync(context.Stream, type, entity.Value);
-        advance(&context.Stream, offset);
-    }
-}
+        LoadProperties = 0,
+        Log
+    };
 
-void loadAsset(IB::Serialization::MemoryStream stream, uint32_t type, uint64_t parentAsset)
-{
-    LoadContext context = { stream, parentAsset };
-
-    switch (type)
+    if (context->State == LoadProperties)
     {
-    case 'ENTT':
-        onEntityAssetLoad(context);
-        break;
-    case 'TFRM':
-        onTransformPropertyLoad(context);
-        break;
-    case 'RNDR':
-        onRendererPropertyLoad(context);
-        break;
-    case 'MESH':
-        onMeshAssetLoad(context);
-        break;
+        EntityID entity;
+        fromBinary(&context->Stream, &entity);
+        EntityTable[0] = entity.Value;
+
+        uint32_t propertyCount;
+        fromBinary(&context->Stream, &propertyCount);
+
+        IB::JobHandle loadHandles[10];
+        uint32_t handleCount = 0;
+        for (uint32_t i = 0; i < propertyCount; i++)
+        {
+            uint32_t type;
+            fromBinary(&context->Stream, &type);
+            uint32_t offset;
+            fromBinary(&context->Stream, &offset);
+            loadHandles[handleCount++] = IB::Asset::loadAsync(context->Stream, type, entity.Value);
+            advance(&context->Stream, offset);
+        }
+
+        return IB::Asset::wait(loadHandles, handleCount, Log);
     }
-}
-
-void loadAssetAsync(IB::Serialization::MemoryStream stream, uint32_t type, uint64_t parentAsset)
-{
-    IB::launchJob([stream, type, parentAsset]() {
-        loadAsset(stream, type, parentAsset);
-    });
-}
-
-void loadAssetAsync(char const *assetPath, uint32_t type, uint64_t parentAsset)
-{
-    IB::launchJob([assetPath, type, parentAsset]() {
-        IB::File file = IB::openFile(assetPath, IB::OpenFileOptions::Read);
-        void *memory = IB::mapFile(file);
-        IB::Serialization::MemoryStream stream = {reinterpret_cast<uint8_t *>(memory)};
-
-        loadAsset(stream, type, parentAsset);
-    });
+    else
+    {
+        IB_LOG(IB::LogLevel::Log, "Asset", "Entity Load Complete");
+        return IB::Asset::complete();
+    }
 }
 
 int main()
 {
     IB::initJobSystem();
+    IB::Asset::addLoader('ENTT', &onEntityLoad);
+    IB::Asset::addLoader('TFRM', &onTransformPropertyLoad);
+    IB::Asset::addLoader('RNDR', &onRendererPropertyLoad);
+    IB::Asset::addLoader('MESH', &onMeshAssetLoad);
 
 #pragma pack(1)
     struct EntityAssetFile
@@ -141,8 +286,16 @@ int main()
     asset.Entity = {5};
     asset.Transform = {{{{1.0f, 0.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f, 0.0f}}}};
     IB::Serialization::MemoryStream stream = {reinterpret_cast<uint8_t *>(&asset)};
-    loadAssetAsync(stream, 'ENTT', 0);
 
-    Sleep(100000);
+    IB::ThreadEvent threadEvent = IB::createThreadEvent();
+    IB::JobHandle assetLoad = IB::Asset::loadAsync(stream, 'ENTT', 0);
+    continueJob([threadEvent]()
+    {
+        IB::signalThreadEvent(threadEvent);
+        return IB::JobResult::Complete;
+    }, &assetLoad, 1);
+
+    IB::waitOnThreadEvent(threadEvent);
+    IB::destroyThreadEvent(threadEvent);
     IB::killJobSystem();
 }
