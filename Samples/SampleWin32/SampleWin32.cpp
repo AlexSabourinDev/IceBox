@@ -1,4 +1,4 @@
-#include <IBEngine/Platform/IBPlatform.h>
+#include <IBEngine/IBPlatform.h>
 #include <IBEngine/IBLogging.h>
 
 int main()

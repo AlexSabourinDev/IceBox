@@ -8,11 +8,11 @@
     <Filter Include="Platform">
       <UniqueIdentifier>{4e58da6e-4915-433d-8259-5d0228f2653b}</UniqueIdentifier>
     </Filter>
+    <Filter Include="cJSON">
+      <UniqueIdentifier>{c55c632b-304b-4379-ad43-6b30580144a7}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="Platform\IBPlatform.h">
-      <Filter>Platform</Filter>
-    </ClInclude>
     <ClInclude Include="IBEngineAPI.h" />
     <ClInclude Include="IBLogging.h" />
     <ClInclude Include="IBAllocator.h" />
@@ -21,6 +21,11 @@
     <ClInclude Include="IBMath.h" />
     <ClInclude Include="IBRendererFrontend.h" />
     <ClInclude Include="IBSerialization.h" />
+    <ClInclude Include="IBPlatform.h" />
+    <ClInclude Include="IBAsset.h" />
+    <ClInclude Include="..\SDK\cJSON\cJSON.h">
+      <Filter>cJSON</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Platform\IBPlatformWin32.cpp">
@@ -32,5 +37,9 @@
     <ClCompile Include="IBRenderer.cpp" />
     <ClCompile Include="IBSerialization.cpp" />
     <ClCompile Include="IBRendererFrontend.cpp" />
+    <ClCompile Include="IBAsset.cpp" />
+    <ClCompile Include="..\SDK\cJSON\cJSON.c">
+      <Filter>cJSON</Filter>
+    </ClCompile>
   </ItemGroup>
 </Project>

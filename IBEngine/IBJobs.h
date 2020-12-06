@@ -24,6 +24,7 @@ TODO: explain job reservation flow and sleep/complete
 
 namespace IB
 {
+    constexpr uint32_t AllJobQueues = UINT32_MAX;
     enum class JobResult
     {
         Complete,
@@ -35,8 +36,9 @@ namespace IB
 
     struct JobDesc
     {
+        alignas(16) uint8_t JobData[MaxJobDataSize] = {};
         JobFunc *Func = nullptr;
-        uint8_t JobData[MaxJobDataSize] = {};
+        uint32_t QueueIndex = AllJobQueues;
     };
 
     struct JobHandle
@@ -80,6 +82,11 @@ namespace IB
     // Whereas
     // JobHandle = launchJob(JobThatReferencesJobHandle)
     // might introduce subtle bugs.
+    //
+    // Jobs can also be created with a QueueIndex that will
+    // force them to run on a particular thread.
+    // Consider avoiding this as much as possible due to the lack of parallelism
+    // involved in putting a large chunk of jobs in the same queue.
 
     // Reserve a job for later execution
     IB_API JobHandle reserveJob(JobDesc desc);
@@ -90,50 +97,38 @@ namespace IB
     // Utility API
 
     template <typename T>
-    JobHandle launchJob(const T &functor)
+    JobHandle launchJob(const T &functor, uint32_t queueIndex = AllJobQueues)
     {
         static_assert(sizeof(T) <= MaxJobDataSize, "Functor is too large for job. Consider allocating it on the heap.");
 
         JobDesc desc;
         desc.Func = [](void *functor) { return (*reinterpret_cast<T *>(functor))(); };
         memcpy(desc.JobData, &functor, sizeof(T));
+        desc.QueueIndex = queueIndex;
         return launchJob(desc);
     }
 
-    inline JobHandle launchJob(JobFunc *job, void *data)
-    {
-        return launchJob([job, data]() { return job(data); });
-    }
-
     template <typename T>
-    JobHandle continueJob(const T &functor, JobHandle* dependencies, uint32_t dependencyCount)
+    JobHandle continueJob(const T &functor, JobHandle* dependencies, uint32_t dependencyCount, uint32_t queueIndex = AllJobQueues)
     {
         static_assert(sizeof(T) <= MaxJobDataSize, "Functor is too large for job. Consider allocating it on the heap.");
 
         JobDesc desc;
         desc.Func = [](void *functor) { return (*reinterpret_cast<T *>(functor))(); };
         memcpy(desc.JobData, &functor, sizeof(T));
+        desc.QueueIndex = queueIndex;
         return continueJob(desc, dependencies, dependencyCount);
     }
 
-    inline JobHandle continueJob(JobFunc *job, void *data, JobHandle* dependencies, uint32_t dependencyCount)
-    {
-        return continueJob([job, data]() { return job(data); }, dependencies, dependencyCount);
-    }
-
     template <typename T>
-    JobHandle reserveJob(const T &functor)
+    JobHandle reserveJob(const T &functor, uint32_t queueIndex = AllJobQueues)
     {
         static_assert(sizeof(T) <= MaxJobDataSize, "Functor is too large for job. Consider allocating it on the heap.");
 
         JobDesc desc;
         desc.Func = [](void *functor) { return (*reinterpret_cast<T *>(functor))(); };
         memcpy(desc.JobData, &functor, sizeof(T));
+        desc.QueueIndex = queueIndex;
         return reserveJob(desc);
-    }
-
-    inline JobHandle reserveJob(JobFunc *job, void *data)
-    {
-        return reserveJob([job, data]() { return job(data); });
     }
 } // namespace IB

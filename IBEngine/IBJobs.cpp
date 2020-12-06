@@ -1,5 +1,5 @@
 #include "IBJobs.h"
-#include "Platform/IBPlatform.h"
+#include "IBPlatform.h"
 #include "IBLogging.h"
 
 #include <string.h>
@@ -121,27 +121,16 @@ https://stackoverflow.com/questions/4537753/when-should-i-use-mm-sfence-mm-lfenc
 
 namespace
 {
-    template <typename T>
-    T volatileLoad(T const *target)
-    {
-        return *static_cast<T volatile const *>(target);
-    }
-
-    template <typename T>
-    void volatileStore(T *target, T value)
-    {
-        *static_cast<T volatile *>(target) = value;
-    }
-
     uint32_t const WorkerCount = IB::processorCount();
 
     constexpr uint32_t MaxJobCount = 1024;
 #pragma warning(disable : 4324) // We don't care about the padding complaint here.
     struct alignas(64) Job
     {
-        uint8_t Data[IB::MaxJobDataSize];
+        alignas(16) uint8_t Data[IB::MaxJobDataSize];
         void* Func = nullptr;
         uint32_t Generation = 0;
+        uint32_t QueueIndex = IB::AllJobQueues;
     };
 #pragma warning(default : 4324)
 
@@ -186,6 +175,7 @@ namespace
             // Everyone is trying to get a job from the pool, make sure that we've taken it with a compare exchange.
             if (atomicCompareExchange(&JobPool[jobIndex].Func, nullptr, desc.Func) == nullptr)
             {
+                IB::threadAcquire(); // Assure that generation loads aren't run speculatively
                 job = &JobPool[jobIndex];
                 break;
             }
@@ -195,6 +185,7 @@ namespace
         IB_ASSERT(job != nullptr, "Failed to get a job from the job pool!");
         static_assert(sizeof(job->Data) == sizeof(desc.JobData), "Job description data size doesn't match job data size.");
         memcpy(job->Data, desc.JobData, sizeof(desc.JobData));
+        job->QueueIndex = desc.QueueIndex;
 
         return job;
     }
@@ -210,16 +201,16 @@ namespace
         while (commitedWorkerIndex == UINT32_MAX) // Until we've commited to a worker.
         {
             // Simply increment our value, use the modulo as our indexing.
-            uint32_t worker = (NextWorker++) % WorkerCount;
+            uint32_t worker = (job->QueueIndex == IB::AllJobQueues ? NextWorker++ : job->QueueIndex) % WorkerCount;
 
             // If our queue has space, try to commit our slot by doing a compare and exchange.
             // If it succeeds then we've commited our producer index and moved the index forward.
             // This will be visible to the worker thread,
             // however it will simply wait to make sure that it has a job to do before
             // it moves on to the next element.
-            uint32_t currentProducerIndex = volatileLoad(&Workers[worker].Queue.Producer);
+            uint32_t currentProducerIndex = IB::volatileLoad(&Workers[worker].Queue.Producer);
             uint32_t nextProducerIndex = (currentProducerIndex + 1) % MaxJobCount;
-            while (nextProducerIndex != volatileLoad(&Workers[worker].Queue.Consumer)) // Do we still have space in this queue? Keep trying.
+            while (nextProducerIndex != IB::volatileLoad(&Workers[worker].Queue.Consumer)) // Do we still have space in this queue? Keep trying.
             {
                 if (IB::atomicCompareExchange(&Workers[worker].Queue.Producer, currentProducerIndex, nextProducerIndex) == currentProducerIndex)
                 {
@@ -230,7 +221,7 @@ namespace
                 }
                 else
                 {
-                    currentProducerIndex = volatileLoad(&Workers[worker].Queue.Producer);
+                    currentProducerIndex = IB::volatileLoad(&Workers[worker].Queue.Producer);
                     nextProducerIndex = (currentProducerIndex + 1) % MaxJobCount;
                 }
             }
@@ -240,12 +231,8 @@ namespace
         // then our worker thread will simply sleep until the job has actually been written to the variable.
         // We will then wake it up after we're done writting it out.
         IB_ASSERT(Workers[commitedWorkerIndex].Queue.Jobs[commitedJobIndex] == nullptr, "We're expecting our job to be null here! Did someone write to it before us?!?");        
-        volatileStore(&Workers[commitedWorkerIndex].Queue.Jobs[commitedJobIndex], job);
-
-        // Assure that our writes are globally visible before we wake up our worker thread.
-        // We can avoid having it iterate uselessly one more time.
-        // This fence is not neccessary but a convenience for our worker thread.
-        IB::threadStoreFence();
+        IB::volatileStore(&Workers[commitedWorkerIndex].Queue.Jobs[commitedJobIndex], job);
+        IB::threadRelease(); // Assure our writes are globally visible before this event
         IB::signalThreadEvent(Workers[commitedWorkerIndex].SleepEvent); // Signal our sleeping worker
     }
 
@@ -317,7 +304,7 @@ namespace
                     {
                         commitJob(job);
                         // only once we've commited our job do we return the wait count to the pool.
-                        volatileStore<uint32_t>(&WaitList.WaitCounts[waitIndex], 0);
+                        IB::volatileStore<uint32_t>(&WaitList.WaitCounts[waitIndex], 0);
                     }
                 }
             }
@@ -331,13 +318,13 @@ namespace
 
         while (true)
         {
-            while (volatileLoad(&queue->Jobs[queue->Consumer]) == nullptr && volatileLoad(&worker->Alive))
+            while (IB::volatileLoad(&queue->Jobs[queue->Consumer]) == nullptr && IB::volatileLoad(&worker->Alive))
             {
                 // Give it a few iterations, we might just be writting the value to this index.
                 bool breakEarly = false;
                 for (uint32_t i = 0; i < 32; i++)
                 {
-                    if (volatileLoad(&queue->Jobs[queue->Consumer]) != nullptr || !volatileLoad(&worker->Alive))
+                    if (IB::volatileLoad(&queue->Jobs[queue->Consumer]) != nullptr || !IB::volatileLoad(&worker->Alive))
                     {
                         breakEarly = true;
                         break;
@@ -361,24 +348,29 @@ namespace
                 // There are no states (that I can think of) that will leave us waiting for a signal
                 // even if there is work available.
                 waitOnThreadEvent(worker->SleepEvent);
+                IB::threadAcquire(); // Assure our loads aren't run before this event
             }
 
-            if (!volatileLoad(&worker->Alive))
+            if (!IB::volatileLoad(&worker->Alive))
             {
                 break;
             }
 
-            Job *job = volatileLoad(&queue->Jobs[queue->Consumer]);
+            Job *job = IB::volatileLoad(&queue->Jobs[queue->Consumer]);
+            // Note that our job might have marked itself for continuation while it's also active in another thread.
+            // If it was put to sleep in this result, it will simply be removed from the queue
+            // As a result, it should behave correctly if the job completes before it is even put to sleep.
+            // If putting to sleep has side effects in the future, the API might have to be re-thought
             IB::JobResult result = reinterpret_cast<IB::JobFunc *>(job->Func)(job->Data);
 
             // Queue management
             {
-                volatileStore<Job *volatile>(&queue->Jobs[queue->Consumer], nullptr);
+                IB::volatileStore<Job *volatile>(&queue->Jobs[queue->Consumer], nullptr);
                 // Make sure other threads see our writes to the job queue before we move our consumer index forward.
                 // This fence is not necessary, but having it allows us to have some extra
                 // asserts on the producer side to make sure producers aren't stomping on each other.
-                IB::threadStoreFence();
-                volatileStore(&queue->Consumer, (queue->Consumer + 1) % MaxJobCount);
+                IB::threadRelease();
+                IB::volatileStore(&queue->Consumer, (queue->Consumer + 1) % MaxJobCount);
             }
 
             // A sleeping job will not be returned to the job pool and waiting
@@ -386,21 +378,21 @@ namespace
             if (result == IB::JobResult::Complete)
             {
                 // Thread pool management
-                uint32_t generation = volatileLoad(&job->Generation);
+                uint32_t generation = IB::volatileLoad(&job->Generation);
                 {
-                    volatileStore(&job->Generation, generation + 1);
+                    IB::volatileStore(&job->Generation, generation + 1);
                     // Assure that our generation increment is visible before we return our job to the pool
                     // If it wasn't, our job could be pulled from the pool,
                     // and a handle created with the wrong generation index.
-                    IB::threadStoreFence();
-                    volatileStore<void *volatile>(&job->Func, nullptr); // Returns our job to the pool
+                    IB::threadRelease();
+                    IB::volatileStore<void *volatile>(&job->Func, nullptr); // Returns our job to the pool
                 }
 
                 // Attempt to signal all our waiting jobs
                 uint32_t jobIndex = static_cast<uint32_t>(job - JobPool);
                 for (uint32_t i = 0; i < MaxJobWaiters; i++)
                 {
-                    uint64_t waitHandle = volatileLoad(&WaitList.Waiters[jobIndex][i]);
+                    uint64_t waitHandle = IB::volatileLoad(&WaitList.Waiters[jobIndex][i]);
                     // If we fail this branch and move on,
                     // and then the continueJob writes to that slot for this job,
                     // then that means our generation index was already incremented.
@@ -422,7 +414,7 @@ namespace
                                 if (IB::atomicDecrement(&WaitList.WaitCounts[waitIndex]) == 1)
                                 {
                                     commitJob(&JobPool[theirIndex]);
-                                    volatileStore<uint32_t>(&WaitList.WaitCounts[waitIndex], 0);
+                                    IB::volatileStore<uint32_t>(&WaitList.WaitCounts[waitIndex], 0);
                                 }
                             }
                         }
@@ -454,7 +446,7 @@ namespace IB
             volatileStore(&Workers[i].Alive, false);
             threads[i] = Workers[i].Thread;
 
-            IB::threadStoreFence();
+            IB::threadRelease();
             IB::signalThreadEvent(Workers[i].SleepEvent);
         }
 

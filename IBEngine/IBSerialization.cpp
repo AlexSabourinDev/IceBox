@@ -1,6 +1,8 @@
+#define _CRT_SECURE_NO_WARNINGS
 #include "IBSerialization.h"
-#include "Platform/IBPlatform.h"
+#include "IBPlatform.h"
 #include "IBLogging.h"
+#include "IBAllocator.h"
 
 #include <stdint.h>
 #include <string.h>
@@ -9,7 +11,17 @@ namespace IB
 {
     namespace Serialization
     {
-        void toBinary(FileStream *stream, void *data, size_t size)
+        void initSerialization()
+        {
+            // Nothing
+        }
+
+        void killSerialization()
+        {
+            // Nothing
+        }
+
+        void toBinary(FileStream *stream, void const *data, size_t size)
         {
             if (stream->BufferCursor + size > FileStream::BufferSize)
             {
@@ -27,10 +39,11 @@ namespace IB
             }
         }
 
-        void flush(FileStream *stream)
+        uint32_t flush(FileStream *stream)
         {
             appendToFile(stream->File, stream->Buffer, stream->BufferCursor);
             stream->BufferCursor = 0;
+            return static_cast<uint32_t>(fileSize(stream->File));
         }
 
         void fromBinary(MemoryStream *stream, void *data, size_t size)
@@ -39,16 +52,16 @@ namespace IB
             stream->Memory += size;
         }
 
-        void *fromBinary(MemoryStream *stream, size_t size)
+        void const *fromBinary(MemoryStream *stream, size_t size)
         {
             void *memory = stream->Memory;
             stream->Memory += size;
             return memory;
         }
 
-        void advance(MemoryStream* stream, size_t size)
+        void advance(MemoryStream *stream, size_t size)
         {
             stream->Memory += size;
         }
-    }
+    } // namespace Serialization
 } // namespace IB

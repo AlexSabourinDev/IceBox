@@ -1,6 +1,6 @@
 #include "IBRenderer.h"
 #include "IBLogging.h"
-#include "Platform/IBPlatform.h"
+#include "IBPlatform.h"
 
 #include <stdlib.h>
 
@@ -807,7 +807,7 @@ namespace
 
 namespace IB
 {
-    IB_API void initRenderer(RendererDesc const *desc)
+    IB_API void initRenderer(RendererDesc const &desc)
     {
         {
             VkApplicationInfo appInfo = {};
@@ -831,7 +831,7 @@ namespace IB
             IB_VKCHECK(vkCreateInstance(&createInfo, NoAllocator, &RendererContext.VulkanInstance));
         }
 
-        RendererContext.Present.Surface = createSurface(*desc->Window);
+        RendererContext.Present.Surface = createSurface(*desc.Window);
 
         // Device
         {
@@ -1221,14 +1221,14 @@ namespace IB
         {
             VkShaderModuleCreateInfo createVShader = {};
             createVShader.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-            createVShader.pCode = (const uint32_t *)desc->Materials.Forward.VShader;
-            createVShader.codeSize = desc->Materials.Forward.VShaderSize;
+            createVShader.pCode = (const uint32_t *)desc.Materials.Forward.VShader;
+            createVShader.codeSize = desc.Materials.Forward.VShaderSize;
             IB_VKCHECK(vkCreateShaderModule(RendererContext.Present.LogicalDevice, &createVShader, NoAllocator, &RendererContext.Materials.Forward.VShader));
 
             VkShaderModuleCreateInfo createFShader = {};
             createFShader.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-            createFShader.pCode = (const uint32_t *)desc->Materials.Forward.FShader;
-            createFShader.codeSize = desc->Materials.Forward.FShaderSize;
+            createFShader.pCode = (const uint32_t *)desc.Materials.Forward.FShader;
+            createFShader.codeSize = desc.Materials.Forward.FShaderSize;
             IB_VKCHECK(vkCreateShaderModule(RendererContext.Present.LogicalDevice, &createFShader, NoAllocator, &RendererContext.Materials.Forward.FShader));
 
             // Graphics pipeline
@@ -1433,7 +1433,7 @@ namespace IB
             }
         }
 
-        constexpr uint32_t meshBufferSize = 1024 * 1024;
+        constexpr uint32_t meshBufferSize = 1024 * 1024 * 10;
         {
             VkBufferCreateInfo bufferCreate = {};
             bufferCreate.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
@@ -1586,17 +1586,17 @@ namespace IB
         vkDestroyInstance(RendererContext.VulkanInstance, NoAllocator);
     }
 
-    IB_API MeshHandle createMesh(MeshDesc const *desc)
+    IB_API MeshHandle createMesh(MeshDesc const &desc)
     {
         uint32_t meshIndex = RendererContext.Geometry.MeshCount++;
 
-        uint32_t vertexSize = desc->Vertices.Count * sizeof(Vertex);
-        uint32_t indexSize = desc->Indices.Count * sizeof(uint16_t);
+        uint32_t vertexSize = desc.Vertices.Count * sizeof(Vertex);
+        uint32_t indexSize = desc.Indices.Count * sizeof(uint16_t);
         {
             RendererContext.Geometry.Meshes[meshIndex].VertexSize = vertexSize;
             RendererContext.Geometry.Meshes[meshIndex].VertexOffset = RendererContext.Geometry.NextOffset;
             RendererContext.Geometry.Meshes[meshIndex].IndexOffset = vertexSize + RendererContext.Geometry.NextOffset;
-            RendererContext.Geometry.Meshes[meshIndex].IndexCount = desc->Indices.Count;
+            RendererContext.Geometry.Meshes[meshIndex].IndexCount = desc.Indices.Count;
 
             RendererContext.Geometry.NextOffset += vertexSize + indexSize;
             uint32_t alignmentBump = RendererContext.Geometry.NextOffset % sizeof(Vertex);
@@ -1623,8 +1623,8 @@ namespace IB
 
             {
                 void *memory = mapAllocation(RendererContext.Present.LogicalDevice, &RendererContext.Allocator, allocation);
-                memcpy((uint8_t *)memory, (uint8_t *)desc->Vertices.Data, vertexSize);
-                memcpy((uint8_t *)memory + vertexSize, (uint8_t *)desc->Indices.Data, indexSize);
+                memcpy((uint8_t *)memory, (uint8_t *)desc.Vertices.Data, vertexSize);
+                memcpy((uint8_t *)memory + vertexSize, (uint8_t *)desc.Indices.Data, indexSize);
                 unmapAllocation(&RendererContext.Allocator, allocation);
             }
         }
@@ -1670,7 +1670,7 @@ namespace IB
         return MeshHandle{meshIndex + 1};
     }
 
-    IB_API ImageHandle createImage(ImageDesc const *desc)
+    IB_API ImageHandle createImage(ImageDesc const &desc)
     {
         VkFormat formats[ImageFormat::Count] = {};
         formats[ImageFormat::RGBA8] = VK_FORMAT_R8G8B8A8_UNORM;
@@ -1684,11 +1684,11 @@ namespace IB
         imageAlloc.LogicalDevice = RendererContext.Present.LogicalDevice;
         imageAlloc.PhysicalDevice = RendererContext.Present.PhysicalDevice;
         imageAlloc.ImageUsage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
-        imageAlloc.Format = formats[desc->Format];
+        imageAlloc.Format = formats[desc.Format];
         imageAlloc.ImageAspect = VK_IMAGE_ASPECT_COLOR_BIT;
-        imageAlloc.Width = desc->Width;
-        imageAlloc.Height = desc->Height;
-        imageAlloc.Stride = formatSize[desc->Format];
+        imageAlloc.Width = desc.Width;
+        imageAlloc.Height = desc.Height;
+        imageAlloc.Stride = formatSize[desc.Format];
         imageAlloc.Allocator = &RendererContext.Allocator;
 
         ImageAndView imageAndView = allocImageAndView(imageAlloc);
@@ -1699,7 +1699,7 @@ namespace IB
         VkBuffer srcBuffer;
         Allocation allocation;
         {
-            uint32_t bufferSize = desc->Width * desc->Height * formatSize[desc->Format];
+            uint32_t bufferSize = desc.Width * desc.Height * formatSize[desc.Format];
             VkBufferCreateInfo bufferCreate = {};
             bufferCreate.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
             bufferCreate.size = bufferSize;
@@ -1717,7 +1717,7 @@ namespace IB
 
             {
                 void *memory = mapAllocation(RendererContext.Present.LogicalDevice, &RendererContext.Allocator, allocation);
-                memcpy(memory, (uint8_t *)desc->Data, bufferSize);
+                memcpy(memory, (uint8_t *)desc.Data, bufferSize);
                 unmapAllocation(&RendererContext.Allocator, allocation);
             }
         }
@@ -1774,8 +1774,8 @@ namespace IB
             imageSubresource.layerCount = 1;
 
             VkExtent3D extent = {};
-            extent.width = desc->Width;
-            extent.height = desc->Height;
+            extent.width = desc.Width;
+            extent.height = desc.Height;
             extent.depth = 1;
 
             VkBufferImageCopy copyRegion = {};
@@ -1854,15 +1854,15 @@ namespace IB
         return ImageHandle{imageIndex + 1};
     }
 
-    IB_API MaterialHandle createMaterial(ForwardDesc const *desc)
+    IB_API MaterialHandle createMaterial(ForwardDesc const &desc)
     {
         struct
         {
             float AlbedoTint[4];
             uint32_t albedoIndex;
         } matData;
-        memcpy(matData.AlbedoTint, desc->AlbedoTint, sizeof(float) * 4);
-        matData.albedoIndex = desc->AlbedoImage.Value - 1;
+        memcpy(matData.AlbedoTint, desc.AlbedoTint, sizeof(float) * 4);
+        matData.albedoIndex = desc.AlbedoImage.Value - 1;
 
         uint32_t instanceIndex = RendererContext.Materials.Forward.InstanceCount++;
         RendererContext.Materials.Forward.Instances[instanceIndex].PipelineIndex = PipelineType::Default;
@@ -1982,7 +1982,7 @@ namespace IB
         return MaterialHandle{instanceIndex + 1};
     }
 
-    IB_API void drawView(ViewDesc const *view)
+    IB_API void drawView(ViewDesc const &view)
     {
         // Start the frame
         uint32_t buffer = RendererContext.Present.ActiveFrame;
@@ -2056,7 +2056,7 @@ namespace IB
 
             for (uint32_t passIndex = 0; passIndex < ViewDesc::Pass::Count; passIndex++)
             {
-                ViewDesc::Pass const* pass = &view->Forward.Passes[passIndex];
+                ViewDesc::Pass const* pass = &view.Forward.Passes[passIndex];
 
                 if (passIndex > 0)
                 {
@@ -2090,7 +2090,7 @@ namespace IB
                                 uint32_t VertexOffset;
                             } vertPushConstant;
 
-                            vertPushConstant.VP = view->ViewProj;
+                            vertPushConstant.VP = view.ViewProj;
                             vertPushConstant.M = batch->Meshes[mesh].Transforms[inst];
                             vertPushConstant.VertexOffset = RendererContext.Geometry.Meshes[meshIndex].VertexOffset / sizeof(Vertex);
 

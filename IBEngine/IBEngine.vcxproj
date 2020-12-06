@@ -11,18 +11,22 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="..\SDK\cJSON\cJSON.h" />
     <ClInclude Include="IBAllocator.h" />
+    <ClInclude Include="IBAsset.h" />
     <ClInclude Include="IBEngineAPI.h" />
     <ClInclude Include="IBJobs.h" />
     <ClInclude Include="IBLogging.h" />
     <ClInclude Include="IBMath.h" />
+    <ClInclude Include="IBPlatform.h" />
     <ClInclude Include="IBRenderer.h" />
     <ClInclude Include="IBRendererFrontend.h" />
     <ClInclude Include="IBSerialization.h" />
-    <ClInclude Include="Platform\IBPlatform.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="..\SDK\cJSON\cJSON.c" />
     <ClCompile Include="IBAllocator.cpp" />
+    <ClCompile Include="IBAsset.cpp" />
     <ClCompile Include="IBJobs.cpp" />
     <ClCompile Include="IBLogging.cpp" />
     <ClCompile Include="IBRenderer.cpp" />
@@ -82,7 +86,8 @@
       <SDLCheck>true</SDLCheck>
       <ConformanceMode>true</ConformanceMode>
       <TreatWarningAsError>true</TreatWarningAsError>
-      <AdditionalIncludeDirectories>..\SDK\VulkanSDK\1.2.154.1\Include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\SDK\VulkanSDK\1.2.154.1\Include;..\SDK;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>CJSON_HIDE_SYMBOLS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
     <Link>
       <AdditionalLibraryDirectories>..\SDK\VulkanSDK\1.2.154.1\Lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
@@ -98,7 +103,8 @@
       <SDLCheck>true</SDLCheck>
       <ConformanceMode>true</ConformanceMode>
       <TreatWarningAsError>true</TreatWarningAsError>
-      <AdditionalIncludeDirectories>..\SDK\VulkanSDK\1.2.154.1\Include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\SDK\VulkanSDK\1.2.154.1\Include;..\SDK;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>CJSON_HIDE_SYMBOLS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
     <Link>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
