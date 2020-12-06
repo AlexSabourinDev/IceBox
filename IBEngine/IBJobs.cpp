@@ -211,7 +211,6 @@ namespace
             Job *job = volatileLoad(&queue->Jobs[queue->Consumer]);
             reinterpret_cast<IB::JobFunc *>(job->Func.Value)(job->Data);
             volatileStore<void *volatile>(&job->Func.Value, nullptr);
-            volatileStore<Job *>(&queue->Jobs[queue->Consumer], nullptr);
 
             // Make sure other threads see our writes to the job queue before we move our consumer index forward.
             // This fence is not necessary, but having it allows us to have some extra

@@ -213,7 +213,7 @@ namespace
             IB_VKCHECK(vkMapMemory(logicalDevice, allocator->MemoryPools[allocation.PoolIndex].Memory, 0, VK_WHOLE_SIZE, flags, &allocator->MemoryPools[allocation.PoolIndex].Map));
         }
 
-        return reinterpret_cast<uint8_t*>(allocator->MemoryPools[allocation.PoolIndex].Map) + allocation.Offset;
+        return reinterpret_cast<uint8_t *>(allocator->MemoryPools[allocation.PoolIndex].Map) + allocation.Offset;
     }
 
     void unmapAllocation(Allocator * /*allocator*/, Allocation /*allocation*/)
@@ -435,12 +435,22 @@ namespace
         };
     };
 
+    struct PipelineType
+    {
+        enum
+        {
+            Default = 0,
+            Count
+        };
+    };
+
     constexpr uint32_t MaxMeshCount = 1000;
     constexpr uint32_t MaxImageCount = 100;
     constexpr uint32_t MaxSamplerCount = 1000;
     constexpr uint32_t FrameBufferCount = 2;
     constexpr uint32_t MaxMaterialInstanceCount = 100;
     constexpr uint32_t MaxPhysicalImageCount = 10;
+    constexpr uint32_t SubpassCount = 2;
     struct Context
     {
         VkInstance VulkanInstance;
@@ -482,6 +492,10 @@ namespace
                 Allocation DepthImageAllocation;
                 VkImage DepthImage;
                 VkImageView DepthImageView;
+
+                Allocation DebugDepthImageAllocation;
+                VkImage DebugDepthImage;
+                VkImageView DebugDepthImageView;
             } FrameBuffer[FrameBufferCount];
             uint32_t ActiveFrame = 0;
         } Present;
@@ -525,7 +539,7 @@ namespace
                 VkDescriptorSetLayout ShaderLayout;
 
                 VkPipelineLayout PipelineLayout;
-                VkPipeline Pipeline;
+                VkPipeline Pipelines[PipelineType::Count * SubpassCount];
 
                 VkDescriptorSet ShaderDescriptor;
                 VkSampler Sampler;
@@ -535,6 +549,7 @@ namespace
                     VkDescriptorSet ShaderDescriptor;
                     VkBuffer FShaderData;
                     Allocation Allocation;
+                    uint32_t PipelineIndex;
                 } Instances[MaxMaterialInstanceCount];
                 uint32_t InstanceCount = 0;
             } Forward;
@@ -642,6 +657,9 @@ namespace
                 vkDestroyImage(RendererContext.Present.LogicalDevice, RendererContext.Present.FrameBuffer[fb].DepthImage, NoAllocator);
                 vkDestroyImageView(RendererContext.Present.LogicalDevice, RendererContext.Present.FrameBuffer[fb].DepthImageView, NoAllocator);
                 freeDeviceMemory(&RendererContext.Allocator, RendererContext.Present.FrameBuffer[fb].DepthImageAllocation);
+                vkDestroyImage(RendererContext.Present.LogicalDevice, RendererContext.Present.FrameBuffer[fb].DebugDepthImage, NoAllocator);
+                vkDestroyImageView(RendererContext.Present.LogicalDevice, RendererContext.Present.FrameBuffer[fb].DebugDepthImageView, NoAllocator);
+                freeDeviceMemory(&RendererContext.Allocator, RendererContext.Present.FrameBuffer[fb].DebugDepthImageAllocation);
                 vkDestroyFramebuffer(RendererContext.Present.LogicalDevice, RendererContext.Present.FrameBuffer[fb].Framebuffer, NoAllocator);
             }
         }
@@ -728,6 +746,11 @@ namespace
                 RendererContext.Present.FrameBuffer[fb].DepthImage = imageAndView.Image;
                 RendererContext.Present.FrameBuffer[fb].DepthImageView = imageAndView.ImageView;
                 RendererContext.Present.FrameBuffer[fb].DepthImageAllocation = imageAndView.Allocation;
+
+                imageAndView = allocImageAndView(imageAlloc);
+                RendererContext.Present.FrameBuffer[fb].DebugDepthImage = imageAndView.Image;
+                RendererContext.Present.FrameBuffer[fb].DebugDepthImageView = imageAndView.ImageView;
+                RendererContext.Present.FrameBuffer[fb].DebugDepthImageAllocation = imageAndView.Allocation;
             }
 
             // Create the framebuffer
@@ -736,6 +759,7 @@ namespace
                     {
                         RendererContext.Present.FrameBuffer[fb].SwapchainImageView,
                         RendererContext.Present.FrameBuffer[fb].DepthImageView,
+                        RendererContext.Present.FrameBuffer[fb].DebugDepthImageView,
                     };
 
                 VkFramebufferCreateInfo framebufferCreate = {};
@@ -1065,6 +1089,9 @@ namespace IB
         }
 
         RendererContext.Present.PresentMode = VK_PRESENT_MODE_FIFO_KHR;
+
+        constexpr bool useVSync = true;
+        if(!useVSync)
         {
             constexpr uint32_t maxPresentModes = 100;
             uint32_t presentModeCount;
@@ -1105,7 +1132,7 @@ namespace IB
                 depth.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
                 depth.format = VK_FORMAT_D32_SFLOAT;
 
-                VkAttachmentDescription attachmentDescriptions[] = {output, depth};
+                VkAttachmentDescription attachmentDescriptions[] = {output, depth, depth};
 
                 // Attachments
                 VkAttachmentReference outputAttachment = {};
@@ -1122,14 +1149,33 @@ namespace IB
                 renderSubpass.pColorAttachments = &outputAttachment;
                 renderSubpass.pDepthStencilAttachment = &depthAttachment;
 
-                VkSubpassDescription subpasses[] = {renderSubpass};
+                VkAttachmentReference debugDepthAttachment = {};
+                debugDepthAttachment.attachment = 2;
+                debugDepthAttachment.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+                VkSubpassDescription debugSubpass = {};
+                debugSubpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+                debugSubpass.colorAttachmentCount = 1;
+                debugSubpass.pColorAttachments = &outputAttachment;
+                debugSubpass.pDepthStencilAttachment = &debugDepthAttachment;
+
+                VkSubpassDescription subpasses[] = { renderSubpass, debugSubpass };
+
+                VkSubpassDependency dependency = {};
+                dependency.srcSubpass = 0;
+                dependency.dstSubpass = 1;
+                dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+                dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+                dependency.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+                dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+                dependency.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
 
                 VkRenderPassCreateInfo createRenderPass = {};
-
                 createRenderPass.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
                 createRenderPass.attachmentCount = arrayCount(attachmentDescriptions);
                 createRenderPass.subpassCount = arrayCount(subpasses);
-                createRenderPass.dependencyCount = 0;
+                createRenderPass.dependencyCount = 1;
+                createRenderPass.pDependencies = &dependency;
                 createRenderPass.pAttachments = attachmentDescriptions;
                 createRenderPass.pSubpasses = subpasses;
 
@@ -1348,16 +1394,16 @@ namespace IB
                 viewportStateCreate.scissorCount = 1;
                 viewportStateCreate.pScissors = &scissor;
 
-                VkGraphicsPipelineCreateInfo graphicsPipelineCreate = {};
-                graphicsPipelineCreate.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-                graphicsPipelineCreate.layout = RendererContext.Materials.Forward.PipelineLayout;
-                graphicsPipelineCreate.renderPass = RendererContext.Present.RenderPass;
-                graphicsPipelineCreate.pVertexInputState = &vertexInputCreate;
-                graphicsPipelineCreate.pInputAssemblyState = &inputAssemblyCreate;
-                graphicsPipelineCreate.pRasterizationState = &rasterizationCreate;
-                graphicsPipelineCreate.pColorBlendState = &colorBlendCreate;
-                graphicsPipelineCreate.pDepthStencilState = &depthStencilCreate;
-                graphicsPipelineCreate.pMultisampleState = &multisampleCreate;
+                VkGraphicsPipelineCreateInfo baseGraphicsPipelineCreate = {};
+                baseGraphicsPipelineCreate.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+                baseGraphicsPipelineCreate.layout = RendererContext.Materials.Forward.PipelineLayout;
+                baseGraphicsPipelineCreate.renderPass = RendererContext.Present.RenderPass;
+                baseGraphicsPipelineCreate.pVertexInputState = &vertexInputCreate;
+                baseGraphicsPipelineCreate.pInputAssemblyState = &inputAssemblyCreate;
+                baseGraphicsPipelineCreate.pRasterizationState = &rasterizationCreate;
+                baseGraphicsPipelineCreate.pColorBlendState = &colorBlendCreate;
+                baseGraphicsPipelineCreate.pDepthStencilState = &depthStencilCreate;
+                baseGraphicsPipelineCreate.pMultisampleState = &multisampleCreate;
 
                 VkDynamicState dynamicStates[] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
 
@@ -1366,11 +1412,24 @@ namespace IB
                 dynamicStateCreate.dynamicStateCount = arrayCount(dynamicStates);
                 dynamicStateCreate.pDynamicStates = dynamicStates;
 
-                graphicsPipelineCreate.pDynamicState = NULL;
-                graphicsPipelineCreate.pViewportState = &viewportStateCreate;
-                graphicsPipelineCreate.stageCount = arrayCount(shaderStages);
-                graphicsPipelineCreate.pStages = shaderStages;
-                IB_VKCHECK(vkCreateGraphicsPipelines(RendererContext.Present.LogicalDevice, RendererContext.Present.PipelineCache, 1, &graphicsPipelineCreate, NoAllocator, &RendererContext.Materials.Forward.Pipeline));
+                baseGraphicsPipelineCreate.pDynamicState = &dynamicStateCreate;
+                baseGraphicsPipelineCreate.pViewportState = &viewportStateCreate;
+                baseGraphicsPipelineCreate.stageCount = arrayCount(shaderStages);
+                baseGraphicsPipelineCreate.pStages = shaderStages;
+
+                baseGraphicsPipelineCreate.flags = VK_PIPELINE_CREATE_ALLOW_DERIVATIVES_BIT;
+                VkGraphicsPipelineCreateInfo subpass0Pipeline = baseGraphicsPipelineCreate;
+                subpass0Pipeline.subpass = 0;
+
+                VkGraphicsPipelineCreateInfo subpass1Pipeline = baseGraphicsPipelineCreate;
+                subpass1Pipeline.subpass = 1;
+                VkGraphicsPipelineCreateInfo pipelines[] =
+                    {
+                        subpass0Pipeline,
+                        subpass1Pipeline
+                    };
+
+                IB_VKCHECK(vkCreateGraphicsPipelines(RendererContext.Present.LogicalDevice, RendererContext.Present.PipelineCache, arrayCount(pipelines), pipelines, NoAllocator, RendererContext.Materials.Forward.Pipelines));
             }
         }
 
@@ -1473,6 +1532,10 @@ namespace IB
             vkDestroyImage(RendererContext.Present.LogicalDevice, RendererContext.Present.FrameBuffer[fb].DepthImage, NoAllocator);
             vkDestroyImageView(RendererContext.Present.LogicalDevice, RendererContext.Present.FrameBuffer[fb].DepthImageView, NoAllocator);
             freeDeviceMemory(&RendererContext.Allocator, RendererContext.Present.FrameBuffer[fb].DepthImageAllocation);
+            vkDestroyImage(RendererContext.Present.LogicalDevice, RendererContext.Present.FrameBuffer[fb].DebugDepthImage, NoAllocator);
+            vkDestroyImageView(RendererContext.Present.LogicalDevice, RendererContext.Present.FrameBuffer[fb].DebugDepthImageView, NoAllocator);
+            freeDeviceMemory(&RendererContext.Allocator, RendererContext.Present.FrameBuffer[fb].DebugDepthImageAllocation);
+
         }
 
         vkDestroyBuffer(RendererContext.Present.LogicalDevice, RendererContext.Geometry.MeshDataBuffers, NoAllocator);
@@ -1492,7 +1555,11 @@ namespace IB
         vkDestroyDescriptorSetLayout(RendererContext.Present.LogicalDevice, RendererContext.Materials.Forward.ShaderLayout, NoAllocator);
 
         vkDestroyPipelineLayout(RendererContext.Present.LogicalDevice, RendererContext.Materials.Forward.PipelineLayout, NoAllocator);
-        vkDestroyPipeline(RendererContext.Present.LogicalDevice, RendererContext.Materials.Forward.Pipeline, NoAllocator);
+
+        for (uint32_t i = 0; i < arrayCount(RendererContext.Materials.Forward.Pipelines); i++)
+        {
+            vkDestroyPipeline(RendererContext.Present.LogicalDevice, RendererContext.Materials.Forward.Pipelines[i], NoAllocator);
+        }
 
         vkDestroySampler(RendererContext.Present.LogicalDevice, RendererContext.Materials.Forward.Sampler, NoAllocator);
 
@@ -1798,6 +1865,7 @@ namespace IB
         matData.albedoIndex = desc->AlbedoImage.Value - 1;
 
         uint32_t instanceIndex = RendererContext.Materials.Forward.InstanceCount++;
+        RendererContext.Materials.Forward.Instances[instanceIndex].PipelineIndex = PipelineType::Default;
 
         VkBuffer dataBuffer;
         {
@@ -1952,7 +2020,7 @@ namespace IB
             colorClear.color = clearColor;
             VkClearValue depthClear = {};
             depthClear.depthStencil = {1.0f, 0};
-            VkClearValue clearValues[] = {colorClear, depthClear};
+            VkClearValue clearValues[] = {colorClear, depthClear, depthClear };
 
             VkRect2D renderArea = {};
             renderArea.extent = RendererContext.Present.SurfaceExtents;
@@ -1967,8 +2035,6 @@ namespace IB
 
             // Forward materials
             vkCmdBeginRenderPass(currentCommands, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
-
-            vkCmdBindPipeline(currentCommands, VK_PIPELINE_BIND_POINT_GRAPHICS, RendererContext.Materials.Forward.Pipeline);
 
             VkViewport viewport = {};
             viewport.x = 0;
@@ -1988,37 +2054,51 @@ namespace IB
                 currentCommands, VK_PIPELINE_BIND_POINT_GRAPHICS, RendererContext.Materials.Forward.PipelineLayout,
                 0, 1, &set, 0, VK_NULL_HANDLE);
 
-            for (uint32_t i = 0; i < view->BatchCounts[ViewDesc::Materials::Forward] && view->Batches[ViewDesc::Materials::Forward][i].Material.Value > 0; i++)
+            for (uint32_t passIndex = 0; passIndex < ViewDesc::Pass::Count; passIndex++)
             {
-                uint32_t materialIndex = view->Batches[ViewDesc::Materials::Forward][i].Material.Value - 1;
-                VkDescriptorSet instanceSet = RendererContext.Materials.Forward.Instances[materialIndex].ShaderDescriptor;
-                vkCmdBindDescriptorSets(
-                    currentCommands, VK_PIPELINE_BIND_POINT_GRAPHICS, RendererContext.Materials.Forward.PipelineLayout,
-                    1, 1, &instanceSet, 0, VK_NULL_HANDLE);
+                ViewDesc::Pass const* pass = &view->Forward.Passes[passIndex];
 
-                ViewDesc::Batch *batch = &view->Batches[ViewDesc::Materials::Forward][i];
-                for (uint32_t mesh = 0; mesh < batch->MeshCount && batch->Meshes[mesh].Mesh.Value > 0; mesh++)
+                if (passIndex > 0)
                 {
-                    uint32_t meshIndex = batch->Meshes[mesh].Mesh.Value - 1;
+                    vkCmdNextSubpass(currentCommands, VK_SUBPASS_CONTENTS_INLINE);
+                }
 
-                    vkCmdBindIndexBuffer(currentCommands, RendererContext.Geometry.MeshDataBuffers, RendererContext.Geometry.Meshes[meshIndex].IndexOffset, VK_INDEX_TYPE_UINT16);
-                    for (uint32_t inst = 0; inst < batch->Meshes[mesh].Count; inst++)
+                for (uint32_t i = 0; i < pass->BatchCount; i++)
+                {
+                    ViewDesc::Batch *batch = &pass->Batches[i];
+                    uint32_t materialIndex = batch->Material.Value - 1;
+
+                    uint32_t pipelineIndex = RendererContext.Materials.Forward.Instances[materialIndex].PipelineIndex + passIndex;
+                    vkCmdBindPipeline(currentCommands, VK_PIPELINE_BIND_POINT_GRAPHICS, RendererContext.Materials.Forward.Pipelines[pipelineIndex]);
+
+                    VkDescriptorSet instanceSet = RendererContext.Materials.Forward.Instances[materialIndex].ShaderDescriptor;
+                    vkCmdBindDescriptorSets(
+                        currentCommands, VK_PIPELINE_BIND_POINT_GRAPHICS, RendererContext.Materials.Forward.PipelineLayout,
+                        1, 1, &instanceSet, 0, VK_NULL_HANDLE);
+
+                    for (uint32_t mesh = 0; mesh < batch->MeshCount && batch->Meshes[mesh].Mesh.Value > 0; mesh++)
                     {
-                        struct
+                        uint32_t meshIndex = batch->Meshes[mesh].Mesh.Value - 1;
+
+                        vkCmdBindIndexBuffer(currentCommands, RendererContext.Geometry.MeshDataBuffers, RendererContext.Geometry.Meshes[meshIndex].IndexOffset, VK_INDEX_TYPE_UINT16);
+                        for (uint32_t inst = 0; inst < batch->Meshes[mesh].Count; inst++)
                         {
-                            Mat4x4 VP;
-                            Mat3x4 M;
-                            uint32_t VertexOffset;
-                        } vertPushConstant;
+                            struct
+                            {
+                                Mat4x4 VP;
+                                Mat3x4 M;
+                                uint32_t VertexOffset;
+                            } vertPushConstant;
 
-                        vertPushConstant.VP = view->ViewProj;
-                        vertPushConstant.M = batch->Meshes[mesh].Transforms[inst];
-                        vertPushConstant.VertexOffset = RendererContext.Geometry.Meshes[meshIndex].VertexOffset / sizeof(Vertex);
+                            vertPushConstant.VP = view->ViewProj;
+                            vertPushConstant.M = batch->Meshes[mesh].Transforms[inst];
+                            vertPushConstant.VertexOffset = RendererContext.Geometry.Meshes[meshIndex].VertexOffset / sizeof(Vertex);
 
-                        vkCmdPushConstants(currentCommands, RendererContext.Materials.Forward.PipelineLayout,
-                                           VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(vertPushConstant), &vertPushConstant);
+                            vkCmdPushConstants(currentCommands, RendererContext.Materials.Forward.PipelineLayout,
+                                VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(vertPushConstant), &vertPushConstant);
 
-                        vkCmdDrawIndexed(currentCommands, RendererContext.Geometry.Meshes[meshIndex].IndexCount, 1, 0, 0, 0);
+                            vkCmdDrawIndexed(currentCommands, RendererContext.Geometry.Meshes[meshIndex].IndexCount, 1, 0, 0, 0);
+                        }
                     }
                 }
             }

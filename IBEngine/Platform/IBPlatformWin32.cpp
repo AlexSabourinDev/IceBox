@@ -64,6 +64,9 @@ namespace
             IB::WindowMessage message;
             message.Type = IB::WindowMessage::MouseClick;
 
+            message.Data.MouseClick.X = LOWORD(lParam);
+            message.Data.MouseClick.Y = HIWORD(lParam);
+
             switch (msg)
             {
             case WM_LBUTTONDOWN:
@@ -181,6 +184,7 @@ namespace
         wndClass.lpfnWndProc = wndProc;
         wndClass.hInstance = hinstance;
         wndClass.lpszClassName = desc.Name;
+        wndClass.hCursor = LoadCursor(NULL, IDC_ARROW);
         ATOM classAtom = RegisterClass(&wndClass);
         IB_ASSERT(classAtom != 0, "Failed to register window class.");
 

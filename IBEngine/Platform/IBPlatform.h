@@ -87,6 +87,8 @@ namespace IB
             {
                 Mouse::Button Button;
                 Mouse::State State;
+                uint32_t X;
+                uint32_t Y;
             } MouseClick;
 
             struct
