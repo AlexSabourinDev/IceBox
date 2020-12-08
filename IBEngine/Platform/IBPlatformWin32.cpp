@@ -338,18 +338,19 @@ namespace IB
     void *mapLargeMemoryBlock(size_t size)
     {
         HANDLE fileMapping = CreateFileMapping(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE | SEC_COMMIT, static_cast<DWORD>(size >> 32), static_cast<DWORD>(size & 0xFFFFFFFF), NULL);
-        void *map = MapViewOfFile(fileMapping, FILE_MAP_ALL_ACCESS, 0, 0, 0);
+        void *map = nullptr;
 
         for (uint32_t i = 0; i < MaxMemoryFileMappingCount; i++)
         {
-            if (ActiveMemoryFileMappings[i].MapHandle == NULL)
+            if (atomicCompareExchange(&ActiveMemoryFileMappings[i].MapHandle, nullptr, fileMapping) == nullptr)
             {
-                ActiveMemoryFileMappings[i].MapHandle = fileMapping;
+                map = MapViewOfFile(fileMapping, FILE_MAP_ALL_ACCESS, 0, 0, 0);
                 ActiveMemoryFileMappings[i].Mapping = map;
                 break;
             }
         }
 
+        IB_ASSERT(map != nullptr, "Failed to create a file mapping!");
         return map;
     }
 
@@ -359,37 +360,44 @@ namespace IB
         {
             if (ActiveMemoryFileMappings[i].Mapping == memory)
             {
-                UnmapViewOfFile(memory);
-                CloseHandle(ActiveMemoryFileMappings[i].MapHandle);
+                HANDLE handle = ActiveMemoryFileMappings[i].MapHandle;
                 ActiveMemoryFileMappings[i] = {};
+                // Make sure we clear our entry before we return our address
+                // to the address list in UnmapViewOfFile.
+                // If we don't, we can have a thread receive the same address,
+                // and then it can get unmapped which will cause us to try to close our handle twice.
+                threadStoreFence();
+
+                UnmapViewOfFile(memory);
+                CloseHandle(handle);
                 break;
             }
         }
     }
 
-    uint32_t atomicIncrement(AtomicU32 *atomic)
+    uint32_t atomicIncrement(uint32_t volatile *atomic)
     {
-        return InterlockedIncrementNoFence(&atomic->Value);
+        return InterlockedIncrementNoFence(atomic);
     }
 
-    uint32_t atomicDecrement(AtomicU32 *atomic)
+    uint32_t atomicDecrement(uint32_t volatile *atomic)
     {
-        return InterlockedDecrementNoFence(&atomic->Value);
+        return InterlockedDecrementNoFence(atomic);
     }
 
-    uint32_t atomicCompareExchange(AtomicU32 *atomic, uint32_t compare, uint32_t exchange)
+    uint32_t atomicCompareExchange(uint32_t volatile *atomic, uint32_t compare, uint32_t exchange)
     {
-        return InterlockedCompareExchangeNoFence(&atomic->Value, exchange, compare);
+        return InterlockedCompareExchangeNoFence(atomic, exchange, compare);
     }
 
-    uint64_t atomicCompareExchange(AtomicU64 *atomic, uint64_t compare, uint64_t exchange)
+    uint64_t atomicCompareExchange(uint64_t volatile *atomic, uint64_t compare, uint64_t exchange)
     {
-        return InterlockedCompareExchangeNoFence64(reinterpret_cast<int64_t volatile *>(&atomic->Value), exchange, compare);
+        return InterlockedCompareExchangeNoFence64(reinterpret_cast<int64_t volatile *>(atomic), exchange, compare);
     }
 
-    void *atomicCompareExchange(AtomicPtr *atomic, void *compare, void *exchange)
+    void *atomicCompareExchange(void * volatile*atomic, void *compare, void *exchange)
     {
-        return InterlockedCompareExchangePointerNoFence(&atomic->Value, exchange, compare);
+        return InterlockedCompareExchangePointerNoFence(atomic, exchange, compare);
     }
 
     uint32_t processorCount()
@@ -515,9 +523,8 @@ namespace IB
 
         for (uint32_t i = 0; i < MaxFileMappingCount; i++)
         {
-            if (ActiveFileMappings[i].MapHandle == NULL)
+            if (atomicCompareExchange(&ActiveFileMappings[i].MapHandle, nullptr, fileMapping) == nullptr)
             {
-                ActiveFileMappings[i].MapHandle = fileMapping;
                 ActiveFileMappings[i].FileHandle = fileHandle;
                 ActiveFileMappings[i].Mapping = map;
                 break;
@@ -533,9 +540,15 @@ namespace IB
         {
             if (ActiveFileMappings[i].FileHandle == reinterpret_cast<HANDLE>(file.Value))
             {
-                UnmapViewOfFile(ActiveFileMappings[i].Mapping);
-                CloseHandle(ActiveFileMappings[i].MapHandle);
+                void* mapping = ActiveFileMappings[i].Mapping;
+                HANDLE handle = ActiveFileMappings[i].MapHandle;
+
+                // Make sure our mapping is cleared before we return our data to the OS
                 ActiveFileMappings[i] = {};
+                threadStoreFence();
+
+                UnmapViewOfFile(mapping);
+                CloseHandle(handle);
                 break;
             }
         }

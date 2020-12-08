@@ -142,30 +142,21 @@ namespace IB
     IB_API void freeMemoryPages(void *pages, uint32_t pageCount);
 
     // When requesting large blocks of memory, consider using a memory mapping
-    IB_API void *mapLargeMemoryBlock(size_t size);
-    IB_API void unmapLargeMemoryBlock(void *memory);
+    IB_API void *mapLargeMemoryBlock(size_t size); // Threadsafe
+    IB_API void unmapLargeMemoryBlock(void *memory); // Threadsafe as long as you don't unmap the same memory block.
 
     // Atomic API
-    struct AtomicU32
-    {
-        uint32_t volatile Value;
-    };
 
-    struct AtomicU64
-    {
-        uint64_t volatile Value;
-    };
-
-    struct AtomicPtr
-    {
-        void *volatile Value;
-    };
-
-    IB_API uint32_t atomicIncrement(AtomicU32 *atomic);
-    IB_API uint32_t atomicDecrement(AtomicU32 *atomic);
-    IB_API uint32_t atomicCompareExchange(AtomicU32 *atomic, uint32_t compare, uint32_t exchange);
-    IB_API uint64_t atomicCompareExchange(AtomicU64 *atomic, uint64_t compare, uint64_t exchange);
-    IB_API void *atomicCompareExchange(AtomicPtr *atomic, void *compare, void *exchange);
+    IB_API uint32_t atomicIncrement(uint32_t volatile *atomic);
+    IB_API uint32_t atomicDecrement(uint32_t volatile *atomic);
+    IB_API uint32_t atomicCompareExchange(uint32_t volatile *atomic, uint32_t compare, uint32_t exchange);
+    IB_API uint64_t atomicCompareExchange(uint64_t volatile *atomic, uint64_t compare, uint64_t exchange);
+    IB_API void *atomicCompareExchange(void *volatile *atomic, void *compare, void *exchange);
+    inline uint32_t atomicIncrement(uint32_t *atomic) { return atomicIncrement(static_cast<uint32_t volatile *>(atomic)); }
+    inline uint32_t atomicDecrement(uint32_t *atomic) { return atomicDecrement(static_cast<uint32_t volatile *>(atomic)); }
+    inline uint32_t atomicCompareExchange(uint32_t *atomic, uint32_t compare, uint32_t exchange) { return atomicCompareExchange(static_cast<uint32_t volatile *>(atomic), compare, exchange); }
+    inline uint64_t atomicCompareExchange(uint64_t *atomic, uint64_t compare, uint64_t exchange) { return atomicCompareExchange(static_cast<uint64_t volatile *>(atomic), compare, exchange); }
+    inline void *atomicCompareExchange(void **atomic, void *compare, void *exchange) { return atomicCompareExchange(static_cast<void *volatile *>(atomic), compare, exchange); }
 
     // Threading API
     struct ThreadHandle
@@ -211,15 +202,15 @@ namespace IB
         };
     };
 
-    IB_API File openFile(char const *filepath, uint32_t options);
-    IB_API void closeFile(File file);
-    IB_API void *mapFile(File file);
-    IB_API void unmapFile(File file);
+    IB_API File openFile(char const *filepath, uint32_t options); // Threadsafe
+    IB_API void closeFile(File file); // Threadsafe
+    IB_API void *mapFile(File file); // Threadsafe
+    IB_API void unmapFile(File file); // Threadsafe as long as you don't unmap the same file in another thread
     IB_API void writeToFile(File file, void *data, size_t size);
     IB_API void appendToFile(File file, void *data, size_t size);
     IB_API size_t fileSize(File file);
 
     // File system
-    IB_API bool isDirectory(char const* path);
-    IB_API void setWorkingDirectory(char const* path);
+    IB_API bool isDirectory(char const *path);
+    IB_API void setWorkingDirectory(char const *path);
 } // namespace IB
