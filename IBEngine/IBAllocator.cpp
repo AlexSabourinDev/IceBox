@@ -176,6 +176,8 @@ of memory pages for a large allocation and is largely handled by the operating s
 
 namespace
 {
+    void *const MemoryLock = reinterpret_cast<void *>(0x01);
+
     // Small Memory Allocations
 
     constexpr size_t SmallMemoryBoundary = 512;
@@ -251,12 +253,11 @@ namespace
         return IB::popCount(value) - 1;
     }
 
-    uint64_t findClearedSlot(void *memory, uint64_t bitCount)
+    uint64_t findClearedSlot(uint64_t *memory, uint64_t bitCount)
     {
         uint64_t freeSlot = NoSlot;
 
         // TODO: handle alignment
-
         uint64_t *memoryIter = reinterpret_cast<uint64_t *>(memory);
         for (; static_cast<int32_t>(bitCount) > 0; memoryIter++, bitCount -= 64)
         {
@@ -310,7 +311,7 @@ namespace
         {
             // Mark our memory page as 0x01 to lock it.
             // Other threads should know to wait until the value is truly set now.
-            if (IB::atomicCompareExchange(&SmallMemoryPageTables[tableIndex].MemoryPages, nullptr, reinterpret_cast<void *>(0x01)) == nullptr)
+            if (IB::atomicCompareExchange(&SmallMemoryPageTables[tableIndex].MemoryPages, nullptr, MemoryLock) == nullptr)
             {
                 SmallMemoryPageTables[tableIndex].Header = IB::reserveMemoryPages(1);
                 IB::commitMemoryPages(SmallMemoryPageTables[tableIndex].Header, 1);
@@ -323,7 +324,7 @@ namespace
         }
 
         // Busy spin while the other thread is allocating our memory pages.
-        while (IB::volatileLoad(&SmallMemoryPageTables[tableIndex].MemoryPages) == reinterpret_cast<void *>(0x01))
+        while (IB::volatileLoad(&SmallMemoryPageTables[tableIndex].MemoryPages) == MemoryLock)
         {
         }
 
@@ -369,7 +370,7 @@ namespace
         void *memory;
         {
             uint64_t blockCount = (IB::memoryPageSize() * 8) / (1 + blockSize * 8);
-            uint64_t freeSlot = findClearedSlot(page, blockCount);
+            uint64_t freeSlot = findClearedSlot(reinterpret_cast<uint64_t *>(page), blockCount);
             IB_ASSERT(freeSlot != NoSlot, "Failed to find a slot but our page said it had a free slot!"); // Our page's "fully allocated" bit was cleared, how come we have no space?
 
             setSlot(page, freeSlot);
@@ -500,7 +501,7 @@ namespace
     {
         if (BuddyChunks == nullptr)
         {
-            if (IB::atomicCompareExchange(reinterpret_cast<void **>(&BuddyChunks), nullptr, reinterpret_cast<void *>(0x01)) == nullptr)
+            if (IB::atomicCompareExchange(reinterpret_cast<void **>(&BuddyChunks), nullptr, MemoryLock) == nullptr)
             {
                 uint32_t memoryPageCount = static_cast<uint32_t>(sizeof(BuddyChunk) * BuddyChunkCount / IB::memoryPageSize());
                 BuddyChunk *buddyChunks = reinterpret_cast<BuddyChunk *>(IB::reserveMemoryPages(memoryPageCount));
@@ -511,7 +512,7 @@ namespace
         }
 
         // Busy loop until our buddy chunk is commited
-        while (IB::volatileLoad(&BuddyChunks) == reinterpret_cast<void *>(0x01))
+        while (IB::volatileLoad(&BuddyChunks) == MemoryLock)
         {
         }
 
@@ -749,6 +750,55 @@ namespace
         return memoryPageIndex != UINT32_MAX;
     }
 
+    uint64_t blockPoolSlotCount(size_t memoryPageSize, uint64_t blockSize)
+    {
+        // Memory allocation sizes:
+        // B = block size
+        // B = 16 + f(N)
+        // Where N is the number of entities that can fit in the block along with the slots
+        // B-16 = f(N);
+        // f(N) = N/8+S*N
+        // Where S is the size of our blocks
+        // B-16=N/8+S*N
+        // Solve for N
+        // B-16 = N(1/8+S)
+        // B-16 = N(1/8+8S/8)
+        // B-16 = N(1+8S)/8
+        // (B-16)/(1+8S)=N/8
+        // (B-16)*8/(1+8S)=N
+        return (memoryPageSize - 16) * 8 / (1 + 8 * blockSize);
+    }
+
+    struct BlockPageDesc
+    {
+        void **NextPagePtr;
+        uint64_t *SlotAllocations;
+        uintptr_t Blocks;
+    };
+
+    BlockPageDesc blockPageDesc(void *page, size_t blockSize, uint64_t slotCount)
+    {
+        void **nextPagePtr;
+        uint64_t *slotAllocations;
+        uintptr_t blocks;
+        {
+            uintptr_t address = reinterpret_cast<uintptr_t>(page);
+            blocks = address;
+            address += blockSize * slotCount;
+
+            uint64_t addressMod = address % sizeof(void*);
+            address += addressMod != 0 ? sizeof(void*) - addressMod : 0;
+
+            nextPagePtr = reinterpret_cast<void **>(address);
+            address += sizeof(void *);
+
+            slotAllocations = reinterpret_cast<uint64_t *>(address);
+            address += slotCount / 64 + (slotCount % 64) != 0 ? 1 : 0;
+        }
+
+        return BlockPageDesc{ nextPagePtr, slotAllocations, blocks };
+    }
+
 } // namespace
 
 namespace IB
@@ -790,6 +840,11 @@ namespace IB
 
     void memoryFree(void *memory)
     {
+        if (memory == nullptr)
+        {
+            return;
+        }
+
         if (!freeSmallMemory(memory))
         {
             if (!freeMediumMemory(memory))
@@ -799,4 +854,127 @@ namespace IB
         }
     }
 
+    BlockPool createBlockPool(size_t blockSize, size_t blockAlignment)
+    {
+        return BlockPool{nullptr, blockSize > blockAlignment ? blockSize : blockAlignment };
+    }
+
+    void destroyBlockPool(BlockPool *pool)
+    {
+        // No threadsafety here. We're assuming we're cleaning up without other callsites trying to use this block pool.
+        if (pool->Memory != nullptr)
+        {
+            uint64_t const slotCount = blockPoolSlotCount(IB::memoryPageSize(), pool->BlockSize);
+
+            void *nextPage = pool->Memory;
+            while (nextPage != nullptr)
+            {
+                void *currentPage = nextPage;
+
+                BlockPageDesc pageDesc = blockPageDesc(currentPage, pool->BlockSize, slotCount);
+
+                IB_ASSERT(areAllSlotsClear(pageDesc.SlotAllocations, slotCount), "Pool should be completely released before destroying!");
+
+                nextPage = *pageDesc.NextPagePtr;
+                decommitMemoryPages(currentPage, 1);
+                freeMemoryPages(currentPage);
+            }
+        }
+
+        *pool = {};
+    }
+
+    void *memoryAllocate(BlockPool *pool)
+    {
+        uint64_t const slotCount = blockPoolSlotCount(IB::memoryPageSize(), pool->BlockSize);
+        if (atomicCompareExchange(&pool->Memory, nullptr, MemoryLock) == nullptr)
+        {
+            void *memoryPage = IB::reserveMemoryPages(1);
+            commitMemoryPages(memoryPage, 1);
+            volatileStore(&pool->Memory, memoryPage);
+        }
+
+        IB_ASSERT(volatileLoad(&pool->Memory) != nullptr, "We've made a mistake if we see this value as nullptr.");
+        while (volatileLoad(&pool->Memory) == MemoryLock)
+        {
+        }
+
+        void *allocatedSlot = nullptr;
+        void *currentPage = pool->Memory;
+        while (allocatedSlot == nullptr)
+        {
+            BlockPageDesc pageDesc = blockPageDesc(currentPage, pool->BlockSize, slotCount);
+
+            uint64_t slotOffset = 0;
+            for (
+                uint64_t slot = findClearedSlot(pageDesc.SlotAllocations, slotCount);
+                slot != NoSlot;
+                slot = findClearedSlot(pageDesc.SlotAllocations + slotOffset, slotCount - slotOffset))
+            {
+                slotOffset += slot / 64; // Advance our slot offset
+
+                uint64_t *slotBlock = pageDesc.SlotAllocations + slotOffset;
+                uint64_t slotSet = 1ull << (slot % 64);
+                // If our slot wasn't already set, great! That's our block
+                if ((atomicOr(slotBlock, slotSet) & slotSet) == 0)
+                {
+                    allocatedSlot = reinterpret_cast<void *>(pageDesc.Blocks + slot * pool->BlockSize);
+                    break;
+                }
+            }
+
+            if (allocatedSlot == nullptr)
+            {
+                currentPage = volatileLoad(pageDesc.NextPagePtr);
+                if (currentPage == nullptr)
+                {
+                    if (atomicCompareExchange(pageDesc.NextPagePtr, nullptr, MemoryLock) == nullptr)
+                    {
+                        void *nextPage = IB::reserveMemoryPages(1);
+                        commitMemoryPages(nextPage, 1);
+                        volatileStore(pageDesc.NextPagePtr, nextPage);
+                    }
+
+                    IB_ASSERT(volatileLoad(pageDesc.NextPagePtr) != nullptr, "We've made a mistake if we see this value as nullptr.");
+                    while (volatileLoad(pageDesc.NextPagePtr) == MemoryLock)
+                    {
+                    }
+
+                    threadLoadLoadFence(); // Assure that this load is completed after our previous load loop
+                    currentPage = volatileLoad(pageDesc.NextPagePtr);
+                }
+            }
+        }
+
+        return allocatedSlot;
+    }
+
+    void memoryFree(BlockPool *pool, void *blockMemory)
+    {
+        uint64_t const slotCount = blockPoolSlotCount(IB::memoryPageSize(), pool->BlockSize);
+
+        void *nextPage = pool->Memory;
+        while (nextPage != nullptr)
+        {
+            void *currentPage = nextPage;
+
+            BlockPageDesc pageDesc = blockPageDesc(currentPage, pool->BlockSize, slotCount);
+
+            uintptr_t blockAddress = reinterpret_cast<uintptr_t>(blockMemory);
+            uintptr_t blockOffset = blockAddress - pageDesc.Blocks;
+            bool isInBlock = blockOffset < sizeof(pool->BlockSize) * slotCount;
+            if (isInBlock)
+            {
+                uint64_t slot = blockOffset / pool->BlockSize;
+                uint64_t slotMask = ~(1ull << (slot % 64));
+                uint64_t *slotBlock = pageDesc.SlotAllocations + slot / 64;
+                atomicAnd(slotBlock, slotMask);
+                break;
+            }
+            else
+            {
+                nextPage = *pageDesc.NextPagePtr;
+            }
+        }
+    }
 } // namespace IB

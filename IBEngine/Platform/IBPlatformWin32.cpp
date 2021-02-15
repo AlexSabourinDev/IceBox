@@ -332,11 +332,11 @@ namespace IB
         IB_ASSERT(result == TRUE, "Failed to free memory!");
     }
 
-    void freeMemoryPages(void *pages, uint32_t pageCount)
+    void freeMemoryPages(void *pages)
     {
         IB_ASSERT(reinterpret_cast<uintptr_t>(pages) % memoryPageSize() == 0, "Memory must be aligned on a page size boundary!");
 
-        BOOL result = VirtualFree(pages, memoryPageSize() * pageCount, MEM_RELEASE);
+        BOOL result = VirtualFree(pages, 0, MEM_RELEASE);
         IB_ASSERT(result == TRUE, "Failed to release memory!");
     }
 
@@ -403,6 +403,16 @@ namespace IB
     void *atomicCompareExchange(void *volatile *atomic, void *compare, void *exchange)
     {
         return InterlockedCompareExchangePointerNoFence(atomic, exchange, compare);
+    }
+
+    uint64_t atomicOr(uint64_t volatile *atomic, uint64_t orValue)
+    {
+        return InterlockedOr64NoFence(reinterpret_cast<int64_t volatile*>(atomic), orValue);
+    }
+
+    uint64_t atomicAnd(uint64_t volatile *atomic, uint64_t andValue)
+    {
+        return InterlockedAnd64NoFence(reinterpret_cast<int64_t volatile*>(atomic), andValue);
     }
 
     uint32_t processorCount()

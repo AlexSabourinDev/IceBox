@@ -26,6 +26,7 @@
     <ClInclude Include="..\SDK\cJSON\cJSON.h">
       <Filter>cJSON</Filter>
     </ClInclude>
+    <ClInclude Include="IBEntity.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Platform\IBPlatformWin32.cpp">
@@ -41,5 +42,6 @@
     <ClCompile Include="..\SDK\cJSON\cJSON.c">
       <Filter>cJSON</Filter>
     </ClCompile>
+    <ClCompile Include="IBEntity.cpp" />
   </ItemGroup>
 </Project>

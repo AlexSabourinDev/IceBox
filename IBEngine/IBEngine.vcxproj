@@ -15,6 +15,7 @@
     <ClInclude Include="IBAllocator.h" />
     <ClInclude Include="IBAsset.h" />
     <ClInclude Include="IBEngineAPI.h" />
+    <ClInclude Include="IBEntity.h" />
     <ClInclude Include="IBJobs.h" />
     <ClInclude Include="IBLogging.h" />
     <ClInclude Include="IBMath.h" />
@@ -27,6 +28,7 @@
     <ClCompile Include="..\SDK\cJSON\cJSON.c" />
     <ClCompile Include="IBAllocator.cpp" />
     <ClCompile Include="IBAsset.cpp" />
+    <ClCompile Include="IBEntity.cpp" />
     <ClCompile Include="IBJobs.cpp" />
     <ClCompile Include="IBLogging.cpp" />
     <ClCompile Include="IBRenderer.cpp" />

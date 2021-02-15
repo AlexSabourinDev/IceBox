@@ -145,7 +145,7 @@ namespace IB
     // Returns the page to reserve state.
     IB_API void decommitMemoryPages(void *pages, uint32_t pageCount);
     // Releases reserved memory.
-    IB_API void freeMemoryPages(void *pages, uint32_t pageCount);
+    IB_API void freeMemoryPages(void *pages);
 
     // When requesting large blocks of memory, consider using a memory mapping
     IB_API void *mapLargeMemoryBlock(size_t size);   // Threadsafe
@@ -158,11 +158,15 @@ namespace IB
     IB_API uint32_t atomicCompareExchange(uint32_t volatile *atomic, uint32_t compare, uint32_t exchange);
     IB_API uint64_t atomicCompareExchange(uint64_t volatile *atomic, uint64_t compare, uint64_t exchange);
     IB_API void *atomicCompareExchange(void *volatile *atomic, void *compare, void *exchange);
+    IB_API uint64_t atomicOr(uint64_t volatile *atomic, uint64_t orValue);
+    IB_API uint64_t atomicAnd(uint64_t volatile *atomic, uint64_t andValue);
     inline uint32_t atomicIncrement(uint32_t *atomic) { return atomicIncrement(static_cast<uint32_t volatile *>(atomic)); }
     inline uint32_t atomicDecrement(uint32_t *atomic) { return atomicDecrement(static_cast<uint32_t volatile *>(atomic)); }
     inline uint32_t atomicCompareExchange(uint32_t *atomic, uint32_t compare, uint32_t exchange) { return atomicCompareExchange(static_cast<uint32_t volatile *>(atomic), compare, exchange); }
     inline uint64_t atomicCompareExchange(uint64_t *atomic, uint64_t compare, uint64_t exchange) { return atomicCompareExchange(static_cast<uint64_t volatile *>(atomic), compare, exchange); }
     inline void *atomicCompareExchange(void **atomic, void *compare, void *exchange) { return atomicCompareExchange(static_cast<void *volatile *>(atomic), compare, exchange); }
+    inline uint64_t atomicOr(uint64_t *atomic, uint64_t orValue) { return atomicOr(static_cast<uint64_t volatile*>(atomic), orValue); }
+    inline uint64_t atomicAnd(uint64_t *atomic, uint64_t andValue) { return atomicAnd(static_cast<uint64_t volatile*>(atomic), andValue); }
 
     // Threading API
     struct ThreadHandle
