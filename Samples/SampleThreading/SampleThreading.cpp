@@ -1,6 +1,6 @@
 
 #include <IBEngine/IBJobs.h>
-#include <IBEngine/Platform/IBPlatform.h>
+#include <IBEngine/IBPlatform.h>
 #include <IBEngine/IBAllocator.h>
 #include <IBEngine/IBLogging.h>
 #include <stdio.h>

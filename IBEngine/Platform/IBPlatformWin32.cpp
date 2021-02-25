@@ -1,5 +1,4 @@
-#include "IBPlatform.h"
-
+#include "../IBPlatform.h"
 #include "../IBLogging.h"
 
 #define WIN32_LEAN_AND_MEAN
@@ -9,6 +8,12 @@
 
 namespace
 {
+    template <typename T>
+    T volatileLoad(T const *target)
+    {
+        return *static_cast<T volatile const *>(target);
+    }
+
     struct ActiveWindow
     {
         HWND WindowHandle = NULL;
@@ -307,7 +312,7 @@ namespace IB
 
     void *reserveMemoryPages(uint32_t pageCount)
     {
-        LPVOID address = VirtualAlloc(NULL, memoryPageSize() * pageCount, MEM_RESERVE, PAGE_NOACCESS);
+        LPVOID address = VirtualAlloc(NULL, memoryPageSize() * pageCount, MEM_RESERVE, PAGE_READONLY);
         IB_ASSERT(address != NULL, "Failed to allocate block!");
         return address;
     }
@@ -358,15 +363,15 @@ namespace IB
     {
         for (uint32_t i = 0; i < MaxMemoryFileMappingCount; i++)
         {
-            if (ActiveMemoryFileMappings[i].Mapping == memory)
+            if (volatileLoad(&ActiveMemoryFileMappings[i].Mapping) == memory)
             {
                 HANDLE handle = ActiveMemoryFileMappings[i].MapHandle;
-                ActiveMemoryFileMappings[i] = {};
                 // Make sure we clear our entry before we return our address
                 // to the address list in UnmapViewOfFile.
                 // If we don't, we can have a thread receive the same address,
                 // and then it can get unmapped which will cause us to try to close our handle twice.
-                threadStoreFence();
+                ActiveMemoryFileMappings[i] = {};
+                threadStoreStoreFence(); // make sure our store is completed before any stores done by UnmapViewOfFile
 
                 UnmapViewOfFile(memory);
                 CloseHandle(handle);
@@ -395,7 +400,7 @@ namespace IB
         return InterlockedCompareExchangeNoFence64(reinterpret_cast<int64_t volatile *>(atomic), exchange, compare);
     }
 
-    void *atomicCompareExchange(void * volatile*atomic, void *compare, void *exchange)
+    void *atomicCompareExchange(void *volatile *atomic, void *compare, void *exchange)
     {
         return InterlockedCompareExchangePointerNoFence(atomic, exchange, compare);
     }
@@ -468,9 +473,38 @@ namespace IB
         IB_ASSERT(result != WAIT_FAILED, "Failed to wait on our event!");
     }
 
-    void threadStoreFence()
+    void threadStoreStoreFence()
     {
-        _mm_sfence();
+        // Assuminc x86-64 that already has store-store ordering
+        // _mm_sfence();
+    }
+
+    void threadLoadLoadFence()
+    {
+        // Assuming x86-64 that already has load-load ordering
+        // _mm_lfence();
+    }
+
+    void threadLoadStoreFence()
+    {
+        // Assuming x86-64 that already has load-store ordering
+    }
+
+    void threadStoreLoadFence()
+    {
+        _mm_mfence();
+    }
+
+    void threadAcquire()
+    {
+        threadLoadStoreFence();
+        threadLoadLoadFence();
+    }
+
+    void threadRelease()
+    {
+        threadLoadStoreFence();
+        threadStoreStoreFence();
     }
 
     void debugBreak()
@@ -501,7 +535,7 @@ namespace IB
             open = OPEN_ALWAYS;
         }
 
-        HANDLE fileHandle = CreateFile(filepath, access, 0, NULL, open, FILE_ATTRIBUTE_NORMAL, NULL);
+        HANDLE fileHandle = CreateFile(filepath, access, FILE_SHARE_READ, NULL, open, FILE_ATTRIBUTE_NORMAL, NULL);
         if (fileHandle == INVALID_HANDLE_VALUE)
         {
             return File{};
@@ -538,14 +572,14 @@ namespace IB
     {
         for (uint32_t i = 0; i < MaxFileMappingCount; i++)
         {
-            if (ActiveFileMappings[i].FileHandle == reinterpret_cast<HANDLE>(file.Value))
+            if (volatileLoad(&ActiveFileMappings[i].FileHandle) == reinterpret_cast<HANDLE>(file.Value))
             {
-                void* mapping = ActiveFileMappings[i].Mapping;
+                void *mapping = ActiveFileMappings[i].Mapping;
                 HANDLE handle = ActiveFileMappings[i].MapHandle;
 
                 // Make sure our mapping is cleared before we return our data to the OS
                 ActiveFileMappings[i] = {};
-                threadStoreFence();
+                threadStoreStoreFence(); // Make sure our write is globally visible before our unmap is visible
 
                 UnmapViewOfFile(mapping);
                 CloseHandle(handle);
@@ -554,15 +588,20 @@ namespace IB
         }
     }
 
-    void writeToFile(File file, void *data, size_t size)
+    void writeToFile(File file, void const *data, size_t size, uint32_t offset)
     {
         HANDLE fileHandle = reinterpret_cast<HANDLE>(file.Value);
+
+        SetFilePointer(fileHandle, offset, NULL, FILE_BEGIN);
+
         DWORD bytesWritten;
         BOOL result = WriteFile(fileHandle, data, static_cast<DWORD>(size), &bytesWritten, NULL);
         IB_ASSERT(result == TRUE, "Failed to write to file.");
+
+        SetFilePointer(fileHandle, 0, NULL, FILE_BEGIN);
     }
 
-    void appendToFile(File file, void *data, size_t size)
+    void appendToFile(File file, void const *data, size_t size)
     {
         HANDLE fileHandle = reinterpret_cast<HANDLE>(file.Value);
 
@@ -584,12 +623,17 @@ namespace IB
         return (static_cast<size_t>(high) << 32) | low;
     }
 
-    bool isDirectory(char const* path)
+    bool doesFileExist(char const *filepath)
+    {
+        return GetFileAttributes(filepath) != INVALID_FILE_ATTRIBUTES;
+    }
+
+    bool isDirectory(char const *path)
     {
         return (GetFileAttributes(path) & FILE_ATTRIBUTE_DIRECTORY) != 0;
     }
 
-    void setWorkingDirectory(char const* path)
+    void setWorkingDirectory(char const *path)
     {
         SetCurrentDirectory(path);
     }

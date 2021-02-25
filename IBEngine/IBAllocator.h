@@ -38,7 +38,7 @@ namespace IB
     T *allocate(TArgs &&... args)
     {
         void *memory = memoryAllocate(sizeof(T), alignof(T));
-        return new (memory) T{ std::forward<TArgs>(args)... };
+        return new (memory) T{std::forward<TArgs>(args)...};
     }
 
     template <typename T>
@@ -49,20 +49,10 @@ namespace IB
     }
 
     template <typename T, typename... TArgs>
-    T* allocateArray(uint32_t count, TArgs &&... args)
+    T *allocateArray(uint32_t count, TArgs &&... args)
     {
-        size_t countBlockSize = alignof(T) < sizeof(uint32_t) ? sizeof(uint32_t) : alignof(T);
-
-        void* memory = memoryAllocate(sizeof(T) * count + countBlockSize, alignof(T));
-        uint8_t* memoryIter = reinterpret_cast<uint8_t*>(memory);
-
-        // Write our array count
-        uint32_t* countBlock = reinterpret_cast<uint32_t*>(memoryIter);
-        *countBlock = count;
-
-        memoryIter += countBlockSize;
-
-        T* arrayMemory = reinterpret_cast<T*>(memoryIter);
+        void *memory = memoryAllocate(sizeof(T) * count, alignof(T));
+        T *arrayMemory = reinterpret_cast<T *>(memory);
         for (uint32_t i = 0; i < count; i++)
         {
             new (arrayMemory + i) T(std::forward<TArgs>(args)...);
@@ -72,19 +62,17 @@ namespace IB
     }
 
     template <typename T>
-    void deallocateArray(T *arrayMemory)
+    void deallocateArray(T const *arrayMemory, uint32_t count)
     {
-        size_t countBlockSize = alignof(T) < sizeof(uint32_t) ? sizeof(uint32_t) : alignof(T);
-
-        uint8_t* memoryIter = reinterpret_cast<uint8_t*>(arrayMemory);
-        memoryIter -= countBlockSize;
-        uint32_t* countBlock = reinterpret_cast<uint32_t*>(memoryIter);
-        uint32_t count = *countBlock;
-
-        for (uint32_t i = 0; i < count; i++)
+        if (count > 0)
         {
-            arrayMemory[i].~T();
+            for (uint32_t i = 0; i < count; i++)
+            {
+                arrayMemory[i].~T();
+            }
+            // Remove const here, we want to be able to deallocate a const pointer,
+            // but this will definitely modify the memory.
+            memoryFree(const_cast<T *>(arrayMemory));
         }
-        memoryFree(countBlock); // Free from our count block's location. That's where our allocation starts.
     }
 } // namespace IB

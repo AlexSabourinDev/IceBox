@@ -1,6 +1,6 @@
 #include "IBAllocator.h"
 
-#include "Platform/IBPlatform.h"
+#include "IBPlatform.h"
 #include "IBLogging.h"
 
 /*
@@ -174,7 +174,6 @@ of memory pages for a large allocation and is largely handled by the operating s
 
 */
 
-
 namespace
 {
     // Small Memory Allocations
@@ -249,7 +248,7 @@ namespace
         // At this point, the number of bits set is equal to the index of our first cleared bit + 1
         // Calculate the number of set bits and subtract 1 to get it's index
 
-        return IB_POPCOUNT(value) - 1;
+        return IB::popCount(value) - 1;
     }
 
     uint64_t findClearedSlot(void *memory, uint64_t bitCount)
@@ -303,42 +302,32 @@ namespace
         return reinterpret_cast<void *>(pageIter);
     }
 
-    template< typename T >
-    T volatileLoad(T* value)
-    {
-        return *reinterpret_cast<T volatile*>(value);
-    }
-
-    template< typename T >
-    void volatileStore(T* value, T set)
-    {
-        *reinterpret_cast<T volatile*>(value) = set;
-    }
-
     void *allocateSmallMemory(size_t blockSize)
     {
         size_t tableIndex = blockSize - 1;
         // If our table hasn't been initialized, allocate a page for it
-        if (SmallMemoryPageTables[tableIndex].MemoryPages == nullptr)
+        if (IB::volatileLoad(&SmallMemoryPageTables[tableIndex].MemoryPages) == nullptr)
         {
             // Mark our memory page as 0x01 to lock it.
             // Other threads should know to wait until the value is truly set now.
-            if (IB::atomicCompareExchange(&SmallMemoryPageTables[tableIndex].MemoryPages, nullptr, reinterpret_cast<void*>(0x01)) == nullptr)
+            if (IB::atomicCompareExchange(&SmallMemoryPageTables[tableIndex].MemoryPages, nullptr, reinterpret_cast<void *>(0x01)) == nullptr)
             {
                 SmallMemoryPageTables[tableIndex].Header = IB::reserveMemoryPages(1);
                 IB::commitMemoryPages(SmallMemoryPageTables[tableIndex].Header, 1);
 
-                void* memoryPages = IB::reserveMemoryPages(IB::memoryPageSize() * 8);
+                void *memoryPages = IB::reserveMemoryPages(IB::memoryPageSize() * 8);
                 // Assure our writes are globally visible before we allow access to our memory pages.
-                IB::threadStoreFence();
-                volatileStore(&SmallMemoryPageTables[tableIndex].MemoryPages, memoryPages);
+                IB::threadRelease();
+                IB::volatileStore(&SmallMemoryPageTables[tableIndex].MemoryPages, memoryPages);
             }
         }
 
         // Busy spin while the other thread is allocating our memory pages.
-        while (volatileLoad(&SmallMemoryPageTables[tableIndex].MemoryPages) == reinterpret_cast<void*>(0x01))
+        while (IB::volatileLoad(&SmallMemoryPageTables[tableIndex].MemoryPages) == reinterpret_cast<void *>(0x01))
         {
         }
+
+        IB::threadAcquire(); // By this point, we're acquiring MemoryPages and all the other stores
 
         // Find our free page address
         uint64_t lockedPageIndex = UINT64_MAX;
@@ -346,10 +335,10 @@ namespace
         uint32_t lockIndex = 0;
         while (lockedPageIndex == UINT64_MAX)
         {
-            uint64_t* offsetHeader = reinterpret_cast<uint64_t*>(SmallMemoryPageTables[tableIndex].Header);
+            uint64_t *offsetHeader = reinterpret_cast<uint64_t *>(SmallMemoryPageTables[tableIndex].Header);
 
             uint64_t pageCount = (IB::memoryPageSize() * 8);
-            uint64_t pageIndex = findClearedSlot(offsetHeader + slotOffset/64, pageCount - slotOffset) + slotOffset;
+            uint64_t pageIndex = findClearedSlot(offsetHeader + slotOffset / 64, pageCount - slotOffset) + slotOffset;
             IB_ASSERT(pageIndex != NoSlot || slotOffset != 0, "Failed to find a slot. We're out of memory."); // We're out of memory pages for this size class! Improve this algorithm to support the use case.
 
             lockIndex = pageIndex % LockPageCount;
@@ -366,6 +355,7 @@ namespace
                 }
             }
         }
+        IB::threadAcquire(); // Once we've acquired our lock, we can start reading
 
         void *page = nullptr;
         {
@@ -395,7 +385,7 @@ namespace
         }
 
         // Make sure all our work is exeternally visible
-        IB::threadStoreFence();
+        IB::threadRelease();
         // Release our lock
         SmallMemoryPageTables[tableIndex].LockedPages[lockIndex] = 0;
 
@@ -434,6 +424,7 @@ namespace
             {
                 // Busy loop until we get our lock
             }
+            IB::threadAcquire(); // acquire our lock
 
             void *page = reinterpret_cast<void *>(pageStart + pageIndex * IB::memoryPageSize());
             void *firstSlot = getPageSlot(page, blockSize, blockCount, 0);
@@ -445,7 +436,7 @@ namespace
             }
 
             clearSlot(SmallMemoryPageTables[memoryPageIndex].Header, pageIndex);
-            IB::threadStoreFence();
+            IB::threadRelease();
             SmallMemoryPageTables[memoryPageIndex].LockedPages[lockIndex] = 0;
         }
 
@@ -463,7 +454,7 @@ namespace
         value = value | (value >> 16);
         value = value | (value >> 32);
 
-        return IB_POPCOUNT(value) - 1;
+        return IB::popCount(value) - 1;
     }
 
     constexpr uint32_t MaxBuddyBlockCount = 4096; // Maximum block size is 4096 * SmallestBuddyChunkSize (4096 * 1024 = 4MB)
@@ -509,18 +500,18 @@ namespace
     {
         if (BuddyChunks == nullptr)
         {
-            if (IB::atomicCompareExchange(reinterpret_cast<void**>(&BuddyChunks), nullptr, reinterpret_cast<void*>(0x01)) == nullptr)
+            if (IB::atomicCompareExchange(reinterpret_cast<void **>(&BuddyChunks), nullptr, reinterpret_cast<void *>(0x01)) == nullptr)
             {
                 uint32_t memoryPageCount = static_cast<uint32_t>(sizeof(BuddyChunk) * BuddyChunkCount / IB::memoryPageSize());
-                BuddyChunk* buddyChunks = reinterpret_cast<BuddyChunk *>(IB::reserveMemoryPages(memoryPageCount));
+                BuddyChunk *buddyChunks = reinterpret_cast<BuddyChunk *>(IB::reserveMemoryPages(memoryPageCount));
                 IB::commitMemoryPages(buddyChunks, memoryPageCount);
 
-                volatileStore(&BuddyChunks, buddyChunks);
+                IB::volatileStore(&BuddyChunks, buddyChunks);
             }
         }
 
         // Busy loop until our buddy chunk is commited
-        while (volatileLoad(&BuddyChunks) == reinterpret_cast<void*>(0x01))
+        while (IB::volatileLoad(&BuddyChunks) == reinterpret_cast<void *>(0x01))
         {
         }
 
@@ -550,6 +541,7 @@ namespace
                 }
                 continue;
             }
+            IB::threadAcquire(); // Acquire our lock
 
             if (BuddyChunks[buddyChunkIndex].MemoryPages == nullptr)
             {
@@ -622,13 +614,13 @@ namespace
 
                 IB::commitMemoryPages(reinterpret_cast<void *>(alignedMemoryAddress), memoryPageCount);
 
-                IB::threadStoreFence();
-                volatileStore<uint32_t>(&BuddyChunks[buddyChunkIndex].Locked, 0); // unlock our chunk
+                IB::threadRelease();
+                IB::volatileStore<uint32_t>(&BuddyChunks[buddyChunkIndex].Locked, 0); // unlock our chunk
                 return reinterpret_cast<void *>(memoryAddress);
             }
 
-            IB::threadStoreFence();
-            volatileStore<uint32_t>(&BuddyChunks[buddyChunkIndex].Locked, 0); // unlock our chunk
+            IB::threadRelease();
+            IB::volatileStore<uint32_t>(&BuddyChunks[buddyChunkIndex].Locked, 0); // unlock our chunk
 
             // Continue looping if we didn't find a slot in this buddy chunk.
         }
@@ -658,6 +650,7 @@ namespace
             while (IB::atomicCompareExchange(&BuddyChunks[memoryPageIndex].Locked, 0, 1) != 0)
             {
             }
+            IB::threadAcquire();
 
             uintptr_t pageStart = reinterpret_cast<uintptr_t>(BuddyChunks[memoryPageIndex].MemoryPages);
             ptrdiff_t offsetFromStart = reinterpret_cast<uintptr_t>(memory) - pageStart;
@@ -749,8 +742,8 @@ namespace
             }
 
             // Unlock our block and make sure our changes are visible
-            IB::threadStoreFence();
-            volatileStore<uint32_t>(&BuddyChunks[memoryPageIndex].Locked, 0);
+            IB::threadRelease();
+            IB::volatileStore<uint32_t>(&BuddyChunks[memoryPageIndex].Locked, 0);
         }
 
         return memoryPageIndex != UINT32_MAX;

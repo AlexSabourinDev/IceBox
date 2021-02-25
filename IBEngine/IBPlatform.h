@@ -1,11 +1,10 @@
 #pragma once
 
 #include <stdint.h>
-#include "../IBEngineAPI.h"
+#include "IBEngineAPI.h"
 
 #ifdef _MSC_VER
 #include <intrin.h>
-#define IB_POPCOUNT(value) static_cast<uint8_t>(__popcnt64(value))
 #endif // _MSC_VER
 
 #if defined(_WIN32) || defined(_WIN64)
@@ -14,6 +13,13 @@
 
 namespace IB
 {
+#ifdef _MSC_VER
+    inline uint8_t popCount(uint64_t value)
+    {
+        return static_cast<uint8_t>(__popcnt64(value));
+    }
+#endif // _MSC_VER
+
     // Windowing API
     struct WindowMessage
     {
@@ -142,7 +148,7 @@ namespace IB
     IB_API void freeMemoryPages(void *pages, uint32_t pageCount);
 
     // When requesting large blocks of memory, consider using a memory mapping
-    IB_API void *mapLargeMemoryBlock(size_t size); // Threadsafe
+    IB_API void *mapLargeMemoryBlock(size_t size);   // Threadsafe
     IB_API void unmapLargeMemoryBlock(void *memory); // Threadsafe as long as you don't unmap the same memory block.
 
     // Atomic API
@@ -180,7 +186,25 @@ namespace IB
     IB_API void signalThreadEvent(ThreadEvent threadEvent);
     IB_API void waitOnThreadEvent(ThreadEvent threadEvent);
 
-    IB_API void threadStoreFence();
+    // Not the ideal place for these, but good enough for now
+    template <typename T>
+    T volatileLoad(T *value)
+    {
+        return *reinterpret_cast<T volatile *>(value);
+    }
+
+    template <typename T>
+    void volatileStore(T *value, T set)
+    {
+        *reinterpret_cast<T volatile *>(value) = set;
+    }
+
+    IB_API void threadStoreStoreFence();
+    IB_API void threadLoadLoadFence();
+    IB_API void threadLoadStoreFence();
+    IB_API void threadStoreLoadFence();
+    IB_API void threadAcquire();
+    IB_API void threadRelease();
 
     IB_API void debugBreak();
 
@@ -203,12 +227,13 @@ namespace IB
     };
 
     IB_API File openFile(char const *filepath, uint32_t options); // Threadsafe
-    IB_API void closeFile(File file); // Threadsafe
-    IB_API void *mapFile(File file); // Threadsafe
-    IB_API void unmapFile(File file); // Threadsafe as long as you don't unmap the same file in another thread
-    IB_API void writeToFile(File file, void *data, size_t size);
-    IB_API void appendToFile(File file, void *data, size_t size);
+    IB_API void closeFile(File file);                             // Threadsafe
+    IB_API void *mapFile(File file);                              // Threadsafe
+    IB_API void unmapFile(File file);                             // Threadsafe as long as you don't unmap the same file in another thread
+    IB_API void writeToFile(File file, void const *data, size_t size, uint32_t offset = 0);
+    IB_API void appendToFile(File file, void const *data, size_t size);
     IB_API size_t fileSize(File file);
+    IB_API bool doesFileExist(char const *filepath);
 
     // File system
     IB_API bool isDirectory(char const *path);
