@@ -1,6 +1,7 @@
 #define _CRT_SECURE_NO_WARNINGS
 #include <IBEngine/IBPlatform.h>
 #include <IBEngine/IBLogging.h>
+#include <IBEngine/IBRenderer.h>
 #include <IBEngine/IBRendererFrontend.h>
 #include <IBEngine/IBSerialization.h>
 #include <IBEngine/IBAllocator.h>

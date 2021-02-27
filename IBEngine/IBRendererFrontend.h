@@ -3,7 +3,7 @@
 #include <stdint.h>
 
 #include "IBEngineAPI.h"
-#include "IBRenderer.h"
+#include "IBEntity.h"
 
 namespace IB
 {
@@ -13,6 +13,7 @@ namespace IB
         struct MemoryStream;
     } // namespace Serialization
 
+    struct Vertex;
     struct MeshAsset
     {
         Vertex const *Vertices;
@@ -39,6 +40,8 @@ namespace IB
 
     IB_API void initRendererFrontend(RendererFrontendDesc const &frontendDesc);
     IB_API void killRendererFrontend();
+
+    IB_API IB::PropertyHandle createRendererProperty(IB::Asset::ResourceHandle meshResource);
 
     IB_API void toBinary(Serialization::FileStream *stream, MeshAsset const &mesh);
     IB_API void fromBinary(Serialization::MemoryStream *stream, MeshAsset *mesh);
