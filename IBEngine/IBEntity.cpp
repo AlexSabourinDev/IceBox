@@ -179,11 +179,113 @@ namespace IB
         };
 
         EntityAssetStreamer EntityStreamer;
+
+        struct CellAsset
+        {
+            DynamicArray<EntityHandle> Entities;
+        };
+
+        // Since we don't expect to have many cells, a simple threadsafe allocation scheme is fine
+
+        constexpr uint32_t MaxCellCount = 32;
+        CellAsset Cells[MaxCellCount];
+        uint32_t CellAllocations[MaxCellCount] = {};
+
+        class CellAssetStreamer : public Asset::IStreamer
+        {
+            IB::Asset::LoadContinuation loadAsync(IB::Asset::LoadContext *context) override
+            {
+                enum State
+                {
+                    LoadEntities = 0,
+                    Complete
+                };
+
+                if (context->State == LoadEntities)
+                {
+                    uint32_t createdCell = MaxCellCount;
+                    for (uint32_t i = 0; i < MaxCellCount; i++)
+                    {
+                        if (atomicCompareExchange(&CellAllocations[i], false, true) == false)
+                        {
+                            createdCell = i;
+                        }
+                    }
+                    IB_ASSERT(createdCell != MaxCellCount, "Failed to create a cell! How many cells do we have active?");
+
+                    CellAsset& cell = Cells[createdCell];
+
+                    uint32_t entityCount;
+                    fromBinary(&context->Stream, &entityCount);
+                    cell.Entities.reserve(entityCount);
+
+                    IB_ASSERT(entityCount <= IB::Asset::MaxDependencyCount, "Too many properties!");
+                    IB::JobHandle loadHandles[IB::Asset::MaxDependencyCount];
+                    uint32_t handleCount = 0;
+                    for (uint32_t i = 0; i < entityCount; i++)
+                    {
+                        IB::EntityHandle& entity = cell.Entities.add();
+
+                        uint32_t offset;
+                        fromBinary(&context->Stream, &offset);
+
+                        // Passing pointer to dynamic array item is OK here. We've reserved the memory and will not resize until the load is complete.
+                        loadHandles[handleCount++] = IB::Asset::loadSubAssetAsync(context->Stream, IB::Asset::toFourCC("ENTT"), { 0 },
+                            [](void *data, IB::Asset::AssetHandle asset)
+                            {
+                                *reinterpret_cast<IB::EntityHandle *>(data) = toEntityHandle(asset);
+                            }, &entity);
+
+                        advance(&context->Stream, offset);
+                    }
+
+                    context->Data = createdCell;
+                    return IB::Asset::wait(loadHandles, handleCount, Complete);
+                }
+                else
+                {
+                    return IB::Asset::complete({ context->Data });
+                }
+            }
+
+            void saveThreadSafe(IB::Asset::SaveContext *context) override
+            {
+                CellAsset& cell = Cells[context->Asset.Value];
+                toBinary(context->Stream, cell.Entities.count());
+                for (uint32_t i = 0; i < cell.Entities.count(); i++)
+                {
+                    uint32_t dummyWriteSize = 0;
+                    toBinary(context->Stream, dummyWriteSize);
+                    uint32_t writeStart = flush(context->Stream);
+
+                    IB::Asset::saveSubAssetThreadSafe(context->Stream, IB::Asset::toFourCC("ENTT"), toAssetHandle(cell.Entities[i]));
+
+                    uint32_t writeEnd = flush(context->Stream);
+
+                    // Write our written size right before our sub asset.
+                    uint32_t writeSize = writeEnd - writeStart;
+                    IB::writeToFile(context->Stream->File, &writeSize, sizeof(uint32_t), writeStart - sizeof(uint32_t));
+                }
+            }
+
+            void unloadThreadSafe(IB::Asset::AssetHandle assetHandle) override
+            {
+                CellAsset& cell = Cells[assetHandle.Value];
+                for (uint32_t i = 0; i < cell.Entities.count(); i++)
+                {
+                    IB::Asset::unloadSubAssetThreadSafe(toAssetHandle(cell.Entities[i]), IB::Asset::toFourCC("ENTT"));
+                }
+
+                volatileStore<uint32_t>(&CellAllocations[assetHandle.Value], false);
+            }
+        };
+        CellAssetStreamer CellStreamer;
     }
 
     void initEntitySystem()
     {
         Asset::addStreamer(Asset::toFourCC("ENTT"), &EntityStreamer);
+        Asset::addStreamer(Asset::toFourCC("CELL"), &CellStreamer);
     }
 
     void killEntitySystem()
@@ -201,6 +303,27 @@ namespace IB
     {
         Entity* entity = reinterpret_cast<Entity*>(entityHandle.Value);
         entity->Properties.add(type, propertyHandle);
+    }
+
+    CellHandle createCell()
+    {
+        uint32_t createdCell = MaxCellCount;
+        for (uint32_t i = 0; i < MaxCellCount; i++)
+        {
+            if (atomicCompareExchange(&CellAllocations[i], false, true) == false)
+            {
+                createdCell = i;
+            }
+        }
+
+        IB_ASSERT(createdCell != MaxCellCount, "Failed to create a cell! How many cells do we have active?");
+        return { createdCell };
+    }
+
+    void addEntityToCell(CellHandle cellHandle, EntityHandle entity)
+    {
+        CellAsset& cell = Cells[cellHandle.Value];
+        cell.Entities.add(entity);
     }
 }
 

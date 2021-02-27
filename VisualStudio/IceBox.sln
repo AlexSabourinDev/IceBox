@@ -43,6 +43,9 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "SampleGameObject", "..\Samp
 	EndProjectSection
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "SampleAssetLoading", "..\Samples\SampleAssetLoading\SampleAssetLoading.vcxproj", "{096DFF7B-5DF9-4228-AA37-78CDD969154F}"
+	ProjectSection(ProjectDependencies) = postProject
+		{ECCDB929-1C4D-4436-90B1-32202C679E77} = {ECCDB929-1C4D-4436-90B1-32202C679E77}
+	EndProjectSection
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

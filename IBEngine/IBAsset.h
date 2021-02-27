@@ -84,7 +84,19 @@ namespace IB
                 IB_ASSERT(false, "Loader does not support saving this asset");
             }
         };
-        using OnResourceLoad = void(void *data, ResourceHandle resource);
+        // NOTE: You might get a load state of available before you
+        // receive a load state of Loading
+        // This is up to you to decide how to handle that.
+        struct ResourceLoad
+        {
+            enum State
+            {
+                Loading = 0,
+                Available = 1
+            };
+        };
+
+        using OnResourceLoad = void(void *data, ResourceHandle resource, ResourceLoad::State loadState);
         using OnSubAssetLoad = void(void *data, AssetHandle asset);
 
         // Streamer API
@@ -101,11 +113,15 @@ namespace IB
 
         IB_API AssetHandle GetAssetFromResource(ResourceHandle resourceHandle);
         IB_API char const *GetResourcePath(ResourceHandle resourceHandle);
+        IB_API bool IsResourceAssetAvailable(ResourceHandle resourceHandle);
 
         inline JobHandle loadResourceAsync(char const *assetPath, FourCC type, ResourceHandle *outputResource)
         {
-            return loadResourceAsync(assetPath, type, [](void *data, ResourceHandle resource) {
-                *reinterpret_cast<ResourceHandle *>(data) = resource;
+            return loadResourceAsync(assetPath, type, [](void *data, ResourceHandle resource, ResourceLoad::State loadState) {
+                if (loadState == ResourceLoad::Available)
+                {
+                    *reinterpret_cast<ResourceHandle *>(data) = resource;
+                }
             },
                                      outputResource);
         }
@@ -113,8 +129,11 @@ namespace IB
         template <typename StreamType>
         inline JobHandle loadSubAssetAsync(StreamType stream, FourCC type, AssetHandle parentAsset, AssetHandle *outputAsset)
         {
-            return loadSubAssetAsync(stream, type, parentAsset, [](void *data, AssetHandle asset) {
-                *reinterpret_cast<AssetHandle *>(data) = asset;
+            return loadSubAssetAsync(stream, type, parentAsset, [](void *data, AssetHandle asset, ResourceLoad::State loadState) {
+                if (loadState == ResourceLoad::Available)
+                {
+                    *reinterpret_cast<AssetHandle *>(data) = asset;
+                }
             },
                                      outputAsset);
         }
@@ -122,7 +141,7 @@ namespace IB
         template <typename StreamType>
         inline JobHandle loadSubAssetAsync(StreamType stream, FourCC type, AssetHandle parentAsset)
         {
-            return loadSubAssetAsync(stream, type, parentAsset, [](void *, AssetHandle) {}, nullptr);
+            return loadSubAssetAsync(stream, type, parentAsset, [](void *, AssetHandle, ResourceLoad::State) {}, nullptr);
         }
     } // namespace Asset
 } // namespace IB

@@ -130,7 +130,7 @@ namespace
             {
                 resource->Asset = loadResult.Asset;
 
-                onResourceLoad(data, IB::Asset::ResourceHandle{resource->PathHash});
+                onResourceLoad(data, IB::Asset::ResourceHandle{resource->PathHash}, IB::Asset::ResourceLoad::Available);
                 IB::deallocate(loadContext);
             }
             return loadResult.Result;
@@ -251,13 +251,13 @@ namespace IB
 
                 if (resource->Asset.Value != InvalidAsset.Value)
                 {
-                    onResourceLoad(data, ResourceHandle{pathHash});
+                    onResourceLoad(data, ResourceHandle{pathHash}, ResourceLoad::Available);
                 }
                 else
                 {
                     requestHandle = continueJob([resource, onResourceLoad, data, pathHash]() {
                         IB_ASSERT(resource->Asset.Value != InvalidAsset.Value, "No asset handle loaded!");
-                        onResourceLoad(data, ResourceHandle{pathHash});
+                        onResourceLoad(data, ResourceHandle{pathHash}, ResourceLoad::Available);
                         return JobResult::Complete;
                     },
                                                 &resource->LoadingJob, 1);
@@ -279,6 +279,7 @@ namespace IB
                 // before we write our resource to the table
                 threadRelease();
                 volatileStore(&ResourceHashTable[hashTableIndex].Resource, resource);
+                onResourceLoad(data, ResourceHandle{ pathHash }, ResourceLoad::Loading);
             }
 
             return requestHandle;
@@ -387,6 +388,14 @@ namespace IB
             IB_ASSERT(ResourceHashTable[hashTableIndex].RefCount > 0, "Resource is not loaded!");
 
             return ResourceHashTable[hashTableIndex].Resource->Asset;
+        }
+
+        bool IsResourceAssetAvailable(ResourceHandle resourceHandle)
+        {
+            uint32_t hashTableIndex = resourceHandle.Hash % MaxTableEntries;
+            IB_ASSERT(ResourceHashTable[hashTableIndex].RefCount > 0, "Resource is not loaded!");
+
+            return ResourceHashTable[hashTableIndex].Resource->Asset.Value != InvalidAsset.Value;
         }
 
         char const *GetResourcePath(ResourceHandle resourceHandle)

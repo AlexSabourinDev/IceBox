@@ -100,13 +100,7 @@ int main()
     }
 
     // Create our renderer property
-    IB::PropertyHandle rendererPropertyAsset = { 0 };
-    {
-        IB::Asset::ResourceHandle meshHandle;
-        IB::JobHandle meshJobHandle = IB::Asset::loadResourceAsync("Box.msh", IB::Asset::toFourCC("MESH"), &meshHandle);
-        waitOnJob(meshJobHandle);
-        rendererPropertyAsset = IB::createRendererProperty(meshHandle);
-    }
+    IB::PropertyHandle rendererPropertyAsset = IB::createRendererProperty("Box.msh");
 
     // Create our transform property
     IB::PropertyHandle transformPropertyAsset = { 0 };

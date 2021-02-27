@@ -155,7 +155,7 @@ int main()
     winDesc.CallbackState = &sampleState;
     IB::WindowHandle window = IB::createWindow(winDesc);
 
-    IB::File forwardSampleFile = IB::openFile("../Assets/Compiled/SampleForward.c.shdr", IB::OpenFileOptions::Read);
+    IB::File forwardSampleFile = IB::openFile("../Assets/Compiled/SampleForward.shdr", IB::OpenFileOptions::Read);
     void *forwardSample = IB::mapFile(forwardSampleFile);
 
     IB::ShaderAsset shaders;
@@ -203,7 +203,7 @@ int main()
     gizmoMatDesc.AlbedoImage = whiteImage;
     IB::MaterialHandle gizmoMaterial = IB::createMaterial(gizmoMatDesc);
 
-    IB::File meshFile = IB::openFile("../Assets/Compiled/Box.c.msh", IB::OpenFileOptions::Read);
+    IB::File meshFile = IB::openFile("../Assets/Compiled/Box.msh", IB::OpenFileOptions::Read);
     void *meshData = IB::mapFile(meshFile);
 
     IB::MeshAsset mesh = {};

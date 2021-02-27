@@ -4,6 +4,7 @@
 
 #include "IBEngineAPI.h"
 #include "IBEntity.h"
+#include "IBJobs.h"
 
 namespace IB
 {
@@ -38,10 +39,10 @@ namespace IB
         WindowHandle *Window;
     };
 
-    IB_API void initRendererFrontend(RendererFrontendDesc const &frontendDesc);
+    IB_API IB::JobHandle initRendererFrontend(RendererFrontendDesc const &frontendDesc);
     IB_API void killRendererFrontend();
 
-    IB_API IB::PropertyHandle createRendererProperty(IB::Asset::ResourceHandle meshResource);
+    IB_API IB::PropertyHandle createRendererProperty(char const* meshPath);
 
     IB_API void toBinary(Serialization::FileStream *stream, MeshAsset const &mesh);
     IB_API void fromBinary(Serialization::MemoryStream *stream, MeshAsset *mesh);
