@@ -399,7 +399,6 @@ namespace IB
                 }
             }
 
-            if(rendererCount > 0)
             {
                 IB::Mat3x4 meshTransform =
                 {
@@ -445,14 +444,16 @@ namespace IB
                 meshBatch.Meshes = meshInstances;
                 meshBatch.MeshCount = rendererCount;
 
-                IB::ViewDesc::Pass worldPass;
-                worldPass.Batches = &meshBatch;
-                worldPass.BatchCount = 1;
-
                 IB::ViewDesc viewDesc = {};
-                viewDesc.ViewProj = viewProj;
-                viewDesc.Forward.Passes[IB::ViewDesc::Pass::Default] = worldPass;
+                if (rendererCount > 0)
+                {
+                    IB::ViewDesc::Pass worldPass;
+                    worldPass.Batches = &meshBatch;
+                    worldPass.BatchCount = 1;
+                    viewDesc.Forward.Passes[IB::ViewDesc::Pass::Default] = worldPass;
+                }
 
+                viewDesc.ViewProj = viewProj;
                 IB::drawView(viewDesc);
             }
 

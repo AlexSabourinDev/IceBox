@@ -54,8 +54,6 @@ int main()
         IB::addEntityToCell(cellHandle, entityHandle);
     }
 
-    waitOnJob(rendererInit);
-
     IB::JobHandle lastDraw = {};
 
     IB::PlatformMessage message = IB::PlatformMessage::None;
