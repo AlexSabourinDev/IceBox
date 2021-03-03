@@ -41,16 +41,40 @@ int main()
     IB::CellHandle cellHandle = IB::createCell();
     IB::Asset::ResourceHandle cellResource = IB::Asset::createResourceThreadSafe("TestCell.cell", IB::Asset::toFourCC("CELL"), IB::toAssetHandle(cellHandle));
 
+    IB::MaterialAsset materialAsset;
+    materialAsset.AlbedoPath = "bubbles.tex";
+    materialAsset.AlbedoTint = IB::toRGBA(1.0f, 1.0f, 1.0f, 1.0f);
+    IB::MaterialAssetHandle materialHandle = IB::createMaterialAsset(materialAsset);
+    IB::Asset::ResourceHandle materialResource = IB::Asset::createResourceThreadSafe("Test.mat", IB::Asset::toFourCC("MATE"), IB::toAssetHandle(materialHandle));
+
     {
         IB::EntityHandle entityHandle = IB::createEntity();
-        IB::PropertyHandle rendererProperty = IB::createRendererProperty("Box.msh");
+        IB::PropertyHandle rendererProperty = IB::createRendererProperty("Box.msh", "Test.mat");
         IB::addPropertyToEntity(entityHandle, IB::Asset::toFourCC("RNDR"), rendererProperty);
         IB::addEntityToCell(cellHandle, entityHandle);
     }
 
+    waitOnJob(rendererInit);
+
+    IB::JobHandle lastDraw = {};
+
+    IB::PlatformMessage message = IB::PlatformMessage::None;
+    while (message != IB::PlatformMessage::Quit)
+    {
+        IB::consumeMessageQueue([](void *data, IB::PlatformMessage message)
+        {
+            *reinterpret_cast<IB::PlatformMessage *>(data) = message;
+        },
+            &message);
+
+        IB::JobHandle currentDraw = drawCell(cellHandle);
+        waitOnJob(lastDraw);
+        lastDraw = currentDraw;
+    }
+
+    IB::Asset::releaseResourceAsync(materialResource);
     IB::Asset::releaseResourceAsync(cellResource);
 
-    waitOnJob(rendererInit);
     IB::killEntitySystem();
     IB::killRendererFrontend();
     IB::destroyWindow(window);

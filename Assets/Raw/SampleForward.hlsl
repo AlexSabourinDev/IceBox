@@ -51,7 +51,7 @@ V2F vertexMain(VertexInput input)
 
 struct MaterialData
 {
-	float4 Tint;
+	uint Tint;
 	uint TextureIndex;
 };
 
@@ -63,7 +63,17 @@ SamplerState TextureSampler;
 [[vk::binding(2, 0)]]
 Texture2D Textures[];
 
+float4 fromRGBA(uint tint)
+{
+    return float4(
+        (float)((tint & 0xFF000000) >> 24) / 255.0f,
+        (float)((tint & 0x00FF0000) >> 16) / 255.0f,
+        (float)((tint & 0x0000FF00) >> 8) / 255.0f,
+        (float)((tint & 0x000000FF) >> 0) / 255.0f);
+}
+
 float4 fragMain(V2F input) : SV_TARGET
 {
-	return Textures[Material.TextureIndex].Sample(TextureSampler, input.UV) * input.Color;
+    float4 tint = float4(fromRGBA(Material.Tint).rgb, 1.0f);
+	return Textures[Material.TextureIndex].Sample(TextureSampler, input.UV) * input.Color * tint;
 }

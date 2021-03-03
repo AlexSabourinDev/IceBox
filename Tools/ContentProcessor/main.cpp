@@ -14,10 +14,33 @@
 #include <wrl.h>
 #include <dxc/dxcapi.h>
 
+#define STB_IMAGE_IMPLEMENTATION
+#include <stb/stb_image.h>
+
+void processTexture(char const *rawPath, char const *compiledPath)
+{
+    int x, y, channelsInFile;
+    int const desiredChannels = 4;
+    uint8_t* imageData = stbi_load(rawPath, &x, &y, &channelsInFile, desiredChannels);
+
+    IB::ImageAsset imageAsset;
+    imageAsset.Format = IB::ImageFormat::RGBA8;
+    imageAsset.Width = static_cast<uint32_t>(x);
+    imageAsset.Height = static_cast<uint32_t>(y);
+    imageAsset.Data = imageData;
+
+    IB::File file = IB::openFile(compiledPath, IB::OpenFileOptions::Overwrite | IB::OpenFileOptions::Write);
+    IB::Serialization::FileStream fileStream{ file };
+    toBinary(&fileStream, imageAsset);
+    flush(&fileStream);
+
+    stbi_image_free(imageData);
+}
+
 void processMesh(char const *rawPath, char const *compiledPath)
 {
     Assimp::Importer importer;
-    const aiScene *scene = importer.ReadFile(rawPath, aiProcess_Triangulate);
+    aiScene const * scene = importer.ReadFile(rawPath, aiProcess_Triangulate);
 
     if (scene == nullptr || (scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE) != 0 || scene->mRootNode == nullptr)
     {
@@ -202,6 +225,12 @@ int main(int argc, char const *argv[])
             char compiledPath[255];
             sprintf(compiledPath, "%s/%.*s.shdr", compiledDirectory, extensionIndex, relativePath);
             processShader(rawPath, compiledPath);
+        }
+        else if (strcmp(".png", relativePath + extensionIndex) == 0 || strcmp(".jpg", relativePath + extensionIndex) == 0)
+        {
+            char compiledPath[255];
+            sprintf(compiledPath, "%s/%.*s.tex", compiledDirectory, extensionIndex, relativePath);
+            processTexture(rawPath, compiledPath);
         }
     }
 }

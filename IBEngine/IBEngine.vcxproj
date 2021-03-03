@@ -36,6 +36,12 @@
     <ClCompile Include="IBSerialization.cpp" />
     <ClCompile Include="Platform\IBPlatformWin32.cpp" />
   </ItemGroup>
+  <ItemGroup>
+    <FxCompile Include="..\Assets\Raw\SampleForward.hlsl">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+    </FxCompile>
+  </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>15.0</VCProjectVersion>
     <ProjectGuid>{ECCDB929-1C4D-4436-90B1-32202C679E77}</ProjectGuid>

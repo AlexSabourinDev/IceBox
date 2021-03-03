@@ -23,7 +23,7 @@ namespace IB
         printf("[%s][%s] %s\n", LogLevelString[static_cast<uint32_t>(level)], category, message);
     }
 
-    void assert(bool condition, char const* message)
+    void assertion(bool condition, char const* message)
     {
         if (!condition)
         {

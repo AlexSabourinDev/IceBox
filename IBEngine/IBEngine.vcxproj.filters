@@ -11,6 +11,9 @@
     <Filter Include="cJSON">
       <UniqueIdentifier>{c55c632b-304b-4379-ad43-6b30580144a7}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Shaders">
+      <UniqueIdentifier>{c2d01aed-c398-4f10-aef1-b77a9c5266cd}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="IBEngineAPI.h" />
@@ -43,5 +46,10 @@
       <Filter>cJSON</Filter>
     </ClCompile>
     <ClCompile Include="IBEntity.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <FxCompile Include="..\Assets\Raw\SampleForward.hlsl">
+      <Filter>Shaders</Filter>
+    </FxCompile>
   </ItemGroup>
 </Project>

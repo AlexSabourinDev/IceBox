@@ -12,7 +12,7 @@
 #endif // IB_ENABLE_LOGGING
 
 #ifdef IB_ENABLE_ASSERTS
-#define IB_ASSERT(condition, message) IB::assert(condition, message)
+#define IB_ASSERT(condition, message) IB::assertion(condition, message)
 #else
 #define IB_ASSERT(condition, message)
 #endif // IB_ENABLE_ASSERTS
@@ -28,5 +28,5 @@ namespace IB
     };
 
     IB_API void log(LogLevel level, char const* category, char const* message);
-    IB_API void assert(bool condition, char const* message);
+    IB_API void assertion(bool condition, char const* message);
 }

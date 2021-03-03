@@ -183,9 +183,9 @@ int main()
     imageDesc.Data = imageTexels;
     IB::ImageHandle albedoImage = IB::createImage(imageDesc);
 
-    float tint[4] = {1.0f, 1.0f, 1.0f, 1.0f};
+    uint32_t tint = IB::toRGBA(1.0f, 1.0f, 1.0f, 1.0f);
     IB::ForwardDesc matDesc = {};
-    memcpy(matDesc.AlbedoTint, tint, sizeof(float) * 4);
+    matDesc.AlbedoTint = tint;
     matDesc.AlbedoImage = albedoImage;
     IB::MaterialHandle someMaterial = IB::createMaterial(matDesc);
 
@@ -199,7 +199,7 @@ int main()
     IB::ImageHandle whiteImage = IB::createImage(whiteImageDesc);
 
     IB::ForwardDesc gizmoMatDesc = {};
-    memcpy(gizmoMatDesc.AlbedoTint, tint, sizeof(float) * 4);
+    gizmoMatDesc.AlbedoTint = tint;
     gizmoMatDesc.AlbedoImage = whiteImage;
     IB::MaterialHandle gizmoMaterial = IB::createMaterial(gizmoMatDesc);
 

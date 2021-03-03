@@ -100,7 +100,7 @@ int main()
     }
 
     // Create our renderer property
-    IB::PropertyHandle rendererPropertyAsset = IB::createRendererProperty("Box.msh");
+    IB::PropertyHandle rendererPropertyAsset = IB::createRendererProperty("Box.msh", "Test.mat");
 
     // Create our transform property
     IB::PropertyHandle transformPropertyAsset = { 0 };

@@ -305,6 +305,20 @@ namespace IB
         entity->Properties.add(type, propertyHandle);
     }
 
+    PropertyHandle getPropertyFromEntity(EntityHandle entityHandle, Asset::FourCC type)
+    {
+        Entity* entity = reinterpret_cast<Entity*>(entityHandle.Value);
+        for (uint32_t i = 0; i < entity->Properties.count(); i++)
+        {
+            if (entity->Properties[i].Type.Value == type.Value)
+            {
+                return entity->Properties[i].Handle;
+            }
+        }
+
+        return InvalidProperty;
+    }
+
     CellHandle createCell()
     {
         uint32_t createdCell = MaxCellCount;
@@ -324,6 +338,13 @@ namespace IB
     {
         CellAsset& cell = Cells[cellHandle.Value];
         cell.Entities.add(entity);
+    }
+
+    void getEntityList(CellHandle cellHandle, EntityHandle** entities, uint32_t* entityCount)
+    {
+        CellAsset& cell = Cells[cellHandle.Value];
+        *entities = cell.Entities.data();
+        *entityCount = cell.Entities.count();
     }
 }
 

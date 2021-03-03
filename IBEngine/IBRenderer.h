@@ -92,7 +92,7 @@ namespace IB
         ImageFormat::Enum Format = {};
         uint32_t Width = 0;
         uint32_t Height = 0;
-        uint8_t *Data = nullptr;
+        uint8_t const*Data = nullptr;
     };
 
     struct ImageHandle
@@ -100,9 +100,17 @@ namespace IB
         uint32_t Value;
     };
 
+    constexpr uint32_t toRGBA(float r, float g, float b, float a)
+    { 
+        return (static_cast<uint32_t>(r * 255.99f) << 24)
+             | (static_cast<uint32_t>(g * 255.99f) << 16)
+             | (static_cast<uint32_t>(b * 255.99f) << 8)
+             | (static_cast<uint32_t>(a * 255.99f));
+    }
+
     struct ForwardDesc
     {
-        float AlbedoTint[4] = {1.0f, 1.0f, 1.0f, 1.0f};
+        uint32_t AlbedoTint = 0;
         ImageHandle AlbedoImage = {};
     };
 
@@ -110,6 +118,7 @@ namespace IB
     {
         uint32_t Value;
     };
+    constexpr MaterialHandle InvalidMaterial = { 0 };
 
     struct ViewDesc
     {

@@ -84,7 +84,7 @@
       <Optimization>Disabled</Optimization>
       <SDLCheck>true</SDLCheck>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>..\..\;..\..\SDK\Assimp\Include;..\..\SDK\DXC\include</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\..\;..\..\SDK\Assimp\Include;..\..\SDK\DXC\include;..\..\SDK\stb\include</AdditionalIncludeDirectories>
       <ExceptionHandling>Sync</ExceptionHandling>
     </ClCompile>
     <Link>
@@ -101,7 +101,7 @@
       <Optimization>Disabled</Optimization>
       <SDLCheck>true</SDLCheck>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>..\..\;..\..\SDK\Assimp\Include;..\..\SDK\DXC\include</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\..\;..\..\SDK\Assimp\Include;..\..\SDK\DXC\include;..\..\SDK\stb\include</AdditionalIncludeDirectories>
       <ExceptionHandling>Sync</ExceptionHandling>
     </ClCompile>
     <Link>
@@ -120,7 +120,7 @@
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>..\..\;..\..\SDK\Assimp\Include;..\..\SDK\DXC\include</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\..\;..\..\SDK\Assimp\Include;..\..\SDK\DXC\include;..\..\SDK\stb\include</AdditionalIncludeDirectories>
       <ExceptionHandling>Sync</ExceptionHandling>
     </ClCompile>
     <Link>
@@ -141,7 +141,7 @@
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>..\..\;..\..\SDK\Assimp\Include;..\..\SDK\DXC\include</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\..\;..\..\SDK\Assimp\Include;..\..\SDK\DXC\include;..\..\SDK\stb\include</AdditionalIncludeDirectories>
       <ExceptionHandling>Sync</ExceptionHandling>
     </ClCompile>
     <Link>
@@ -156,6 +156,9 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\..\SDK\stb\include\stb\stb_image.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

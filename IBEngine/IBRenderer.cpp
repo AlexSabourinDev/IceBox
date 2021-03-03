@@ -1858,10 +1858,10 @@ namespace IB
     {
         struct
         {
-            float AlbedoTint[4];
+            uint32_t albedoTint;
             uint32_t albedoIndex;
         } matData;
-        memcpy(matData.AlbedoTint, desc.AlbedoTint, sizeof(float) * 4);
+        matData.albedoTint = desc.AlbedoTint;
         matData.albedoIndex = desc.AlbedoImage.Value - 1;
 
         uint32_t instanceIndex = RendererContext.Materials.Forward.InstanceCount++;

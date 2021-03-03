@@ -9,6 +9,7 @@ namespace IB
     {
         uint64_t Value;
     };
+    constexpr PropertyHandle InvalidProperty = { UINT64_MAX };
 
     struct EntityHandle
     {
@@ -32,9 +33,11 @@ namespace IB
     // Entity API
     IB_API EntityHandle createEntity();
     IB_API void addPropertyToEntity(EntityHandle entity, Asset::FourCC type, PropertyHandle propertyHandle);
+    IB_API PropertyHandle getPropertyFromEntity(EntityHandle entity, Asset::FourCC type);
 
     // Cell API
     IB_API CellHandle createCell();
     IB_API void addEntityToCell(CellHandle cell, EntityHandle entity);
+    IB_API void getEntityList(CellHandle cell, EntityHandle** entities, uint32_t* entityCount);
 }
 
