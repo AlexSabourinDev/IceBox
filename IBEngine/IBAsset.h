@@ -111,9 +111,9 @@ namespace IB
         IB_API JobHandle releaseResourceAsync(ResourceHandle resource);
         IB_API JobHandle saveResourceAsync(ResourceHandle resource);
 
-        IB_API AssetHandle GetAssetFromResource(ResourceHandle resourceHandle);
-        IB_API char const *GetResourcePath(ResourceHandle resourceHandle);
-        IB_API bool IsResourceAssetAvailable(ResourceHandle resourceHandle);
+        IB_API AssetHandle getAssetFromResource(ResourceHandle resourceHandle);
+        IB_API char const *getResourcePath(ResourceHandle resourceHandle);
+        IB_API bool isResourceAssetAvailable(ResourceHandle resourceHandle);
 
         inline JobHandle loadResourceAsync(char const *assetPath, FourCC type, ResourceHandle *outputResource)
         {

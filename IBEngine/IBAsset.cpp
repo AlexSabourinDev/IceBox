@@ -382,7 +382,7 @@ namespace IB
             getStreamer(type)->saveThreadSafe(&saveContext);
         }
 
-        AssetHandle GetAssetFromResource(ResourceHandle resourceHandle)
+        AssetHandle getAssetFromResource(ResourceHandle resourceHandle)
         {
             uint32_t hashTableIndex = resourceHandle.Hash % MaxTableEntries;
             IB_ASSERT(ResourceHashTable[hashTableIndex].RefCount > 0, "Resource is not loaded!");
@@ -390,7 +390,7 @@ namespace IB
             return ResourceHashTable[hashTableIndex].Resource->Asset;
         }
 
-        bool IsResourceAssetAvailable(ResourceHandle resourceHandle)
+        bool isResourceAssetAvailable(ResourceHandle resourceHandle)
         {
             uint32_t hashTableIndex = resourceHandle.Hash % MaxTableEntries;
             IB_ASSERT(ResourceHashTable[hashTableIndex].RefCount > 0, "Resource is not loaded!");
@@ -398,7 +398,7 @@ namespace IB
             return ResourceHashTable[hashTableIndex].Resource->Asset.Value != InvalidAsset.Value;
         }
 
-        char const *GetResourcePath(ResourceHandle resourceHandle)
+        char const *getResourcePath(ResourceHandle resourceHandle)
         {
             uint32_t hashTableIndex = resourceHandle.Hash % MaxTableEntries;
             IB_ASSERT(ResourceHashTable[hashTableIndex].RefCount > 0, "Resource is not loaded!");

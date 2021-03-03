@@ -127,7 +127,7 @@ namespace
 
                     IB::ForwardDesc materialDesc = {};
                     materialDesc.AlbedoTint = materialPtr->Asset.AlbedoTint;
-                    materialDesc.AlbedoImage = toImageHandle(IB::Asset::GetAssetFromResource(textureResource));
+                    materialDesc.AlbedoImage = toImageHandle(IB::Asset::getAssetFromResource(textureResource));
                     materialPtr->Material = IB::createMaterial(materialDesc);
                     *contextData = reinterpret_cast<uint64_t>(materialPtr);
 
@@ -254,10 +254,10 @@ namespace
         void saveThreadSafe(IB::Asset::SaveContext *context) override
         {
             RendererProperty *renderer = reinterpret_cast<RendererProperty *>(context->Asset.Value);
-            char const *meshPath = IB::Asset::GetResourcePath(renderer->MeshResource);
+            char const *meshPath = IB::Asset::getResourcePath(renderer->MeshResource);
             toBinary(context->Stream, meshPath);
 
-            char const *materialPath = IB::Asset::GetResourcePath(renderer->MaterialResource);
+            char const *materialPath = IB::Asset::getResourcePath(renderer->MaterialResource);
             toBinary(context->Stream, materialPath);
         }
 
@@ -294,7 +294,7 @@ namespace IB
                                         [](void *data, Asset::ResourceHandle resource, IB::Asset::ResourceLoad::State loadState) {
                                             if (loadState == Asset::ResourceLoad::Available)
                                             {
-                                                ShaderAsset *shaders = toShaderAsset(Asset::GetAssetFromResource(resource));
+                                                ShaderAsset *shaders = toShaderAsset(Asset::getAssetFromResource(resource));
                                                 RendererDesc rendererDesc = {};
                                                 rendererDesc.Window = reinterpret_cast<WindowHandle *>(data);
                                                 rendererDesc.Materials.Forward.VShader = shaders->VertexShader;
@@ -358,7 +358,7 @@ namespace IB
             IB::Asset::ResourceHandle textureResource = materialPtr->AlbedoTexture;
             IB::ForwardDesc materialDesc = {};
             materialDesc.AlbedoTint = materialPtr->Asset.AlbedoTint;
-            materialDesc.AlbedoImage = toImageHandle(IB::Asset::GetAssetFromResource(textureResource));
+            materialDesc.AlbedoImage = toImageHandle(IB::Asset::getAssetFromResource(textureResource));
             materialPtr->Material = IB::createMaterial(materialDesc);
             return IB::JobResult::Complete;
         }, &textureJob, 1, RendererJobQueueIndex);
@@ -383,15 +383,15 @@ namespace IB
                 if (handle.Value != InvalidProperty.Value)
                 {
                     RendererProperty* renderer = reinterpret_cast<RendererProperty*>(handle.Value);
-                    if (Asset::IsResourceAssetAvailable(renderer->MeshResource)
-                        && Asset::IsResourceAssetAvailable(renderer->MaterialResource))
+                    if (Asset::isResourceAssetAvailable(renderer->MeshResource)
+                        && Asset::isResourceAssetAvailable(renderer->MaterialResource))
                     {
-                        Asset::AssetHandle materialAsset = Asset::GetAssetFromResource(renderer->MaterialResource);
+                        Asset::AssetHandle materialAsset = Asset::getAssetFromResource(renderer->MaterialResource);
                         RuntimeMaterial* material = reinterpret_cast<RuntimeMaterial*>(materialAsset.Value);
                         // Assure that our material is valid
                         if (material->Material.Value != InvalidMaterial.Value)
                         {
-                            meshes[rendererCount] = { static_cast<uint32_t>(Asset::GetAssetFromResource(renderer->MeshResource).Value) };
+                            meshes[rendererCount] = { static_cast<uint32_t>(Asset::getAssetFromResource(renderer->MeshResource).Value) };
                             materials[rendererCount] = material->Material;
                             rendererCount++;
                         }

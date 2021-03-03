@@ -24,6 +24,7 @@ namespace IB
     inline PropertyHandle toPropertyHandle(Asset::AssetHandle asset) { return { asset.Value }; }
     inline Asset::AssetHandle toAssetHandle(PropertyHandle property) { return { property.Value }; }
     inline EntityHandle toEntityHandle(Asset::AssetHandle asset) { return { asset.Value }; }
+    inline CellHandle toCellHandle(Asset::AssetHandle asset) { return { asset.Value }; }
     inline Asset::AssetHandle toAssetHandle(EntityHandle entity) { return { entity.Value }; }
     inline Asset::AssetHandle toAssetHandle(CellHandle cell) { return { cell.Value }; }
 
