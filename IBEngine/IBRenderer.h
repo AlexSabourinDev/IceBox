@@ -38,16 +38,14 @@ namespace IB
     struct RendererDesc
     {
         WindowHandle const*Window;
-        struct
-        {
-            struct
-            {
-                uint8_t const*VShader = nullptr;
-                uint32_t VShaderSize = 0;
-                uint8_t const*FShader = nullptr;
-                uint32_t FShaderSize = 0;
-            } Forward;
-        } Materials;
+    };
+
+    struct ForwardPassDesc
+    {
+        uint8_t const*VShader = nullptr;
+        uint32_t VShaderSize = 0;
+        uint8_t const*FShader = nullptr;
+        uint32_t FShaderSize = 0;
     };
 
     struct Vertex
@@ -159,8 +157,15 @@ namespace IB
 
     IB_API void initRenderer(RendererDesc const &desc);
     IB_API void killRenderer();
+
+    // Can be called multiple times to reset the pipeline.
+    // This function is safe to be called from a separate shader loading thread.
+    // Make sure to only call pass initialization functions from this thread and no other.
+    IB_API void initForwardPass(ForwardPassDesc const &desc);
+
     IB_API MeshHandle createMesh(MeshDesc const &desc);
     IB_API ImageHandle createImage(ImageDesc const &desc);
     IB_API MaterialHandle createMaterial(ForwardDesc const &desc);
+
     IB_API void drawView(ViewDesc const &view);
 } // namespace IB

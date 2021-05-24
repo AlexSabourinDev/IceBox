@@ -164,11 +164,14 @@ int main()
 
     IB::RendererDesc rendererDesc = {};
     rendererDesc.Window = &window;
-    rendererDesc.Materials.Forward.VShader = shaders.VertexShader;
-    rendererDesc.Materials.Forward.VShaderSize = shaders.VertexShaderSize;
-    rendererDesc.Materials.Forward.FShader = shaders.FragShader;
-    rendererDesc.Materials.Forward.FShaderSize = shaders.FragShaderSize;
     IB::initRenderer(rendererDesc);
+
+    IB::ForwardPassDesc forwardDesc = {};
+    forwardDesc.VShader = shaders.VertexShader;
+    forwardDesc.VShaderSize = shaders.VertexShaderSize;
+    forwardDesc.FShader = shaders.FragShader;
+    forwardDesc.FShaderSize = shaders.FragShaderSize;
+    IB::initForwardPass(forwardDesc);
 
     // Can unmap shaders now
     IB::unmapFile(forwardSampleFile);

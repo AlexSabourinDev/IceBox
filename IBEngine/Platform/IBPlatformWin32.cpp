@@ -483,6 +483,12 @@ namespace IB
         IB_ASSERT(result != WAIT_FAILED, "Failed to wait on our event!");
     }
 
+    void resetThreadEvent(ThreadEvent threadEvent)
+    {
+        BOOL result = ResetEvent(reinterpret_cast<HANDLE>(threadEvent.Value));
+        IB_ASSERT(result, "Failed to reset our event!");
+    }
+
     void threadStoreStoreFence()
     {
         // Assuminc x86-64 that already has store-store ordering

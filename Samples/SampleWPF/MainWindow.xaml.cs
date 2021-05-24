@@ -57,7 +57,6 @@ namespace SampleWPF
 
         private void Window_Loaded(object sender, RoutedEventArgs e)
         {
-
             if (File.Exists(avalonDockSaveFile))
             {
                 using (var reader = new StreamReader(avalonDockSaveFile))

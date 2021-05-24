@@ -189,6 +189,7 @@ namespace IB
     IB_API void destroyThreadEvent(ThreadEvent threadEvent);
     IB_API void signalThreadEvent(ThreadEvent threadEvent);
     IB_API void waitOnThreadEvent(ThreadEvent threadEvent);
+    IB_API void resetThreadEvent(ThreadEvent threadEvent);
 
     // Not the ideal place for these, but good enough for now
     template <typename T>

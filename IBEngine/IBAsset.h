@@ -107,7 +107,7 @@ namespace IB
 
         // User API
         IB_API ResourceHandle createResourceThreadSafe(char const *assetPath, FourCC type, AssetHandle asset);
-        IB_API JobHandle loadResourceAsync(char const *assetPath, FourCC type, OnResourceLoad *onResourceLoad, void *data);
+        IB_API JobHandle loadResourceAsync(char const *assetPath, FourCC type, OnResourceLoad *onResourceLoad, void *data = nullptr);
         IB_API JobHandle releaseResourceAsync(ResourceHandle resource);
         IB_API JobHandle saveResourceAsync(ResourceHandle resource);
 

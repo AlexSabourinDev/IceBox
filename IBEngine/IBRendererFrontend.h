@@ -61,12 +61,13 @@ namespace IB
         WindowHandle *Window;
     };
 
-    IB_API JobHandle initRendererFrontend(RendererFrontendDesc const &frontendDesc);
+    IB_API void initRendererFrontend(RendererFrontendDesc const &frontendDesc);
     IB_API void killRendererFrontend();
 
     IB_API PropertyHandle createRendererProperty(char const* meshPath, char const* materialPath);
     IB_API MaterialAssetHandle createMaterialAsset(MaterialAsset asset);
-    IB_API JobHandle drawCell(CellHandle cell);
+    IB_API JobHandle drawCellAsync(CellHandle cell);
+    IB_API void waitOnDraws();
 
     IB_API void toBinary(Serialization::FileStream *stream, MeshAsset const &mesh);
     IB_API void fromBinary(Serialization::MemoryStream *stream, MeshAsset *mesh);

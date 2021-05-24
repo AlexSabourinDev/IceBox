@@ -20,7 +20,7 @@ int main()
 {
     IB::WindowDesc winDesc = {};
     winDesc.Name = "Ice Box";
-    winDesc.Width = 500;
+    winDesc.Width = 800;
     winDesc.Height = 500;
     winDesc.OnWindowMessage = [](void * /*data*/, IB::WindowMessage message)
     {
@@ -35,7 +35,7 @@ int main()
 
     IB::Serialization::initSerialization();
     IB::initJobSystem();
-    IB::JobHandle rendererInit = IB::initRendererFrontend({ &window });
+    IB::initRendererFrontend({ &window });
     IB::initEntitySystem();
 
     bool const createAndSaveCell = false;
@@ -72,8 +72,6 @@ int main()
     waitOnJob(loadJob);
     IB::CellHandle cellHandle = IB::toCellHandle(IB::Asset::getAssetFromResource(cellResource));
 
-    IB::JobHandle lastDraw = {};
-
     IB::PlatformMessage message = IB::PlatformMessage::None;
     while (message != IB::PlatformMessage::Quit)
     {
@@ -83,11 +81,10 @@ int main()
         },
             &message);
 
-        IB::JobHandle currentDraw = IB::drawCell(cellHandle);
-        waitOnJob(lastDraw);
-        lastDraw = currentDraw;
+        IB::drawCellAsync(cellHandle);
     }
 
+    IB::waitOnDraws();
     IB::Asset::releaseResourceAsync(cellResource);
 
     IB::killEntitySystem();
