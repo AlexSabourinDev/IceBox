@@ -7,7 +7,7 @@ namespace IB
 {
     struct PropertyHandle
     {
-        uint64_t Value;
+        uint64_t Value = UINT64_MAX;
     };
     constexpr PropertyHandle InvalidProperty = { UINT64_MAX };
 
@@ -18,8 +18,9 @@ namespace IB
 
     struct CellHandle
     {
-        uint64_t Value;
+        uint64_t Value = UINT64_MAX;
     };
+    constexpr CellHandle InvalidCell = { UINT64_MAX };
 
     inline PropertyHandle toPropertyHandle(Asset::AssetHandle asset) { return { asset.Value }; }
     inline Asset::AssetHandle toAssetHandle(PropertyHandle property) { return { property.Value }; }

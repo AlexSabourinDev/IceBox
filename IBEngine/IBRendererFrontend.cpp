@@ -5,6 +5,8 @@
 #include "IBLogging.h"
 #include "IBAllocator.h"
 
+#include <imgui/imgui.h>
+
 namespace
 {
     constexpr uint32_t RendererJobQueueIndex = 0;
@@ -372,8 +374,20 @@ namespace IB
         return {reinterpret_cast<uint64_t>(&materialData)};
     }
 
-    JobHandle drawCellAsync(CellHandle cell)
+    JobHandle drawCellAsync(CellHandle cell, ImDrawData* sourceImguiDrawCommands)
     {
+        // Clone our imgui draw data
+        ImDrawData* imguiDrawData = nullptr;
+        if (sourceImguiDrawCommands != nullptr && sourceImguiDrawCommands->CmdListsCount > 0)
+        {
+            imguiDrawData = allocate<ImDrawData>(*sourceImguiDrawCommands);
+            imguiDrawData->CmdLists = allocateArray<ImDrawList*>(imguiDrawData->CmdListsCount);
+            for (int32_t i = 0; i < imguiDrawData->CmdListsCount; i++)
+            {
+                imguiDrawData->CmdLists[i] = sourceImguiDrawCommands->CmdLists[i]->CloneOutput();
+            }
+        }
+
         if (volatileLoad(&PendingFrameCount) == MaxPendingFrameCount)
         {
             waitOnThreadEvent(PendingFrameEvent);
@@ -395,7 +409,7 @@ namespace IB
             resetThreadEvent(PendingFrameEvent);
         }
 
-        return launchJob([cell]() {
+        return launchJob([cell, imguiDrawData]() {
             EntityHandle *entities;
             uint32_t entityCount;
             getEntityList(cell, &entities, &entityCount);
@@ -480,7 +494,19 @@ namespace IB
                 }
 
                 viewDesc.ViewProj = viewProj;
-                IB::drawView(viewDesc);
+                viewDesc.ImGuiDrawData = imguiDrawData;
+                drawView(viewDesc);
+
+                // Clean up our ImGui data
+                if (imguiDrawData != nullptr)
+                {
+                    for (int32_t i = 0; i < imguiDrawData->CmdListsCount; i++)
+                    {
+                        IM_DELETE(imguiDrawData->CmdLists[i]);
+                    }
+                    deallocateArray(imguiDrawData->CmdLists, imguiDrawData->CmdListsCount);
+                    deallocate(imguiDrawData);
+                }
             }
 
             uint32_t previousPendingFrameCount = PendingFrameCount;

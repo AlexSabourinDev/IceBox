@@ -83,7 +83,7 @@ int main()
         },
             &message);
 
-        IB::drawCellAsync(cellHandle);
+        IB::drawCellAsync(cellHandle, nullptr);
     }
 
     IB::waitOnDraws();

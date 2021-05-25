@@ -392,10 +392,17 @@ namespace IB
 
         bool isResourceAssetAvailable(ResourceHandle resourceHandle)
         {
-            uint32_t hashTableIndex = resourceHandle.Hash % MaxTableEntries;
-            IB_ASSERT(ResourceHashTable[hashTableIndex].RefCount > 0, "Resource is not loaded!");
+            if (resourceHandle.Hash != InvalidResource.Hash)
+            {
+                uint32_t hashTableIndex = resourceHandle.Hash % MaxTableEntries;
+                IB_ASSERT(ResourceHashTable[hashTableIndex].RefCount > 0, "Resource is not loaded!");
 
-            return ResourceHashTable[hashTableIndex].Resource->Asset.Value != InvalidAsset.Value;
+                return ResourceHashTable[hashTableIndex].Resource->Asset.Value != InvalidAsset.Value;
+            }
+            else
+            {
+                return false;
+            }
         }
 
         char const *getResourcePath(ResourceHandle resourceHandle)

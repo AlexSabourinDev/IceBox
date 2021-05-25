@@ -8,6 +8,9 @@
       <AdditionalLibraryDirectories>$(SolutionDir)..\Lib\;$(SolutionDir)..\SDK\VulkanSDK\1.2.154.1\Lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalDependencies>IBEngine.Lib;vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
+    <ClCompile>
+      <AdditionalIncludeDirectories>$(SolutionDir)..\;$(SolutionDir)..\SDK\imgui_docking</AdditionalIncludeDirectories>
+    </ClCompile>
   </ItemDefinitionGroup>
   <ItemGroup />
 </Project>

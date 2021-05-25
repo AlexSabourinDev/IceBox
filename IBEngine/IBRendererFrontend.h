@@ -66,7 +66,7 @@ namespace IB
 
     IB_API PropertyHandle createRendererProperty(char const* meshPath, char const* materialPath);
     IB_API MaterialAssetHandle createMaterialAsset(MaterialAsset asset);
-    IB_API JobHandle drawCellAsync(CellHandle cell);
+    IB_API JobHandle drawCellAsync(CellHandle cell, ImDrawData* imguiDrawCommands);
     IB_API void waitOnDraws();
 
     IB_API void toBinary(Serialization::FileStream *stream, MeshAsset const &mesh);

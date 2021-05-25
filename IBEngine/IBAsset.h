@@ -28,8 +28,9 @@ namespace IB
 
         struct ResourceHandle
         {
-            uint32_t Hash;
+            uint32_t Hash = 0;
         };
+        constexpr ResourceHandle InvalidResource = { 0 };
 
         struct LoadContext
         {

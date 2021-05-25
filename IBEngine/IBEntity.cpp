@@ -342,9 +342,16 @@ namespace IB
 
     void getEntityList(CellHandle cellHandle, EntityHandle** entities, uint32_t* entityCount)
     {
-        CellAsset& cell = Cells[cellHandle.Value];
-        *entities = cell.Entities.data();
-        *entityCount = cell.Entities.count();
+        if (cellHandle.Value != InvalidCell.Value)
+        {
+            CellAsset& cell = Cells[cellHandle.Value];
+            *entities = cell.Entities.data();
+            *entityCount = cell.Entities.count();
+        }
+        else
+        {
+            *entityCount = 0;
+        }
     }
 }
 
