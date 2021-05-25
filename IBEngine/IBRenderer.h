@@ -32,8 +32,10 @@ This assures that we minimize our state changes while maximizing the potential f
 batching instances. (It's also easier to think about for me)
 */
 
+struct ImDrawData;
 namespace IB
 {
+    struct WindowMessagePlatformData;
     struct WindowHandle;
     struct RendererDesc
     {
@@ -136,7 +138,7 @@ namespace IB
 
         Mat4x4 ViewProj = Mat4x4::identity();
 
-        struct Pass
+        struct ForwardPass
         {
             enum
             {
@@ -151,8 +153,10 @@ namespace IB
 
         struct
         {
-            Pass Passes[Pass::Count];
+            ForwardPass Passes[ForwardPass::Count];
         } Forward;
+
+        ImDrawData *ImGuiDrawData = nullptr;
     };
 
     IB_API void initRenderer(RendererDesc const &desc);
@@ -167,5 +171,7 @@ namespace IB
     IB_API ImageHandle createImage(ImageDesc const &desc);
     IB_API MaterialHandle createMaterial(ForwardDesc const &desc);
 
+    IB_API void newImGuiFrame();
+    IB_API bool ImGuiPlatformMessage(WindowMessagePlatformData const* platformData);
     IB_API void drawView(ViewDesc const &view);
 } // namespace IB

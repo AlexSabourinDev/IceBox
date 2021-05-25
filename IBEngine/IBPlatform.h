@@ -68,6 +68,7 @@ namespace IB
 
         enum
         {
+            Unknown,
             Resize,
             Close,
             Key,
@@ -105,13 +106,14 @@ namespace IB
         } Data;
     };
 
+    struct WindowMessagePlatformData;
     struct WindowHandle
     {
         uintptr_t Value;
     };
     struct WindowDesc
     {
-        void (*OnWindowMessage)(void *data, WindowMessage message) = nullptr;
+        bool (*OnWindowMessage)(void *data, WindowMessage message, WindowMessagePlatformData const *platformData) = nullptr;
         void *CallbackState = nullptr;
 
         char const *Name = nullptr;

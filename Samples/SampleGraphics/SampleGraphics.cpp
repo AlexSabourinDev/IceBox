@@ -39,7 +39,7 @@ int main()
     winDesc.Name = "Ice Box";
     winDesc.Width = sampleState.Width;
     winDesc.Height = sampleState.Height;
-    winDesc.OnWindowMessage = [](void *data, IB::WindowMessage message) {
+    winDesc.OnWindowMessage = [](void *data, IB::WindowMessage message, IB::WindowMessagePlatformData const*) {
         SampleState *sampleState = reinterpret_cast<SampleState *>(data);
         switch (message.Type)
         {
@@ -47,10 +47,10 @@ int main()
             sampleState->WindowVisible = message.Data.Resize.Width > 0;
             sampleState->Width = message.Data.Resize.Width;
             sampleState->Height = message.Data.Resize.Height;
-            break;
+            return true;
         case IB::WindowMessage::Close:
             IB::sendQuitMessage();
-            break;
+            return true;
         case IB::WindowMessage::MouseClick:
             if (message.Data.MouseClick.State == IB::WindowMessage::Mouse::Pressed &&
                 message.Data.MouseClick.Button == IB::WindowMessage::Mouse::Left)
@@ -97,7 +97,7 @@ int main()
             {
                 sampleState->ActiveAxis = 3;
             }
-            break;
+            return true;
         case IB::WindowMessage::MouseMove:
             {
                 if (!sampleState->CullGizmo && sampleState->ActiveAxis < 3)
@@ -149,8 +149,10 @@ int main()
                     sampleState->PreviousMouseY = message.Data.MouseMove.Y;
                 }
             }
-            break;
+            return true;
         }
+
+        return false;
     };
     winDesc.CallbackState = &sampleState;
     IB::WindowHandle window = IB::createWindow(winDesc);
@@ -420,17 +422,17 @@ int main()
             meshBatch.Meshes = &meshInstance;
             meshBatch.MeshCount = 1;
 
-            IB::ViewDesc::Pass worldPass;
+            IB::ViewDesc::ForwardPass worldPass;
             worldPass.Batches = &meshBatch;
             worldPass.BatchCount = 1;
 
             IB::ViewDesc viewDesc = {};
             viewDesc.ViewProj = sampleState.ViewProj;
-            viewDesc.Forward.Passes[IB::ViewDesc::Pass::Default] = worldPass;
+            viewDesc.Forward.Passes[IB::ViewDesc::ForwardPass::Default] = worldPass;
 
             IB::ViewDesc::MeshInstances gizmoInstance = {};
             IB::ViewDesc::Batch gizmoBatch = {};
-            IB::ViewDesc::Pass gizmoPass;
+            IB::ViewDesc::ForwardPass gizmoPass;
             IB::Mat3x4 gizmoTransform;
             if (!sampleState.CullGizmo)
             {
@@ -461,7 +463,7 @@ int main()
                 gizmoPass.Batches = &gizmoBatch;
                 gizmoPass.BatchCount = 1;
 
-                viewDesc.Forward.Passes[IB::ViewDesc::Pass::DebugOverlay] = gizmoPass;
+                viewDesc.Forward.Passes[IB::ViewDesc::ForwardPass::DebugOverlay] = gizmoPass;
             }
 
             IB::drawView(viewDesc);

@@ -473,10 +473,10 @@ namespace IB
                 IB::ViewDesc viewDesc = {};
                 if (rendererCount > 0)
                 {
-                    IB::ViewDesc::Pass worldPass;
+                    IB::ViewDesc::ForwardPass worldPass;
                     worldPass.Batches = &meshBatch;
                     worldPass.BatchCount = 1;
-                    viewDesc.Forward.Passes[IB::ViewDesc::Pass::Default] = worldPass;
+                    viewDesc.Forward.Passes[IB::ViewDesc::ForwardPass::Default] = worldPass;
                 }
 
                 viewDesc.ViewProj = viewProj;

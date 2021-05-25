@@ -55,14 +55,16 @@ int main()
     winDesc.Name = "Ice Box";
     winDesc.Width = 500;
     winDesc.Height = 500;
-    winDesc.OnWindowMessage = [](void * /*data*/, IB::WindowMessage message)
+    winDesc.OnWindowMessage = [](void * /*data*/, IB::WindowMessage message, IB::WindowMessagePlatformData const* platformData)
     {
         switch (message.Type)
         {
         case IB::WindowMessage::Close:
             IB::sendQuitMessage();
-            break;
+            return true;
         }
+
+        return false;
     };
     IB::WindowHandle window = IB::createWindow(winDesc);
 

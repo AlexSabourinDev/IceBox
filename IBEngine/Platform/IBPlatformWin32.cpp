@@ -6,6 +6,17 @@
 #include <sysinfoapi.h>
 #include <stdint.h>
 
+namespace IB
+{
+    struct WindowMessagePlatformData
+    {
+        HWND Hwnd;
+        UINT Msg;
+        WPARAM WParam;
+        LPARAM LParam;
+    };
+}
+
 namespace
 {
     template <typename T>
@@ -19,7 +30,7 @@ namespace
         HWND WindowHandle = NULL;
 
         void (*OnCloseRequested)(void *) = nullptr;
-        void (*OnWindowMessage)(void *data, IB::WindowMessage message) = nullptr;
+        bool (*OnWindowMessage)(void *data, IB::WindowMessage message, IB::WindowMessagePlatformData const*platformData) = nullptr;
         void *State = nullptr;
     };
 
@@ -28,6 +39,8 @@ namespace
 
     LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     {
+        const IB::WindowMessagePlatformData platformData = { hwnd, msg, wParam, lParam };
+
         ActiveWindow *activeWindow = nullptr;
         for (uint32_t i = 0; i < MaxActiveWindows; i++)
         {
@@ -38,6 +51,7 @@ namespace
             }
         }
 
+        bool messageHandled = false;
         switch (msg)
         {
         case WM_CLOSE:
@@ -46,7 +60,7 @@ namespace
                 IB::WindowMessage message;
                 message.Type = IB::WindowMessage::Close;
 
-                activeWindow->OnWindowMessage(activeWindow->State, message);
+                messageHandled = activeWindow->OnWindowMessage(activeWindow->State, message, &platformData);
             }
             break;
         case WM_SIZE:
@@ -56,7 +70,7 @@ namespace
                 message.Type = IB::WindowMessage::Resize;
                 message.Data.Resize.Width = LOWORD(lParam);
                 message.Data.Resize.Height = HIWORD(lParam);
-                activeWindow->OnWindowMessage(activeWindow->State, message);
+                messageHandled = activeWindow->OnWindowMessage(activeWindow->State, message, &platformData);
             }
             break;
         case WM_LBUTTONDOWN:
@@ -101,7 +115,7 @@ namespace
                 message.Data.MouseClick.State = IB::WindowMessage::Mouse::Pressed;
                 break;
             }
-            activeWindow->OnWindowMessage(activeWindow->State, message);
+            messageHandled = activeWindow->OnWindowMessage(activeWindow->State, message, &platformData);
         }
         break;
         case WM_MOUSEMOVE:
@@ -110,7 +124,7 @@ namespace
             message.Type = IB::WindowMessage::MouseMove;
             message.Data.MouseMove.X = LOWORD(lParam);
             message.Data.MouseMove.Y = HIWORD(lParam);
-            activeWindow->OnWindowMessage(activeWindow->State, message);
+            messageHandled = activeWindow->OnWindowMessage(activeWindow->State, message, &platformData);
         }
         break;
         case WM_SYSKEYDOWN:
@@ -164,21 +178,36 @@ namespace
                     bool isFirstDown = (lParam & (1 << 30)) == 0; // 30th bit represents if the key was down before this message was sent.
                     if (isFirstDown)
                     {
-                        activeWindow->OnWindowMessage(activeWindow->State, message);
+                        messageHandled = activeWindow->OnWindowMessage(activeWindow->State, message, &platformData);
                     }
                 }
                 else
                 {
-                    activeWindow->OnWindowMessage(activeWindow->State, message);
+                    messageHandled = activeWindow->OnWindowMessage(activeWindow->State, message, &platformData);
                 }
             }
         }
         break;
         default:
-            return DefWindowProc(hwnd, msg, wParam, lParam);
+        {
+            if (activeWindow != nullptr && activeWindow->OnWindowMessage != nullptr)
+            {
+                IB::WindowMessage message;
+                message.Type = IB::WindowMessage::Unknown;
+                messageHandled = activeWindow->OnWindowMessage(activeWindow->State, message, &platformData);
+            }
+        }
+        break;
         }
 
-        return 0;
+        if (!messageHandled)
+        {
+            return DefWindowProc(hwnd, msg, wParam, lParam);
+        }
+        else
+        {
+            return FALSE;
+        }
     }
 
     IB::WindowHandle createWindowWin32(IB::WindowDesc desc, HWND parentWindowHandle, DWORD style)
@@ -267,6 +296,14 @@ namespace IB
         {
             *instance = GetModuleHandle(NULL);
             *window = ActiveWindows[handle.Value].WindowHandle;
+        }
+
+        void getPlatformMessageData(WindowMessagePlatformData const* platformData, HWND* hwnd, UINT* msg, WPARAM* wparam, LPARAM* lparam)
+        {
+            *hwnd = platformData->Hwnd;
+            *msg = platformData->Msg;
+            *wparam = platformData->WParam;
+            *lparam = platformData->LParam;
         }
     } // namespace Win32
 

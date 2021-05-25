@@ -8,6 +8,10 @@
 #define VK_USE_PLATFORM_WIN32_KHR
 #include <vulkan/vulkan.h>
 
+#include <imgui/imgui_impl_vulkan.h>
+#include <imgui/imgui_impl_win32.h>
+#include <imgui/imgui.h>
+
 /*
 Phew, I assume if you're reading this comment you'd like an overview of how the IceBox renderer works.
 I'll do my best to describe it here, but it's a lot to talk about and it might be easier to simply email
@@ -83,16 +87,21 @@ as well as making the creation of a function quite trivial by making the scope i
 That's pretty much it!
 */
 
-#define IB_VKCHECK(call)                      \
-    if (VK_SUCCESS != call)                   \
-    {                                         \
-        IB_ASSERT(false, "Failed VK Check."); \
-    }
-
 #define IB_VKDEBUG
 
+extern LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam); // ImGui window
 namespace
 {
+    void VulkanCheck(VkResult result)
+    {
+        if (VK_SUCCESS != result)
+        {
+            IB_ASSERT(false, "Failed VK Check.");
+        }
+    }
+
+#define IB_VKCHECK(call) VulkanCheck(call);
+
     // Utilities
     template <typename T, uint32_t Count>
     constexpr uint32_t arrayCount(T (&arr)[Count])
@@ -448,14 +457,15 @@ namespace
         VkPhysicalDevice PhysicalDevice;
         VkDevice LogicalDevice;
 
+        VkDescriptorPool DescriptorPool;
+        VkPipelineCache PipelineCache;
+
         struct
         {
             VkSurfaceKHR Surface;
             VkSurfaceFormatKHR SurfaceFormat;
             VkExtent2D SurfaceExtents;
             VkPresentModeKHR PresentMode;
-            VkDescriptorPool DescriptorPool;
-            VkPipelineCache PipelineCache;
             VkSwapchainKHR Swapchain;
             VkImage SwapchainImages[MaxPhysicalImageCount];
             uint32_t SwapchainImageCount;
@@ -520,7 +530,7 @@ namespace
         } Cleanup;
     };
 
-    struct Forward
+    struct ForwardPass
     {
         static constexpr uint32_t SubpassCount = 2;
 
@@ -557,9 +567,20 @@ namespace
         uint32_t InstanceCount = 0;
     };
 
+    struct ImGuiPass
+    {
+        VkRenderPass RenderPass;
+
+        struct
+        {
+            VkFramebuffer Framebuffer;
+        } FrameBuffer[FrameBufferCount];
+    };
+
     VulkanAllocator Allocator;
     Context RendererContext;
-    Forward ForwardPass;
+    ForwardPass ForwardPass;
+    ImGuiPass ImGuiPass;
 
     // TODO: Reference to Windows, if we want multiplatform we'll have to change this.
     const char *InstanceExtensions[] = {VK_KHR_SURFACE_EXTENSION_NAME, VK_KHR_WIN32_SURFACE_EXTENSION_NAME};
@@ -665,6 +686,7 @@ namespace
                 vkDestroyImageView(RendererContext.LogicalDevice, ForwardPass.FrameBuffer[fb].DebugDepthImageView, NoAllocator);
                 freeDeviceMemory(&Allocator, ForwardPass.FrameBuffer[fb].DebugDepthImageAllocation);
                 vkDestroyFramebuffer(RendererContext.LogicalDevice, ForwardPass.FrameBuffer[fb].Framebuffer, NoAllocator);
+                vkDestroyFramebuffer(RendererContext.LogicalDevice, ImGuiPass.FrameBuffer[fb].Framebuffer, NoAllocator);
             }
         }
 
@@ -757,7 +779,7 @@ namespace
                 ForwardPass.FrameBuffer[fb].DebugDepthImageAllocation = imageAndView.Allocation;
             }
 
-            // Create the framebuffer
+            // Create our forward pass framebuffers
             {
                 VkImageView images[] =
                     {
@@ -777,6 +799,25 @@ namespace
 
                 IB_VKCHECK(vkCreateFramebuffer(RendererContext.LogicalDevice, &framebufferCreate, NoAllocator, &ForwardPass.FrameBuffer[fb].Framebuffer));
             }
+
+            // Create our imgui pass framebuffers
+            {
+                VkImageView images[] =
+                {
+                    RendererContext.Present.FrameBuffer[fb].SwapchainImageView,
+                };
+
+                VkFramebufferCreateInfo framebufferCreate = {};
+                framebufferCreate.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+                framebufferCreate.attachmentCount = arrayCount(images);
+                framebufferCreate.width = RendererContext.Present.SurfaceExtents.width;
+                framebufferCreate.height = RendererContext.Present.SurfaceExtents.height;
+                framebufferCreate.layers = 1;
+                framebufferCreate.renderPass = ImGuiPass.RenderPass;
+                framebufferCreate.pAttachments = images;
+
+                IB_VKCHECK(vkCreateFramebuffer(RendererContext.LogicalDevice, &framebufferCreate, NoAllocator, &ImGuiPass.FrameBuffer[fb].Framebuffer));
+            }
         }
     }
 } // namespace
@@ -787,6 +828,7 @@ namespace IB
     namespace Win32
     {
         void getWindowHandleAndInstance(WindowHandle handle, HWND *window, HINSTANCE *instance);
+        void getPlatformMessageData(WindowMessagePlatformData const* platformData, HWND* hwnd, UINT* msg, WPARAM* wparam, LPARAM* lparam);
     }
 } // namespace IB
 
@@ -811,7 +853,7 @@ namespace
 
 namespace IB
 {
-    IB_API void initRenderer(RendererDesc const &desc)
+    void initRenderer(RendererDesc const &desc)
     {
         {
             VkApplicationInfo appInfo = {};
@@ -1017,14 +1059,14 @@ namespace IB
             descriptorPoolCreate.poolSizeCount = arrayCount(descriptorPoolSizes);
             descriptorPoolCreate.pPoolSizes = descriptorPoolSizes;
 
-            IB_VKCHECK(vkCreateDescriptorPool(RendererContext.LogicalDevice, &descriptorPoolCreate, NoAllocator, &RendererContext.Present.DescriptorPool));
+            IB_VKCHECK(vkCreateDescriptorPool(RendererContext.LogicalDevice, &descriptorPoolCreate, NoAllocator, &RendererContext.DescriptorPool));
         }
 
         {
             VkPipelineCacheCreateInfo pipelineCacheCreate = {};
             pipelineCacheCreate.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO;
 
-            IB_VKCHECK(vkCreatePipelineCache(RendererContext.LogicalDevice, &pipelineCacheCreate, NoAllocator, &RendererContext.Present.PipelineCache));
+            IB_VKCHECK(vkCreatePipelineCache(RendererContext.LogicalDevice, &pipelineCacheCreate, NoAllocator, &RendererContext.PipelineCache));
         }
 
         for (uint32_t i = 0; i < Queue::Count; i++)
@@ -1117,6 +1159,7 @@ namespace IB
         }
 
         {
+            // Forward Renderpass
             {
                 VkAttachmentDescription output = {};
                 output.samples = VK_SAMPLE_COUNT_1_BIT;
@@ -1184,6 +1227,41 @@ namespace IB
                 createRenderPass.pSubpasses = subpasses;
 
                 IB_VKCHECK(vkCreateRenderPass(RendererContext.LogicalDevice, &createRenderPass, NoAllocator, &ForwardPass.RenderPass));
+            }
+
+            // ImGui Renderpass
+            {
+                VkAttachmentDescription output = {};
+                output.samples = VK_SAMPLE_COUNT_1_BIT;
+                output.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+                output.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+                output.initialLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+                output.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+                output.format = RendererContext.Present.SurfaceFormat.format;
+
+                VkAttachmentDescription attachmentDescriptions[] = { output };
+
+                // Attachments
+                VkAttachmentReference outputAttachment = {};
+                outputAttachment.attachment = 0;
+                outputAttachment.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+                VkSubpassDescription renderSubpass = {};
+                renderSubpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+                renderSubpass.colorAttachmentCount = 1;
+                renderSubpass.pColorAttachments = &outputAttachment;
+
+                VkSubpassDescription subpasses[] = { renderSubpass };
+
+                VkRenderPassCreateInfo createRenderPass = {};
+                createRenderPass.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+                createRenderPass.attachmentCount = arrayCount(attachmentDescriptions);
+                createRenderPass.subpassCount = arrayCount(subpasses);
+                createRenderPass.dependencyCount = 0;
+                createRenderPass.pAttachments = attachmentDescriptions;
+                createRenderPass.pSubpasses = subpasses;
+
+                IB_VKCHECK(vkCreateRenderPass(RendererContext.LogicalDevice, &createRenderPass, NoAllocator, &ImGuiPass.RenderPass));
             }
 
             buildSurfaceSwapchain(RendererContext.Present.SurfaceExtents);
@@ -1353,7 +1431,7 @@ namespace IB
         {
             VkDescriptorSetAllocateInfo descriptorSetAlloc = {};
             descriptorSetAlloc.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-            descriptorSetAlloc.descriptorPool = RendererContext.Present.DescriptorPool;
+            descriptorSetAlloc.descriptorPool = RendererContext.DescriptorPool;
             descriptorSetAlloc.descriptorSetCount = 1;
             descriptorSetAlloc.pSetLayouts = &ForwardPass.ShaderLayout;
             IB_VKCHECK(vkAllocateDescriptorSets(
@@ -1387,11 +1465,72 @@ namespace IB
             VkWriteDescriptorSet writeDescriptorSets[] = {writeSamplerSet, writeGeometry};
             vkUpdateDescriptorSets(RendererContext.LogicalDevice, arrayCount(writeDescriptorSets), writeDescriptorSets, 0, NULL);
         }
+
+        // ImGui
+        {
+            ImGui::CreateContext();
+
+            HWND windowHandle;
+            HINSTANCE instanceHandle;
+            IB::Win32::getWindowHandleAndInstance(*desc.Window, &windowHandle, &instanceHandle);
+            ImGui_ImplWin32_Init(windowHandle);
+
+            ImGui_ImplVulkan_InitInfo initInfo = {};
+            initInfo.Instance = RendererContext.VulkanInstance;
+            initInfo.PhysicalDevice = RendererContext.PhysicalDevice;
+            initInfo.Device = RendererContext.LogicalDevice;
+            initInfo.QueueFamily = RendererContext.Present.Queues[Queue::Graphics].Index;
+            initInfo.Queue = RendererContext.Present.Queues[Queue::Graphics].Queue;
+            initInfo.PipelineCache = RendererContext.PipelineCache;
+            initInfo.DescriptorPool = RendererContext.DescriptorPool;
+            initInfo.Allocator = NoAllocator;
+            initInfo.MinImageCount = FrameBufferCount;
+            initInfo.ImageCount = FrameBufferCount;
+            initInfo.CheckVkResultFn = &VulkanCheck;
+            ImGui_ImplVulkan_Init(&initInfo, ImGuiPass.RenderPass);
+
+            // Upload ImGui font
+            {
+                VkCommandBufferAllocateInfo commandBufferAllocateInfo = {};
+                commandBufferAllocateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+                commandBufferAllocateInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+                commandBufferAllocateInfo.commandBufferCount = 1;
+                commandBufferAllocateInfo.commandPool = RendererContext.Present.Queues[Queue::Graphics].CommandPool;
+
+                VkCommandBuffer commandBuffer;
+                IB_VKCHECK(vkAllocateCommandBuffers(RendererContext.LogicalDevice, &commandBufferAllocateInfo, &commandBuffer));
+
+                VkCommandBufferBeginInfo beginBufferInfo = {};
+                beginBufferInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+                beginBufferInfo.flags |= VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+                IB_VKCHECK(vkBeginCommandBuffer(commandBuffer, &beginBufferInfo));
+
+                ImGui_ImplVulkan_CreateFontsTexture(commandBuffer);
+
+                VkSubmitInfo submitInfo = {};
+                submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+                submitInfo.commandBufferCount = 1;
+                submitInfo.pCommandBuffers = &commandBuffer;
+                IB_VKCHECK(vkEndCommandBuffer(commandBuffer));
+
+                IB_VKCHECK(vkQueueSubmit(RendererContext.Present.Queues[Queue::Graphics].Queue, 1, &submitInfo, RendererContext.Present.ImmediateFence));
+                IB_VKCHECK(vkWaitForFences(RendererContext.LogicalDevice, 1, &RendererContext.Present.ImmediateFence, VK_TRUE, UINT64_MAX));
+                IB_VKCHECK(vkResetFences(RendererContext.LogicalDevice, 1, &RendererContext.Present.ImmediateFence));
+
+                vkFreeCommandBuffers(RendererContext.LogicalDevice, RendererContext.Present.Queues[Queue::Graphics].CommandPool, 1, &commandBuffer);
+                ImGui_ImplVulkan_DestroyFontUploadObjects();
+            }
+        }
     }
 
-    IB_API void killRenderer()
+    void killRenderer()
     {
         vkDeviceWaitIdle(RendererContext.LogicalDevice);
+
+        ImGui_ImplVulkan_Shutdown();
+        ImGui_ImplWin32_Shutdown();
+        ImGui::DestroyContext();
 
         for (uint32_t fb = 0; fb < FrameBufferCount; fb++)
         {
@@ -1399,6 +1538,7 @@ namespace IB
             vkDestroySemaphore(RendererContext.LogicalDevice, RendererContext.Present.FrameBuffer[fb].FinishedSemaphore, NoAllocator);
             vkDestroyImageView(RendererContext.LogicalDevice, RendererContext.Present.FrameBuffer[fb].SwapchainImageView, NoAllocator);
             vkDestroyFramebuffer(RendererContext.LogicalDevice, ForwardPass.FrameBuffer[fb].Framebuffer, NoAllocator);
+            vkDestroyFramebuffer(RendererContext.LogicalDevice, ImGuiPass.FrameBuffer[fb].Framebuffer, NoAllocator);
             vkDestroyFence(RendererContext.LogicalDevice, RendererContext.Present.FrameBuffer[fb].FinishedFence, NoAllocator);
             vkDestroyImage(RendererContext.LogicalDevice, ForwardPass.FrameBuffer[fb].DepthImage, NoAllocator);
             vkDestroyImageView(RendererContext.LogicalDevice, ForwardPass.FrameBuffer[fb].DepthImageView, NoAllocator);
@@ -1443,9 +1583,10 @@ namespace IB
 
         vkDestroyFence(RendererContext.LogicalDevice, RendererContext.Present.ImmediateFence, NoAllocator);
         vkDestroyRenderPass(RendererContext.LogicalDevice, ForwardPass.RenderPass, NoAllocator);
+        vkDestroyRenderPass(RendererContext.LogicalDevice, ImGuiPass.RenderPass, NoAllocator);
         vkDestroySwapchainKHR(RendererContext.LogicalDevice, RendererContext.Present.Swapchain, NoAllocator);
-        vkDestroyPipelineCache(RendererContext.LogicalDevice, RendererContext.Present.PipelineCache, NoAllocator);
-        vkDestroyDescriptorPool(RendererContext.LogicalDevice, RendererContext.Present.DescriptorPool, NoAllocator);
+        vkDestroyPipelineCache(RendererContext.LogicalDevice, RendererContext.PipelineCache, NoAllocator);
+        vkDestroyDescriptorPool(RendererContext.LogicalDevice, RendererContext.DescriptorPool, NoAllocator);
         vkDestroySurfaceKHR(RendererContext.VulkanInstance, RendererContext.Present.Surface, NoAllocator);
 
         destroyAllocator(RendererContext.LogicalDevice, &Allocator);
@@ -1453,7 +1594,7 @@ namespace IB
         vkDestroyInstance(RendererContext.VulkanInstance, NoAllocator);
     }
 
-    IB_API void initForwardPass(ForwardPassDesc const &desc)
+    void initForwardPass(ForwardPassDesc const &desc)
     {
         // Queue up our pipelines for cleanup by our rendering thread
         for (uint32_t i = 0; i < arrayCount(ForwardPass.Pipelines); i++)
@@ -1600,14 +1741,14 @@ namespace IB
         subpass1Pipeline.subpass = 1;
 
         VkGraphicsPipelineCreateInfo pipelineCreateInfo[] = { subpass0Pipeline, subpass1Pipeline };
-        static_assert(arrayCount(pipelineCreateInfo) == Forward::SubpassCount, "Number of created pipelines is not correct.");
-        VkPipeline createdPipelines[Forward::SubpassCount];
-        IB_VKCHECK(vkCreateGraphicsPipelines(RendererContext.LogicalDevice, RendererContext.Present.PipelineCache, arrayCount(pipelineCreateInfo), pipelineCreateInfo, NoAllocator, createdPipelines));
+        static_assert(arrayCount(pipelineCreateInfo) == ForwardPass::SubpassCount, "Number of created pipelines is not correct.");
+        VkPipeline createdPipelines[ForwardPass::SubpassCount];
+        IB_VKCHECK(vkCreateGraphicsPipelines(RendererContext.LogicalDevice, RendererContext.PipelineCache, arrayCount(pipelineCreateInfo), pipelineCreateInfo, NoAllocator, createdPipelines));
 
         // Write our pipelines after our call due to the fact that we expect this function to be called from another thread
         // And we'd like to assure that our writes are done at the right time.
         threadRelease();
-        for (uint32_t i = 0; i < Forward::SubpassCount; i++)
+        for (uint32_t i = 0; i < ForwardPass::SubpassCount; i++)
         {
             ForwardPass.Pipelines[i] = createdPipelines[i];
         }
@@ -1616,7 +1757,7 @@ namespace IB
         vkDestroyShaderModule(RendererContext.LogicalDevice, fragShader, NoAllocator);
     }
 
-    IB_API MeshHandle createMesh(MeshDesc const &desc)
+    MeshHandle createMesh(MeshDesc const &desc)
     {
         uint32_t meshIndex = RendererContext.Geometry.MeshCount++;
 
@@ -1672,6 +1813,7 @@ namespace IB
 
             VkCommandBufferBeginInfo beginBufferInfo = {};
             beginBufferInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+            beginBufferInfo.flags |= VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
 
             IB_VKCHECK(vkBeginCommandBuffer(commandBuffer, &beginBufferInfo));
 
@@ -1700,7 +1842,7 @@ namespace IB
         return MeshHandle{meshIndex + 1};
     }
 
-    IB_API ImageHandle createImage(ImageDesc const &desc)
+    ImageHandle createImage(ImageDesc const &desc)
     {
         VkFormat formats[ImageFormat::Count] = {};
         formats[ImageFormat::RGBA8] = VK_FORMAT_R8G8B8A8_UNORM;
@@ -1763,6 +1905,7 @@ namespace IB
 
         VkCommandBufferBeginInfo beginBufferInfo = {};
         beginBufferInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        beginBufferInfo.flags |= VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
 
         IB_VKCHECK(vkBeginCommandBuffer(commandBuffer, &beginBufferInfo));
 
@@ -1884,7 +2027,7 @@ namespace IB
         return ImageHandle{imageIndex + 1};
     }
 
-    IB_API MaterialHandle createMaterial(ForwardDesc const &desc)
+    MaterialHandle createMaterial(ForwardDesc const &desc)
     {
         struct
         {
@@ -1956,6 +2099,7 @@ namespace IB
 
             VkCommandBufferBeginInfo beginBufferInfo = {};
             beginBufferInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+            beginBufferInfo.flags |= VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
 
             IB_VKCHECK(vkBeginCommandBuffer(commandBuffer, &beginBufferInfo));
 
@@ -1983,7 +2127,7 @@ namespace IB
 
         VkDescriptorSetAllocateInfo descriptorSetAlloc = {};
         descriptorSetAlloc.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-        descriptorSetAlloc.descriptorPool = RendererContext.Present.DescriptorPool;
+        descriptorSetAlloc.descriptorPool = RendererContext.DescriptorPool;
         descriptorSetAlloc.descriptorSetCount = 1;
         descriptorSetAlloc.pSetLayouts = &ForwardPass.ShaderInstanceLayout;
 
@@ -2010,7 +2154,25 @@ namespace IB
         return MaterialHandle{instanceIndex + 1};
     }
 
-    IB_API void drawView(ViewDesc const &view)
+    void newImGuiFrame()
+    {
+        ImGui_ImplWin32_NewFrame();
+        ImGui_ImplVulkan_NewFrame();
+        ImGui::NewFrame();
+    }
+
+    bool ImGuiPlatformMessage(WindowMessagePlatformData const* platformData)
+    {
+        HWND hwnd;
+        UINT msg;
+        WPARAM wparam;
+        LPARAM lparam;
+        Win32::getPlatformMessageData(platformData, &hwnd, &msg, &wparam, &lparam);
+
+        return ImGui_ImplWin32_WndProcHandler(hwnd, msg, wparam, lparam);
+    }
+
+    void drawView(ViewDesc const &view)
     {
         // Cleanup our pipelines
         for (uint32_t i = 0; i < MaxPipelineCleanups; i++)
@@ -2047,7 +2209,7 @@ namespace IB
 
             VkCommandBufferBeginInfo beginBufferInfo = {};
             beginBufferInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-            beginBufferInfo.flags = 0;
+            beginBufferInfo.flags |= VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
 
             IB_VKCHECK(vkBeginCommandBuffer(currentCommands, &beginBufferInfo));
 
@@ -2094,9 +2256,9 @@ namespace IB
                     currentCommands, VK_PIPELINE_BIND_POINT_GRAPHICS, ForwardPass.PipelineLayout,
                     0, 1, &set, 0, VK_NULL_HANDLE);
 
-                for (uint32_t passIndex = 0; passIndex < ViewDesc::Pass::Count; passIndex++)
+                for (uint32_t passIndex = 0; passIndex < ViewDesc::ForwardPass::Count; passIndex++)
                 {
-                    ViewDesc::Pass const *pass = &view.Forward.Passes[passIndex];
+                    ViewDesc::ForwardPass const *pass = &view.Forward.Passes[passIndex];
 
                     if (passIndex > 0)
                     {
@@ -2144,6 +2306,25 @@ namespace IB
                         }
                     }
                 }
+
+                vkCmdEndRenderPass(currentCommands);
+            }
+
+            // ImGui Pass
+            if(view.ImGuiDrawData != nullptr)
+            {
+                VkRenderPassBeginInfo renderPassBeginInfo = {};
+                renderPassBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+                renderPassBeginInfo.renderPass = ImGuiPass.RenderPass;
+                renderPassBeginInfo.framebuffer = ImGuiPass.FrameBuffer[buffer].Framebuffer;
+
+                VkRect2D renderArea = {};
+                renderArea.extent = RendererContext.Present.SurfaceExtents;
+
+                renderPassBeginInfo.renderArea = renderArea;
+                vkCmdBeginRenderPass(currentCommands, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+                ImGui_ImplVulkan_RenderDrawData(view.ImGuiDrawData, currentCommands);
 
                 vkCmdEndRenderPass(currentCommands);
             }

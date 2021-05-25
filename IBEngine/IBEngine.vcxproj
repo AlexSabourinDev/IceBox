@@ -12,6 +12,14 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\SDK\cJSON\cJSON.h" />
+    <ClInclude Include="..\SDK\imgui_docking\imgui\imconfig.h" />
+    <ClInclude Include="..\SDK\imgui_docking\imgui\imgui.h" />
+    <ClInclude Include="..\SDK\imgui_docking\imgui\imgui_impl_vulkan.h" />
+    <ClInclude Include="..\SDK\imgui_docking\imgui\imgui_impl_win32.h" />
+    <ClInclude Include="..\SDK\imgui_docking\imgui\imgui_internal.h" />
+    <ClInclude Include="..\SDK\imgui_docking\imgui\imstb_rectpack.h" />
+    <ClInclude Include="..\SDK\imgui_docking\imgui\imstb_textedit.h" />
+    <ClInclude Include="..\SDK\imgui_docking\imgui\imstb_truetype.h" />
     <ClInclude Include="IBAllocator.h" />
     <ClInclude Include="IBAsset.h" />
     <ClInclude Include="IBEngineAPI.h" />
@@ -26,6 +34,13 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\SDK\cJSON\cJSON.c" />
+    <ClCompile Include="..\SDK\imgui_docking\imgui\imgui.cpp" />
+    <ClCompile Include="..\SDK\imgui_docking\imgui\imgui_demo.cpp" />
+    <ClCompile Include="..\SDK\imgui_docking\imgui\imgui_draw.cpp" />
+    <ClCompile Include="..\SDK\imgui_docking\imgui\imgui_impl_vulkan.cpp" />
+    <ClCompile Include="..\SDK\imgui_docking\imgui\imgui_impl_win32.cpp" />
+    <ClCompile Include="..\SDK\imgui_docking\imgui\imgui_tables.cpp" />
+    <ClCompile Include="..\SDK\imgui_docking\imgui\imgui_widgets.cpp" />
     <ClCompile Include="IBAllocator.cpp" />
     <ClCompile Include="IBAsset.cpp" />
     <ClCompile Include="IBEntity.cpp" />
@@ -51,13 +66,13 @@
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
-    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <ConfigurationType>StaticLibrary</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
     <PlatformToolset>v141</PlatformToolset>
     <CharacterSet>MultiByte</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
-    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <ConfigurationType>StaticLibrary</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
     <PlatformToolset>v141</PlatformToolset>
     <WholeProgramOptimization>true</WholeProgramOptimization>
@@ -94,7 +109,7 @@
       <SDLCheck>true</SDLCheck>
       <ConformanceMode>true</ConformanceMode>
       <TreatWarningAsError>true</TreatWarningAsError>
-      <AdditionalIncludeDirectories>..\SDK\VulkanSDK\1.2.154.1\Include;..\SDK;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\SDK\VulkanSDK\1.2.154.1\Include;..\SDK;..\SDK\imgui_docking;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>CJSON_HIDE_SYMBOLS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
     <Link>
@@ -111,7 +126,7 @@
       <SDLCheck>true</SDLCheck>
       <ConformanceMode>true</ConformanceMode>
       <TreatWarningAsError>true</TreatWarningAsError>
-      <AdditionalIncludeDirectories>..\SDK\VulkanSDK\1.2.154.1\Include;..\SDK;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\SDK\VulkanSDK\1.2.154.1\Include;..\SDK;..\SDK\imgui_docking;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>CJSON_HIDE_SYMBOLS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
     <Link>
