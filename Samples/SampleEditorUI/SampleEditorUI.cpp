@@ -30,27 +30,9 @@ int main()
     };
     IB::WindowHandle window = IB::createWindow(winDesc);
 
-    IB::File forwardSampleFile = IB::openFile("../Assets/Compiled/SampleForward.shdr", IB::OpenFileOptions::Read);
-    void *forwardSample = IB::mapFile(forwardSampleFile);
-
-    IB::ShaderAsset shaders;
-    IB::Serialization::MemoryStream shaderReadStream{ reinterpret_cast<uint8_t *>(forwardSample) };
-    fromBinary(&shaderReadStream, &shaders);
-
     IB::RendererDesc rendererDesc = {};
     rendererDesc.Window = &window;
     IB::initRenderer(rendererDesc);
-
-    IB::ForwardPassDesc forwardDesc = {};
-    forwardDesc.VShader = shaders.VertexShader;
-    forwardDesc.VShaderSize = shaders.VertexShaderSize;
-    forwardDesc.FShader = shaders.FragShader;
-    forwardDesc.FShaderSize = shaders.FragShaderSize;
-    IB::initForwardPass(forwardDesc);
-
-    // Can unmap shaders now
-    IB::unmapFile(forwardSampleFile);
-    IB::closeFile(forwardSampleFile);
 
     IB::PlatformMessage message = IB::PlatformMessage::None;
     while (message != IB::PlatformMessage::Quit)
@@ -70,6 +52,7 @@ int main()
         ImGui::Render();
 
         IB::ViewDesc viewDesc = {};
+        // TODO: Call imGui::CloneOutput instead of ImGui::GetDrawData in order to double buffer our rendering.
         viewDesc.ImGuiDrawData = ImGui::GetDrawData();
         IB::drawView(viewDesc);
     }
