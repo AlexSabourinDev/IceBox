@@ -129,7 +129,7 @@ namespace IB
                         fromBinary(&context->Stream, &offset);
 
                         // Passing pointer to dynamic array item is OK here. We've reserved the memory and will not resize until the load is complete.
-                        loadHandles[handleCount++] = IB::Asset::loadSubAssetAsync(context->Stream, entityProperty.Type, { 0 },
+                        loadHandles[handleCount++] = IB::Asset::loadSubAssetAsync(context, entityProperty.Type, { 0 },
                             [](void *data, IB::Asset::AssetHandle asset)
                             {
                                 *reinterpret_cast<IB::PropertyHandle *>(data) = toPropertyHandle(asset);
@@ -230,7 +230,7 @@ namespace IB
                         fromBinary(&context->Stream, &offset);
 
                         // Passing pointer to dynamic array item is OK here. We've reserved the memory and will not resize until the load is complete.
-                        loadHandles[handleCount++] = IB::Asset::loadSubAssetAsync(context->Stream, IB::Asset::toFourCC("ENTT"), { 0 },
+                        loadHandles[handleCount++] = IB::Asset::loadSubAssetAsync(context, IB::Asset::toFourCC("ENTT"), { 0 },
                             [](void *data, IB::Asset::AssetHandle asset)
                             {
                                 *reinterpret_cast<IB::EntityHandle *>(data) = toEntityHandle(asset);

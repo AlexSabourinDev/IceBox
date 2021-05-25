@@ -39,6 +39,7 @@ namespace IB
             JobHandle Handle = {};
             uint64_t Data = 0;
             uint32_t State = 0;
+            uint32_t SaveVersion = 0;
         };
 
         struct SaveContext
@@ -102,7 +103,7 @@ namespace IB
 
         // Streamer API
         IB_API void addStreamer(FourCC type, IStreamer *streamer);
-        IB_API JobHandle loadSubAssetAsync(Serialization::MemoryStream stream, FourCC type, AssetHandle parentAsset, OnSubAssetLoad *onSubAssetLoad, void *data);
+        IB_API JobHandle loadSubAssetAsync(LoadContext const* parentContext, FourCC type, AssetHandle parentAsset, OnSubAssetLoad *onSubAssetLoad, void *data);
         IB_API void unloadSubAssetThreadSafe(AssetHandle asset, FourCC type);
         IB_API void saveSubAssetThreadSafe(Serialization::FileStream *stream, FourCC type, AssetHandle asset);
 

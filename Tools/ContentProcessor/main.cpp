@@ -31,6 +31,7 @@ void processTexture(char const *rawPath, char const *compiledPath)
 
     IB::File file = IB::openFile(compiledPath, IB::OpenFileOptions::Overwrite | IB::OpenFileOptions::Write);
     IB::Serialization::FileStream fileStream{ file };
+    toBinary(&fileStream, IB::Serialization::Version);
     toBinary(&fileStream, imageAsset);
     flush(&fileStream);
 
@@ -90,6 +91,7 @@ void processMesh(char const *rawPath, char const *compiledPath)
 
     IB::File file = IB::openFile(compiledPath, IB::OpenFileOptions::Overwrite | IB::OpenFileOptions::Write);
     IB::Serialization::FileStream fileStream{ file };
+    toBinary(&fileStream, IB::Serialization::Version);
     toBinary(&fileStream, asset);
     flush(&fileStream);
 
@@ -176,6 +178,7 @@ void processShader(char const *rawPath, char const *compiledPath)
 
     IB::File writeFile = IB::openFile(compiledPath, IB::OpenFileOptions::Overwrite | IB::OpenFileOptions::Write);
     IB::Serialization::FileStream fileStream{ writeFile };
+    toBinary(&fileStream, IB::Serialization::Version);
     toBinary(&fileStream, shaderAsset);
     flush(&fileStream);
 

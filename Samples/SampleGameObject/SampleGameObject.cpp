@@ -40,7 +40,7 @@ int main()
     IB::initRendererFrontend({ &window });
     IB::initEntitySystem();
 
-    bool const createAndSaveCell = false;
+    bool const createAndSaveCell = true;
     if(createAndSaveCell)
     {
         IB::CellHandle cellHandle = IB::createCell();

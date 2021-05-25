@@ -121,6 +121,7 @@ namespace
             resource->File = IB::openFile(fullPath, IB::OpenFileOptions::Read);
             loadContext->Stream = {reinterpret_cast<uint8_t *>(IB::mapFile(resource->File))};
             IB_ASSERT(loadContext->Stream.Memory != nullptr, "Failed to map file!");
+            fromBinary(&loadContext->Stream, &loadContext->SaveVersion);
             return IB::JobResult::Complete;
         });
 
@@ -201,9 +202,10 @@ namespace IB
             return ResourceHandle{pathHash};
         }
 
-        JobHandle loadSubAssetAsync(Serialization::MemoryStream stream, FourCC type, AssetHandle parentAsset, OnSubAssetLoad *onSubAssetLoad, void *data)
+        JobHandle loadSubAssetAsync(LoadContext const* parentContext, FourCC type, AssetHandle parentAsset, OnSubAssetLoad *onSubAssetLoad, void *data)
         {
-            LoadContext *context = allocate<LoadContext>(stream, parentAsset);
+            LoadContext *context = allocate<LoadContext>(parentContext->Stream, parentAsset);
+            context->SaveVersion = parentContext->SaveVersion;
             IB::Asset::IStreamer *streamer = getStreamer(type);
             if (streamer != nullptr)
             {
@@ -363,6 +365,8 @@ namespace IB
                 IB::File file = IB::openFile(fullPath, OpenFileOptions::Create | OpenFileOptions::Overwrite | OpenFileOptions::Write);
 
                 Serialization::FileStream fileStream = {file};
+                Serialization::toBinary(&fileStream, Serialization::Version);
+
                 SaveContext saveContext = {&fileStream, resource->Asset};
                 getStreamer(resource->Type)->saveThreadSafe(&saveContext);
                 flush(&fileStream);

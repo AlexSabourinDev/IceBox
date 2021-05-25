@@ -10,6 +10,8 @@ namespace IB
 {
     namespace Serialization
     {
+        extern const uint32_t Version;
+
         IB_API void initSerialization();
         IB_API void killSerialization();
 
