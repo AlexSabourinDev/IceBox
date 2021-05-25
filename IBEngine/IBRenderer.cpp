@@ -2161,7 +2161,7 @@ namespace IB
         ImGui::NewFrame();
     }
 
-    bool ImGuiPlatformMessage(WindowMessagePlatformData const* platformData)
+    bool imGuiPlatformMessage(WindowMessagePlatformData const* platformData)
     {
         HWND hwnd;
         UINT msg;

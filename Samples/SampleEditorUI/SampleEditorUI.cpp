@@ -14,7 +14,7 @@ int main()
     winDesc.Height = 720;
     winDesc.OnWindowMessage = [](void *data, IB::WindowMessage message, IB::WindowMessagePlatformData const* platformData)
     {
-        if (IB::ImGuiPlatformMessage(platformData))
+        if (IB::imGuiPlatformMessage(platformData))
         {
             return true;
         }

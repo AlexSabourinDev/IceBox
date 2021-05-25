@@ -172,6 +172,6 @@ namespace IB
     IB_API MaterialHandle createMaterial(ForwardDesc const &desc);
 
     IB_API void newImGuiFrame();
-    IB_API bool ImGuiPlatformMessage(WindowMessagePlatformData const* platformData);
+    IB_API bool imGuiPlatformMessage(WindowMessagePlatformData const* platformData);
     IB_API void drawView(ViewDesc const &view);
 } // namespace IB
