@@ -25,6 +25,22 @@ namespace
 
         return false;
     }
+
+    // TODO: Find a home for these types of functions
+    int32_t findLastExtensionIndex(char const* path)
+    {
+        uint32_t length = static_cast<uint32_t>(strlen(path));
+        int32_t extensionIndex = length;
+        for (; extensionIndex > 0; extensionIndex--)
+        {
+            if (path[extensionIndex - 1] == '.')
+            {
+                break;
+            }
+        }
+
+        return extensionIndex-1; // Include period
+    }
 }
 
 int main()
@@ -42,8 +58,7 @@ int main()
     initRendererFrontend({ &window });
     initEntitySystem();
 
-    Asset::ResourceHandle cellResource;
-    Asset::loadResourceAsync("TestCell.cell", Asset::toFourCC("CELL"), &cellResource);
+    Asset::ResourceHandle cellResource = {};
 
     bool alive = true;
     while (alive)
@@ -76,6 +91,53 @@ int main()
             }
             ImGui::EndMainMenuBar();
         }
+
+        FileInfo loadingCell;
+        if (ImGui::Begin("Asset Browser"))
+        {
+            DirectoryIterator directoryTree = { "../Assets/Compiled/*" };
+            FileInfo fileInfo;
+            while (iterateDirectory(&directoryTree, &fileInfo))
+            {
+                if (fileInfo.IsDirectory)
+                {
+                    if (ImGui::TreeNode(fileInfo.Path))
+                    {
+                        ImGui::TreePop();
+                    }
+                }
+                else
+                {
+                    if (ImGui::Button(fileInfo.Path))
+                    {
+                        int32_t extensionIndex = findLastExtensionIndex(fileInfo.Path);
+                        if (extensionIndex > 0 && strcmp(fileInfo.Path + extensionIndex, ".cell") == 0)
+                        {
+                            loadingCell = fileInfo;
+                            ImGui::OpenPopup("Load Cell?");
+                        }
+                    }
+                }
+            }
+        }
+
+        if (ImGui::BeginPopupModal("Load Cell?"))
+        {
+            if (ImGui::Button("OK", ImVec2(120, 0)))
+            {
+                Asset::loadResourceAsync(loadingCell.Path, Asset::toFourCC("CELL"), &cellResource);
+                ImGui::CloseCurrentPopup();
+            }
+
+            ImGui::SetItemDefaultFocus();
+            ImGui::SameLine();
+            if (ImGui::Button("Cancel", ImVec2(120, 0)))
+            {
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::EndPopup();
+        }
+        ImGui::End();
 
         ImGui::Render();
 

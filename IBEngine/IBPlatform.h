@@ -245,4 +245,19 @@ namespace IB
     // File system
     IB_API bool isDirectory(char const *path);
     IB_API void setWorkingDirectory(char const *path);
+
+    struct DirectoryIterator
+    {
+        char const* Path;
+        uintptr_t State = 0;
+    };
+
+    constexpr uint32_t MaxFilePath = 260;
+    struct FileInfo
+    {
+        char Path[MaxFilePath];
+        bool IsDirectory;
+    };
+
+    IB_API bool iterateDirectory(DirectoryIterator* iterator, FileInfo* fileInfo);
 } // namespace IB

@@ -690,32 +690,44 @@ namespace IB
     {
         SetCurrentDirectory(path);
     }
-} // namespace IB
 
-// Bridge
-extern "C"
-{
-    IB_API void *IB_createWindow(void *parentWindowHandle, const char *name, int width, int height)
+    bool iterateDirectory(DirectoryIterator* iterator, FileInfo* fileInfo)
     {
-        IB::WindowDesc desc = {};
-        desc.Name = name;
-        desc.Width = width;
-        desc.Height = height;
-        IB::WindowHandle handle = createWindowWin32(desc, reinterpret_cast<HWND>(parentWindowHandle), DS_CONTROL | WS_CHILD);
-        return ActiveWindows[handle.Value].WindowHandle;
-    }
+        bool isDone = false;
 
-    IB_API void IB_destroyWindow(void *windowHandle)
-    {
-        DestroyWindow(reinterpret_cast<HWND>(windowHandle));
-
-        for (uint32_t i = 0; i < MaxActiveWindows; i++)
+        WIN32_FIND_DATA findData;
+        if (iterator->State == 0)
         {
-            if (ActiveWindows[i].WindowHandle == windowHandle)
+            HANDLE fileIterator = FindFirstFile(iterator->Path, &findData);
+            iterator->State = reinterpret_cast<uintptr_t>(fileIterator);
+            if (fileIterator == INVALID_HANDLE_VALUE)
             {
-                ActiveWindows[i] = {};
-                break;
+                isDone = true;
             }
         }
+        else
+        {
+            if (FindNextFile(reinterpret_cast<HANDLE>(iterator->State), &findData) == FALSE)
+            {
+                FindClose(reinterpret_cast<HANDLE>(iterator->State));
+                isDone = true;
+            }
+        }
+
+        // Ignore our recursive directories.
+        while(strcmp(findData.cFileName, ".") == 0 || strcmp(findData.cFileName, "..") == 0)
+        {
+            if (FindNextFile(reinterpret_cast<HANDLE>(iterator->State), &findData) == FALSE)
+            {
+                FindClose(reinterpret_cast<HANDLE>(iterator->State));
+                isDone = true;
+            }
+        }
+
+        static_assert(MaxFilePath == MAX_PATH, "Maximum path values don't match.");
+        memcpy(fileInfo->Path, findData.cFileName, MAX_PATH);
+        fileInfo->IsDirectory = (findData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
+        return !isDone;
     }
-}
+
+} // namespace IB
