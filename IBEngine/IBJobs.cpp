@@ -433,8 +433,8 @@ namespace IB
         for (uint32_t i = 0; i < WorkerCount; i++)
         {
             Workers[i].Alive = true;
-            Workers[i].Thread = createThread(&workerFunc, &Workers[i]);
             Workers[i].SleepEvent = createThreadEvent();
+            Workers[i].Thread = createThread(&workerFunc, &Workers[i]);
         }
     }
 

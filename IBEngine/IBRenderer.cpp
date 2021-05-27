@@ -115,7 +115,25 @@ namespace
 
     constexpr uint32_t MaxAllocatorPools = 10;
     constexpr uint32_t MaxMemoryBlocks = 1000;
-    constexpr uint32_t MaxAllocatorPoolSize = 1024 * 1024 * 64;
+
+    struct AllocationCategory
+    {
+        enum Enum
+        {
+            Misc = 0,
+            TransferSource,
+            Mesh,
+            Image,
+            Count
+        };
+    };
+
+    constexpr uint32_t MaxAllocatorPoolSizes[AllocationCategory::Count] = {
+        1024 * 1024 * 16,
+        1024 * 1024 * 16,
+        1024 * 1024 * 64,
+        1024 * 1024 * 512,
+    };
 
     struct MemoryBlock
     {
@@ -133,6 +151,7 @@ namespace
         uint32_t HeadIndex = UINT32_MAX;
         uint32_t NextId = UINT32_MAX;
         uint32_t MemoryType = UINT32_MAX;
+        AllocationCategory::Enum Category;
         void *Map = nullptr;
     };
 
@@ -150,6 +169,18 @@ namespace
         MemoryBlock BlockPool[MaxMemoryBlocks] = {};
         uint32_t FreeBlocks[MaxMemoryBlocks] = {};
         uint32_t FreeBlockCount = 0;
+    };
+
+    struct AllocationRequest
+    {
+        VkPhysicalDevice PhysicalDevice;
+        VkDevice LogicalDevice;
+        VkDeviceSize Size;
+        VkDeviceSize Alignment;
+        uint32_t TypeBits;
+        VkMemoryPropertyFlags RequiredFlags;
+        VkMemoryPropertyFlags PreferedFlags;
+        AllocationCategory::Enum Category;
     };
 
     uint32_t findMemoryIndex(VkPhysicalDevice physicalDevice, uint32_t typeBits, VkMemoryPropertyFlags requiredFlags, VkMemoryPropertyFlags preferedFlags)
@@ -230,14 +261,15 @@ namespace
         // Does nothing
     }
 
-    Allocation allocateDeviceMemory(VkDevice device, VulkanAllocator *allocator, uint32_t memoryTypeIndex, VkDeviceSize size, VkDeviceSize alignment)
+    Allocation allocateDeviceMemory(VulkanAllocator *allocator, AllocationRequest request)
     {
+        uint32_t const memoryTypeIndex = findMemoryIndex(request.PhysicalDevice, request.TypeBits, request.RequiredFlags, request.PreferedFlags);
         IB_ASSERT(memoryTypeIndex != UINT32_MAX, "Invalid memory type index.");
 
         uint32_t foundPoolIndex = UINT32_MAX;
         for (uint32_t i = 0; i < MaxAllocatorPools; i++)
         {
-            if (allocator->MemoryPools[i].MemoryType == memoryTypeIndex)
+            if (allocator->MemoryPools[i].MemoryType == memoryTypeIndex && allocator->MemoryPools[i].Category == request.Category)
             {
                 foundPoolIndex = i;
                 break;
@@ -251,20 +283,21 @@ namespace
                 MemoryPool *memoryPool = &allocator->MemoryPools[i];
                 if (memoryPool->HeadIndex == UINT32_MAX)
                 {
-                    memoryPool->Size = MaxAllocatorPoolSize;
+                    memoryPool->Size = MaxAllocatorPoolSizes[request.Category];
 
                     VkMemoryAllocateInfo memoryAllocInfo = {};
                     memoryAllocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
                     memoryAllocInfo.allocationSize = memoryPool->Size;
                     memoryAllocInfo.memoryTypeIndex = memoryTypeIndex;
 
-                    IB_VKCHECK(vkAllocateMemory(device, &memoryAllocInfo, NULL, &memoryPool->Memory));
+                    IB_VKCHECK(vkAllocateMemory(request.LogicalDevice, &memoryAllocInfo, NULL, &memoryPool->Memory));
 
                     IB_ASSERT(allocator->FreeBlockCount > 0, "No free blocks left!");
                     uint32_t newBlockIndex = allocator->FreeBlocks[allocator->FreeBlockCount - 1];
                     allocator->FreeBlockCount--;
 
                     MemoryBlock *block = &allocator->BlockPool[newBlockIndex];
+                    *block = MemoryBlock{};//Clear our block before use
                     block->Size = memoryPool->Size;
                     block->Offset = 0;
                     block->Allocated = false;
@@ -272,6 +305,7 @@ namespace
                     memoryPool->HeadIndex = newBlockIndex;
                     memoryPool->NextId = 1;
                     memoryPool->MemoryType = memoryTypeIndex;
+                    memoryPool->Category = request.Category;
 
                     foundPoolIndex = i;
                     break;
@@ -281,7 +315,7 @@ namespace
 
         IB_ASSERT(foundPoolIndex != UINT32_MAX, "Failed to find a memory pool.");
 
-        VkDeviceSize allocationSize = size + (alignment - size % alignment);
+        VkDeviceSize allocationSize = request.Size + (request.Alignment - request.Size % request.Alignment);
         // Fun little trick to round to next nearest power of 2 from https://graphics.stanford.edu/~seander/bithacks.html#RoundUpPowerOf2
         // Reduce number by 1, will handle powers of 2
         allocationSize--;
@@ -318,9 +352,12 @@ namespace
         {
             MemoryBlock *block = &allocator->BlockPool[iter];
 
-            if (smallestBlock == NULL || (block->Size > allocationSize && block->Size < smallestBlock->Size && !block->Allocated))
+            if (!block->Allocated && block->Size > allocationSize)
             {
-                smallestBlock = block;
+                if (smallestBlock == NULL || block->Size < smallestBlock->Size)
+                {
+                    smallestBlock = block;
+                }
             }
         }
 
@@ -638,12 +675,18 @@ namespace
             VkMemoryRequirements memoryRequirements;
             vkGetImageMemoryRequirements(alloc.LogicalDevice, imageAndView.Image, &memoryRequirements);
 
-            unsigned int preferredBits = 0;
-            uint32_t memoryIndex = findMemoryIndex(alloc.PhysicalDevice, memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, preferredBits);
+            AllocationRequest request;
+            request.Alignment = memoryRequirements.alignment;
+            request.Size = alloc.Width * alloc.Height * alloc.Stride;
+            request.LogicalDevice = alloc.LogicalDevice;
+            request.PhysicalDevice = alloc.PhysicalDevice;
+            request.RequiredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+            request.PreferedFlags = 0;
+            request.TypeBits = memoryRequirements.memoryTypeBits;
+            request.Category = AllocationCategory::Image;
 
             Allocation *allocation = &imageAndView.Allocation;
-            *allocation = allocateDeviceMemory(alloc.LogicalDevice, alloc.Allocator, memoryIndex,
-                                               alloc.Width * alloc.Height * alloc.Stride, memoryRequirements.alignment);
+            *allocation = allocateDeviceMemory(alloc.Allocator, request);
 
             IB_VKCHECK(vkBindImageMemory(alloc.LogicalDevice, imageAndView.Image, allocation->Memory, allocation->Offset));
         }
@@ -803,9 +846,9 @@ namespace
             // Create our imgui pass framebuffers
             {
                 VkImageView images[] =
-                {
-                    RendererContext.Present.FrameBuffer[fb].SwapchainImageView,
-                };
+                    {
+                        RendererContext.Present.FrameBuffer[fb].SwapchainImageView,
+                    };
 
                 VkFramebufferCreateInfo framebufferCreate = {};
                 framebufferCreate.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
@@ -828,8 +871,8 @@ namespace IB
     namespace Win32
     {
         void getWindowHandleAndInstance(WindowHandle handle, HWND *window, HINSTANCE *instance);
-        void getPlatformMessageData(WindowMessagePlatformData const* platformData, HWND* hwnd, UINT* msg, WPARAM* wparam, LPARAM* lparam);
-    }
+        void getPlatformMessageData(WindowMessagePlatformData const *platformData, HWND *hwnd, UINT *msg, WPARAM *wparam, LPARAM *lparam);
+    } // namespace Win32
 } // namespace IB
 
 namespace
@@ -1239,7 +1282,7 @@ namespace IB
                 output.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
                 output.format = RendererContext.Present.SurfaceFormat.format;
 
-                VkAttachmentDescription attachmentDescriptions[] = { output };
+                VkAttachmentDescription attachmentDescriptions[] = {output};
 
                 // Attachments
                 VkAttachmentReference outputAttachment = {};
@@ -1251,7 +1294,7 @@ namespace IB
                 renderSubpass.colorAttachmentCount = 1;
                 renderSubpass.pColorAttachments = &outputAttachment;
 
-                VkSubpassDescription subpasses[] = { renderSubpass };
+                VkSubpassDescription subpasses[] = {renderSubpass};
 
                 VkRenderPassCreateInfo createRenderPass = {};
                 createRenderPass.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
@@ -1396,11 +1439,18 @@ namespace IB
             VkMemoryRequirements memoryRequirements;
             vkGetBufferMemoryRequirements(RendererContext.LogicalDevice, *buffer, &memoryRequirements);
 
-            unsigned int preferredBits = 0;
-            uint32_t memoryIndex = findMemoryIndex(RendererContext.PhysicalDevice, memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, preferredBits);
+            AllocationRequest request;
+            request.Alignment = memoryRequirements.alignment;
+            request.Size = meshBufferSize;
+            request.LogicalDevice = RendererContext.LogicalDevice;
+            request.PhysicalDevice = RendererContext.PhysicalDevice;
+            request.RequiredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+            request.PreferedFlags = 0;
+            request.TypeBits = memoryRequirements.memoryTypeBits;
+            request.Category = AllocationCategory::Mesh;
 
             Allocation *allocation = &RendererContext.Geometry.Allocation;
-            *allocation = allocateDeviceMemory(RendererContext.LogicalDevice, &Allocator, memoryIndex, meshBufferSize, memoryRequirements.alignment);
+            *allocation = allocateDeviceMemory(&Allocator, request);
 
             IB_VKCHECK(vkBindBufferMemory(RendererContext.LogicalDevice, *buffer, allocation->Memory, allocation->Offset));
         }
@@ -1740,7 +1790,7 @@ namespace IB
         VkGraphicsPipelineCreateInfo subpass1Pipeline = baseGraphicsPipelineCreate;
         subpass1Pipeline.subpass = 1;
 
-        VkGraphicsPipelineCreateInfo pipelineCreateInfo[] = { subpass0Pipeline, subpass1Pipeline };
+        VkGraphicsPipelineCreateInfo pipelineCreateInfo[] = {subpass0Pipeline, subpass1Pipeline};
         static_assert(arrayCount(pipelineCreateInfo) == ForwardPass::SubpassCount, "Number of created pipelines is not correct.");
         VkPipeline createdPipelines[ForwardPass::SubpassCount];
         IB_VKCHECK(vkCreateGraphicsPipelines(RendererContext.LogicalDevice, RendererContext.PipelineCache, arrayCount(pipelineCreateInfo), pipelineCreateInfo, NoAllocator, createdPipelines));
@@ -1787,9 +1837,17 @@ namespace IB
             VkMemoryRequirements memoryRequirements;
             vkGetBufferMemoryRequirements(RendererContext.LogicalDevice, srcBuffer, &memoryRequirements);
 
-            uint32_t memoryIndex = findMemoryIndex(RendererContext.PhysicalDevice, memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+            AllocationRequest request;
+            request.Alignment = memoryRequirements.alignment;
+            request.Size = indexSize + vertexSize;
+            request.LogicalDevice = RendererContext.LogicalDevice;
+            request.PhysicalDevice = RendererContext.PhysicalDevice;
+            request.RequiredFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+            request.PreferedFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+            request.TypeBits = memoryRequirements.memoryTypeBits;
+            request.Category = AllocationCategory::TransferSource;
 
-            allocation = allocateDeviceMemory(RendererContext.LogicalDevice, &Allocator, memoryIndex, indexSize + vertexSize, memoryRequirements.alignment);
+            allocation = allocateDeviceMemory(&Allocator, request);
             IB_VKCHECK(vkBindBufferMemory(RendererContext.LogicalDevice, srcBuffer, allocation.Memory, allocation.Offset));
 
             {
@@ -1882,9 +1940,17 @@ namespace IB
             VkMemoryRequirements memoryRequirements;
             vkGetBufferMemoryRequirements(RendererContext.LogicalDevice, srcBuffer, &memoryRequirements);
 
-            uint32_t memoryIndex = findMemoryIndex(RendererContext.PhysicalDevice, memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+            AllocationRequest request;
+            request.Alignment = memoryRequirements.alignment;
+            request.Size = bufferSize;
+            request.LogicalDevice = RendererContext.LogicalDevice;
+            request.PhysicalDevice = RendererContext.PhysicalDevice;
+            request.RequiredFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+            request.PreferedFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+            request.TypeBits = memoryRequirements.memoryTypeBits;
+            request.Category = AllocationCategory::TransferSource;
 
-            allocation = allocateDeviceMemory(RendererContext.LogicalDevice, &Allocator, memoryIndex, bufferSize, memoryRequirements.alignment);
+            allocation = allocateDeviceMemory(&Allocator, request);
             IB_VKCHECK(vkBindBufferMemory(RendererContext.LogicalDevice, srcBuffer, allocation.Memory, allocation.Offset));
 
             {
@@ -2051,11 +2117,18 @@ namespace IB
             VkMemoryRequirements memoryRequirements;
             vkGetBufferMemoryRequirements(RendererContext.LogicalDevice, *buffer, &memoryRequirements);
 
-            unsigned int preferredBits = 0;
-            uint32_t memoryIndex = findMemoryIndex(RendererContext.PhysicalDevice, memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, preferredBits);
+            AllocationRequest request;
+            request.Alignment = memoryRequirements.alignment;
+            request.Size = sizeof(matData);
+            request.LogicalDevice = RendererContext.LogicalDevice;
+            request.PhysicalDevice = RendererContext.PhysicalDevice;
+            request.RequiredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+            request.PreferedFlags = 0;
+            request.TypeBits = memoryRequirements.memoryTypeBits;
+            request.Category = AllocationCategory::Misc;
 
             Allocation *allocation = &ForwardPass.Instances[instanceIndex].Allocation;
-            *allocation = allocateDeviceMemory(RendererContext.LogicalDevice, &Allocator, memoryIndex, sizeof(matData), memoryRequirements.alignment);
+            *allocation = allocateDeviceMemory(&Allocator, request);
 
             IB_VKCHECK(vkBindBufferMemory(RendererContext.LogicalDevice, *buffer, allocation->Memory, allocation->Offset));
             dataBuffer = *buffer;
@@ -2074,9 +2147,17 @@ namespace IB
             VkMemoryRequirements memoryRequirements;
             vkGetBufferMemoryRequirements(RendererContext.LogicalDevice, srcBuffer, &memoryRequirements);
 
-            uint32_t memoryIndex = findMemoryIndex(RendererContext.PhysicalDevice, memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+            AllocationRequest request;
+            request.Alignment = memoryRequirements.alignment;
+            request.Size = sizeof(matData);
+            request.LogicalDevice = RendererContext.LogicalDevice;
+            request.PhysicalDevice = RendererContext.PhysicalDevice;
+            request.RequiredFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+            request.PreferedFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+            request.TypeBits = memoryRequirements.memoryTypeBits;
+            request.Category = AllocationCategory::TransferSource;
 
-            allocation = allocateDeviceMemory(RendererContext.LogicalDevice, &Allocator, memoryIndex, sizeof(matData), memoryRequirements.alignment);
+            allocation = allocateDeviceMemory(&Allocator, request);
             IB_VKCHECK(vkBindBufferMemory(RendererContext.LogicalDevice, srcBuffer, allocation.Memory, allocation.Offset));
 
             {
@@ -2161,7 +2242,7 @@ namespace IB
         ImGui::NewFrame();
     }
 
-    bool imGuiPlatformMessage(WindowMessagePlatformData const* platformData)
+    bool imGuiPlatformMessage(WindowMessagePlatformData const *platformData)
     {
         HWND hwnd;
         UINT msg;
@@ -2311,7 +2392,7 @@ namespace IB
             }
 
             // ImGui Pass
-            if(view.ImGuiDrawData != nullptr)
+            if (view.ImGuiDrawData != nullptr)
             {
                 VkRenderPassBeginInfo renderPassBeginInfo = {};
                 renderPassBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;

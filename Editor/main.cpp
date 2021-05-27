@@ -48,8 +48,8 @@ int main()
     // Create our primary window
     WindowDesc winDesc = {};
     winDesc.Name = "EngineCat";
-    winDesc.Width = 1024;
-    winDesc.Height = 720;
+    winDesc.Width = 4096;
+    winDesc.Height = 4096;
     winDesc.OnWindowMessage = &primaryWindowHandler;
     WindowHandle window = createWindow(winDesc);
 
@@ -66,7 +66,7 @@ int main()
         consumeMessageQueue([](void *data, PlatformMessage message) {
             if (message == PlatformMessage::Quit)
             {
-                *reinterpret_cast<bool *>(data) = true;
+                *reinterpret_cast<bool *>(data) = false;
             }
         },
                                 &alive);
@@ -151,6 +151,7 @@ int main()
         drawCellAsync(currentCell, ImGui::GetDrawData());
     }
 
+    Asset::releaseResourceAsync(cellResource);
     killEntitySystem();
     killRendererFrontend();
     destroyWindow(window);

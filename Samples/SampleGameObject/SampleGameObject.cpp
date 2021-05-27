@@ -20,8 +20,8 @@ int main()
 {
     IB::WindowDesc winDesc = {};
     winDesc.Name = "Ice Box";
-    winDesc.Width = 800;
-    winDesc.Height = 500;
+    winDesc.Width = 1024;
+    winDesc.Height = 720;
     winDesc.OnWindowMessage = [](void * /*data*/, IB::WindowMessage message, IB::WindowMessagePlatformData const* platformData)
     {
         switch (message.Type)
@@ -40,7 +40,7 @@ int main()
     IB::initRendererFrontend({ &window });
     IB::initEntitySystem();
 
-    bool const createAndSaveCell = true;
+    bool const createAndSaveCell = false;
     if(createAndSaveCell)
     {
         IB::CellHandle cellHandle = IB::createCell();

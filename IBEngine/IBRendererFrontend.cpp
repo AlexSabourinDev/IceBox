@@ -28,9 +28,9 @@ namespace
             if (context->State == Load)
             {
                 IB::ImageAsset image;
-                fromBinary(&context->Stream, &image);
+                fromBinary(&context->Stream, &image, context->SaveVersion);
 
-                IB::JobHandle meshCreate = IB::launchJob([image, imageHandle = &context->Data]() {
+                IB::JobHandle imageCreate = IB::launchJob([image, imageHandle = &context->Data]() {
                     IB::ImageDesc imageDesc = {};
                     imageDesc.Format = image.Format;
                     imageDesc.Width = image.Width;
@@ -40,9 +40,9 @@ namespace
 
                     return IB::JobResult::Complete;
                 },
-                                                         RendererJobQueueIndex);
+                                                          RendererJobQueueIndex);
 
-                return IB::Asset::wait(&meshCreate, 1, Create);
+                return IB::Asset::wait(&imageCreate, 1, Create);
             }
             else
             {
@@ -71,7 +71,7 @@ namespace
             if (context->State == Load)
             {
                 IB::MeshAsset mesh;
-                fromBinary(&context->Stream, &mesh);
+                fromBinary(&context->Stream, &mesh, context->SaveVersion);
 
                 IB::JobHandle meshCreate = IB::launchJob([mesh, meshHandle = &context->Data]() {
                     IB::MeshDesc meshDesc = {};
@@ -122,7 +122,7 @@ namespace
             if (context->State == Load)
             {
                 RuntimeMaterial &materialData = MaterialPool.add();
-                fromBinary(&context->Stream, &materialData.Asset);
+                fromBinary(&context->Stream, &materialData.Asset, context->SaveVersion);
 
                 IB::JobHandle textureJob = IB::Asset::loadResourceAsync(materialData.Asset.AlbedoPath, IB::Asset::toFourCC("IMAG"), &materialData.AlbedoTexture);
                 IB::JobHandle materialJob = IB::continueJob([materialPtr = &materialData, contextData = &context->Data]() {
@@ -173,7 +173,7 @@ namespace
         IB::Asset::LoadContinuation loadAsync(IB::Asset::LoadContext *context) override
         {
             IB::ShaderAsset *shaders = IB::allocate<IB::ShaderAsset>();
-            fromBinary(&context->Stream, shaders);
+            fromBinary(&context->Stream, shaders, context->SaveVersion);
 
             return IB::Asset::complete({reinterpret_cast<uint64_t>(shaders)});
         }
@@ -536,7 +536,7 @@ namespace IB
         Serialization::toBinary(stream, mesh.Indices, mesh.IndexCount * sizeof(uint16_t));
     }
 
-    void fromBinary(Serialization::MemoryStream *stream, MeshAsset *mesh)
+    void fromBinary(Serialization::MemoryStream *stream, MeshAsset *mesh, uint32_t /*versionNumber*/)
     {
         Serialization::fromBinary(stream, &mesh->VertexCount);
         Serialization::fromBinary(stream, &mesh->IndexCount);
@@ -554,7 +554,7 @@ namespace IB
         Serialization::toBinary(stream, shaders.FragShader, shaders.FragShaderSize);
     }
 
-    void fromBinary(Serialization::MemoryStream *stream, ShaderAsset *shaders)
+    void fromBinary(Serialization::MemoryStream *stream, ShaderAsset *shaders, uint32_t /*versionNumber*/)
     {
         Serialization::fromBinary(stream, &shaders->VertexShaderSize);
         Serialization::fromBinary(stream, &shaders->FragShaderSize);
@@ -569,7 +569,7 @@ namespace IB
         Serialization::toBinary(stream, material.AlbedoPath);
     }
 
-    void fromBinary(Serialization::MemoryStream *stream, MaterialAsset *material)
+    void fromBinary(Serialization::MemoryStream *stream, MaterialAsset *material, uint32_t /*versionNumber*/)
     {
         Serialization::fromBinary(stream, &material->AlbedoTint);
         Serialization::fromBinary(stream, &material->AlbedoPath);
@@ -584,7 +584,7 @@ namespace IB
         Serialization::toBinary(stream, image.Data, image.Width * image.Height * FormatStride[image.Format]);
     }
 
-    void fromBinary(Serialization::MemoryStream *stream, ImageAsset *image)
+    void fromBinary(Serialization::MemoryStream *stream, ImageAsset *image, uint32_t /*versionNumber*/)
     {
         Serialization::fromBinary(stream, &image->Format);
         Serialization::fromBinary(stream, &image->Width);

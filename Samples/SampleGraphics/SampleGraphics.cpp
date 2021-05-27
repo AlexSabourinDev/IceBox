@@ -18,8 +18,8 @@ int main()
     {
         bool WindowVisible = true;
         bool CullGizmo = true;
-        uint32_t Width = 500;
-        uint32_t Height = 500;
+        uint32_t Width =1024;
+        uint32_t Height = 720;
         IB::Mat4x4 ViewProj;
         IB::Mat4x4 InvViewProj;
         IB::Float3 ViewPos;
@@ -162,7 +162,10 @@ int main()
 
     IB::ShaderAsset shaders;
     IB::Serialization::MemoryStream shaderReadStream{reinterpret_cast<uint8_t *>(forwardSample)};
-    fromBinary(&shaderReadStream, &shaders);
+
+    uint32_t versionNumber;
+    fromBinary(&shaderReadStream, &versionNumber);
+    fromBinary(&shaderReadStream, &shaders, versionNumber);
 
     IB::RendererDesc rendererDesc = {};
     rendererDesc.Window = &window;
@@ -213,7 +216,8 @@ int main()
 
     IB::MeshAsset mesh = {};
     IB::Serialization::MemoryStream readStream{reinterpret_cast<uint8_t *>(meshData)};
-    fromBinary(&readStream, &mesh);
+    fromBinary(&readStream, &versionNumber);
+    fromBinary(&readStream, &mesh, versionNumber);
 
     IB::AABB meshAABB = { {1000.0f, 1000.0f, 1000.0f }, { -1000.0f, -1000.0f, -1000.0f } };
     for (uint32_t i = 0; i < mesh.VertexCount; i++)

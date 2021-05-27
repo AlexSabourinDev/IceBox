@@ -70,14 +70,14 @@ namespace IB
     IB_API void waitOnDraws();
 
     IB_API void toBinary(Serialization::FileStream *stream, MeshAsset const &mesh);
-    IB_API void fromBinary(Serialization::MemoryStream *stream, MeshAsset *mesh);
+    IB_API void fromBinary(Serialization::MemoryStream *stream, MeshAsset *mesh, uint32_t versionNumber);
 
     IB_API void toBinary(Serialization::FileStream *stream, ShaderAsset const &shaders);
-    IB_API void fromBinary(Serialization::MemoryStream *stream, ShaderAsset *shaders);
+    IB_API void fromBinary(Serialization::MemoryStream *stream, ShaderAsset *shaders, uint32_t versionNumber);
 
     IB_API void toBinary(Serialization::FileStream *stream, MaterialAsset const &material);
-    IB_API void fromBinary(Serialization::MemoryStream *stream, MaterialAsset *material);
+    IB_API void fromBinary(Serialization::MemoryStream *stream, MaterialAsset *material, uint32_t versionNumber);
 
     IB_API void toBinary(Serialization::FileStream *stream, ImageAsset const &image);
-    IB_API void fromBinary(Serialization::MemoryStream *stream, ImageAsset *image);
+    IB_API void fromBinary(Serialization::MemoryStream *stream, ImageAsset *image, uint32_t versionNumber);
 } // namespace IB
