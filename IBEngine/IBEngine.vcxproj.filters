@@ -57,6 +57,7 @@
     <ClInclude Include="..\SDK\imgui_docking\imgui\imgui_impl_win32.h">
       <Filter>ImGui</Filter>
     </ClInclude>
+    <ClInclude Include="IBCollection.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Platform\IBPlatformWin32.cpp">

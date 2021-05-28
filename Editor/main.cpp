@@ -1,9 +1,12 @@
+#define _CRT_SECURE_NO_WARNINGS
+
 #include <IBEngine/IBRenderer.h>
 #include <IBEngine/IBRendererFrontend.h>
 #include <IBEngine/IBSerialization.h>
 #include <IBEngine/IBLogging.h>
 #include <IBEngine/IBPlatform.h>
 #include <IBEngine/IBAllocator.h>
+#include <IBEngine/IBCollection.h>
 
 #include <imgui/imgui.h>
 
@@ -27,8 +30,7 @@ namespace
         return false;
     }
 
-    // TODO: Find a home for these types of functions
-    int32_t findLastExtensionIndex(char const* path)
+    bool hasExtension(char const *path, char const *extension)
     {
         uint32_t length = static_cast<uint32_t>(strlen(path));
         int32_t extensionIndex = length;
@@ -40,7 +42,9 @@ namespace
             }
         }
 
-        return extensionIndex-1; // Include period
+        extensionIndex--; // Include period
+
+        return extensionIndex > 0 && strcmp(path + extensionIndex, extension) == 0;
     }
 
     // Global until we figure out state storage.
@@ -48,13 +52,48 @@ namespace
     bool EditorAlive = true;
     constexpr uint32_t PlatformJobQueue = 2;
     WindowHandle Window;
-}
+} // namespace
 
 namespace IB
 {
     namespace Editor
     {
-        FileInfo LoadingCell;
+        FileInfo LoadCellInfo;
+
+        void assetBrowserFileTree(char const* rootPath, char const* folder)
+        {
+            char directoryPath[MaxFilePath] = { 0 };
+            sprintf(directoryPath, "%s%s/", rootPath, folder);
+
+            char searchPath[MaxFilePath] = { 0 };
+            sprintf(searchPath, "%s*", directoryPath);
+
+            DirectoryIterator directoryTree = { searchPath };
+            FileInfo fileInfo;
+            while (iterateDirectory(&directoryTree, &fileInfo))
+            {
+                if (fileInfo.IsDirectory)
+                {
+                    if (ImGui::TreeNode(fileInfo.Path))
+                    {
+                        assetBrowserFileTree(directoryPath, fileInfo.Path);
+                        ImGui::TreePop();
+                    }
+                }
+                else
+                {
+                    if (ImGui::Button(fileInfo.Path))
+                    {
+                        if (hasExtension(fileInfo.Path, ".cell"))
+                        {
+                            LoadCellInfo = fileInfo;
+                            ImGui::OpenPopup("Load Cell?");
+                        }
+                    }
+                }
+            }
+        };
+
         void frame()
         {
             newImGuiFrame();
@@ -67,12 +106,6 @@ namespace IB
                 }
                 if (ImGui::BeginMenu("Edit"))
                 {
-                    if (ImGui::MenuItem("Undo", "CTRL+Z")) {}
-                    if (ImGui::MenuItem("Redo", "CTRL+Y", false, false)) {}  // Disabled item
-                    ImGui::Separator();
-                    if (ImGui::MenuItem("Cut", "CTRL+X")) {}
-                    if (ImGui::MenuItem("Copy", "CTRL+C")) {}
-                    if (ImGui::MenuItem("Paste", "CTRL+V")) {}
                     ImGui::EndMenu();
                 }
                 ImGui::EndMainMenuBar();
@@ -80,37 +113,14 @@ namespace IB
 
             if (ImGui::Begin("Asset Browser"))
             {
-                DirectoryIterator directoryTree = { "../Assets/Compiled/*" };
-                FileInfo fileInfo;
-                while (iterateDirectory(&directoryTree, &fileInfo))
-                {
-                    if (fileInfo.IsDirectory)
-                    {
-                        if (ImGui::TreeNode(fileInfo.Path))
-                        {
-                            ImGui::TreePop();
-                        }
-                    }
-                    else
-                    {
-                        if (ImGui::Button(fileInfo.Path))
-                        {
-                            int32_t extensionIndex = findLastExtensionIndex(fileInfo.Path);
-                            if (extensionIndex > 0 && strcmp(fileInfo.Path + extensionIndex, ".cell") == 0)
-                            {
-                                LoadingCell = fileInfo;
-                                ImGui::OpenPopup("Load Cell?");
-                            }
-                        }
-                    }
-                }
+                assetBrowserFileTree("../Assets/", "Compiled");
             }
 
             if (ImGui::BeginPopupModal("Load Cell?"))
             {
                 if (ImGui::Button("OK", ImVec2(120, 0)))
                 {
-                    Asset::loadResourceAsync(LoadingCell.Path, Asset::toFourCC("CELL"), &CellResource);
+                    Asset::loadResourceAsync(LoadCellInfo.Path, Asset::toFourCC("CELL"), &CellResource);
                     ImGui::CloseCurrentPopup();
                 }
 
@@ -126,7 +136,7 @@ namespace IB
 
             ImGui::Render();
         }
-    }
+    } // namespace Editor
 
     namespace JobGraph
     {
@@ -162,13 +172,13 @@ namespace IB
 
         JobResult platformMessageQueueJob()
         {
-            consumeMessageQueue([](void *, PlatformMessage message)
-            {
+            consumeMessageQueue([](void *, PlatformMessage message) {
                 if (message == PlatformMessage::Quit)
                 {
                     EditorAlive = false;
                 }
-            }, nullptr);
+            },
+                                nullptr);
             return JobResult::Complete;
         }
 
@@ -210,21 +220,20 @@ namespace IB
 
             // Writes:
             // All frontend state (potentially)
-            JobHandle editorDependencies[2] = { platformJob, SubmittedViewGather };
+            JobHandle editorDependencies[2] = {platformJob, SubmittedViewGather};
             // Wait on our previous view gather if present.
             uint32_t dependencyCount = SubmittedViewGather.Value != InvalidJob.Value ? 2 : 1;
             SubmittedEditorHandle = continueJob(&editorJob, editorDependencies, dependencyCount);
 
-            StackAllocator* renderFrameAllocator = &RenderFrameAllocators[QueuedFrameCount % MaxPendingFrameCount];
+            StackAllocator *renderFrameAllocator = &RenderFrameAllocators[QueuedFrameCount % MaxPendingFrameCount];
             reset(renderFrameAllocator);
 
-            ViewDesc* viewDescriptor = allocate<ViewDesc>(renderFrameAllocator);
+            ViewDesc *viewDescriptor = allocate<ViewDesc>(renderFrameAllocator);
 
             // Reads:
             // Frontend Renderer state
             // Transform state
-            SubmittedViewGather = continueJob([viewDescriptor, renderFrameAllocator]()
-            {
+            SubmittedViewGather = continueJob([viewDescriptor, renderFrameAllocator]() {
                 CellHandle currentCell = InvalidCell;
                 // Todo: needs a volatile load. Don't want the compiler to cache our load
                 if (Asset::isResourceAssetAvailable(CellResource))
@@ -235,12 +244,12 @@ namespace IB
                 *viewDescriptor = gatherCellView(currentCell, ImGui::GetDrawData(), renderFrameAllocator);
 
                 return JobResult::Complete;
-            }, &SubmittedEditorHandle, 1);
+            },
+                                              &SubmittedEditorHandle, 1);
 
             // Writes:
             // Backend Renderer state
-            continueJob([viewDescriptor]()
-            {
+            continueJob([viewDescriptor]() {
                 drawCellView(*viewDescriptor);
 
                 uint32_t previousPendingFrameCount = volatileLoad(&QueuedFrameCount) - CommitedFrameCount;
@@ -252,7 +261,8 @@ namespace IB
                 }
 
                 return JobResult::Complete;
-            }, &SubmittedViewGather, 1, RendererJobQueueIndex);
+            },
+                        &SubmittedViewGather, 1, RendererJobQueueIndex);
         }
 
         void flushQueuedFrames()
@@ -261,8 +271,8 @@ namespace IB
             {
             }
         }
-    }
-}
+    } // namespace JobGraph
+} // namespace IB
 
 int main()
 {
@@ -270,23 +280,23 @@ int main()
     ThreadEvent platformEvent = createThreadEvent();
 
     {
-        launchJob([platformEvent]()
-        {
+        launchJob([platformEvent]() {
             WindowDesc winDesc = {};
             winDesc.Name = "EngineCat";
-            winDesc.Width = 4096;
-            winDesc.Height = 4096;
+            winDesc.Width = 1024;
+            winDesc.Height = 720;
             winDesc.OnWindowMessage = &primaryWindowHandler;
             Window = createWindow(winDesc);
 
             signalThreadEvent(platformEvent);
             return JobResult::Complete;
-        }, PlatformJobQueue);
+        },
+                  PlatformJobQueue);
 
         waitOnThreadEvent(platformEvent);
 
         Serialization::initSerialization();
-        initRendererFrontend({ &Window });
+        initRendererFrontend({&Window});
         initEntitySystem();
         JobGraph::init();
     }
@@ -308,12 +318,12 @@ int main()
         killRendererFrontend();
         Serialization::killSerialization();
 
-        launchJob([platformEvent]()
-        {
+        launchJob([platformEvent]() {
             destroyWindow(Window);
             signalThreadEvent(platformEvent);
             return JobResult::Complete;
-        }, PlatformJobQueue);
+        },
+                  PlatformJobQueue);
 
         waitOnThreadEvent(platformEvent);
         destroyThreadEvent(platformEvent);
