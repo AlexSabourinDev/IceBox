@@ -9,7 +9,6 @@
 
 namespace
 {
-    constexpr uint32_t RendererJobQueueIndex = 0;
     constexpr uint32_t InitPassesJobQueueIndex = 1;
 
     IB::ImageHandle toImageHandle(IB::Asset::AssetHandle asset) { return {static_cast<uint32_t>(asset.Value)}; }
@@ -40,7 +39,7 @@ namespace
 
                     return IB::JobResult::Complete;
                 },
-                                                          RendererJobQueueIndex);
+                                                          IB::RendererJobQueueIndex);
 
                 return IB::Asset::wait(&imageCreate, 1, Create);
             }
@@ -83,7 +82,7 @@ namespace
 
                     return IB::JobResult::Complete;
                 },
-                                                         RendererJobQueueIndex);
+                    IB::RendererJobQueueIndex);
 
                 return IB::Asset::wait(&meshCreate, 1, Create);
             }
@@ -136,7 +135,7 @@ namespace
 
                     return IB::JobResult::Complete;
                 },
-                                                            &textureJob, 1, RendererJobQueueIndex);
+                                                            &textureJob, 1, IB::RendererJobQueueIndex);
 
                 return IB::Asset::wait(&materialJob, 1, Create);
             }
@@ -277,9 +276,6 @@ namespace
         {
             4};
 
-    constexpr uint32_t MaxPendingFrameCount = 2;
-    uint32_t PendingFrameCount = 0;
-    IB::ThreadEvent PendingFrameEvent;
 } // namespace
 
 namespace IB
@@ -291,8 +287,6 @@ namespace IB
         Asset::addStreamer(Asset::toFourCC("MATE"), &MaterialStreamer);
         Asset::addStreamer(Asset::toFourCC("SHDR"), &ShaderStreamer);
         Asset::addStreamer(Asset::toFourCC("RNDR"), &RendererPropertyStreamer);
-
-        PendingFrameEvent = IB::createThreadEvent();
 
         RendererDesc rendererDesc = {desc.Window};
         initRenderer(rendererDesc);
@@ -322,7 +316,6 @@ namespace IB
     {
         launchJob([]() {
             killRenderer();
-            IB::destroyThreadEvent(PendingFrameEvent);
             return JobResult::Complete;
         },
                   RendererJobQueueIndex);
@@ -374,7 +367,7 @@ namespace IB
         return {reinterpret_cast<uint64_t>(&materialData)};
     }
 
-    JobHandle drawCellAsync(CellHandle cell, ImDrawData* sourceImguiDrawCommands)
+    ViewDesc gatherCellView(CellHandle cell, ImDrawData* sourceImguiDrawCommands, StackAllocator* allocator)
     {
         // Clone our imgui draw data
         ImDrawData* imguiDrawData = nullptr;
@@ -388,142 +381,109 @@ namespace IB
             }
         }
 
-        if (volatileLoad(&PendingFrameCount) == MaxPendingFrameCount)
+        EntityHandle *entities;
+        uint32_t entityCount;
+        getEntityList(cell, &entities, &entityCount);
+
+        uint32_t rendererCount = 0;
+        MeshHandle meshes[32];
+        MaterialHandle materials[32];
+        for (uint32_t i = 0; i < entityCount; i++)
         {
-            waitOnThreadEvent(PendingFrameEvent);
-        }
-        IB_ASSERT(volatileLoad(&PendingFrameCount) < MaxPendingFrameCount, "We haven't finished submitting our last frame!");
-
-        PendingFrameCount++;
-
-        // Make sure our thread event is cleared,
-        // it's possible that we:
-        // - Reached our max pending frame count
-        // - Signaled the event
-        // - Decremented the PendingFrameCount
-        // - Requested a draw
-        // - Never waited on our Signaled event
-        // As a result, our event needs to be reset here
-        if (PendingFrameCount == MaxPendingFrameCount)
-        {
-            resetThreadEvent(PendingFrameEvent);
-        }
-
-        return launchJob([cell, imguiDrawData]() {
-            EntityHandle *entities;
-            uint32_t entityCount;
-            getEntityList(cell, &entities, &entityCount);
-
-            uint32_t rendererCount = 0;
-            MeshHandle meshes[32];
-            MaterialHandle materials[32];
-            for (uint32_t i = 0; i < entityCount; i++)
+            PropertyHandle handle = getPropertyFromEntity(entities[i], Asset::toFourCC("RNDR"));
+            if (handle.Value != InvalidProperty.Value)
             {
-                PropertyHandle handle = getPropertyFromEntity(entities[i], Asset::toFourCC("RNDR"));
-                if (handle.Value != InvalidProperty.Value)
+                RendererProperty *renderer = reinterpret_cast<RendererProperty *>(handle.Value);
+                if (Asset::isResourceAssetAvailable(renderer->MeshResource) && Asset::isResourceAssetAvailable(renderer->MaterialResource))
                 {
-                    RendererProperty *renderer = reinterpret_cast<RendererProperty *>(handle.Value);
-                    if (Asset::isResourceAssetAvailable(renderer->MeshResource) && Asset::isResourceAssetAvailable(renderer->MaterialResource))
+                    Asset::AssetHandle materialAsset = Asset::getAssetFromResource(renderer->MaterialResource);
+                    RuntimeMaterial *material = reinterpret_cast<RuntimeMaterial *>(materialAsset.Value);
+                    // Assure that our material is valid
+                    // It's possible our loading thread hasn't finished creating it for us
+                    if (material->Material.Value != InvalidMaterial.Value)
                     {
-                        Asset::AssetHandle materialAsset = Asset::getAssetFromResource(renderer->MaterialResource);
-                        RuntimeMaterial *material = reinterpret_cast<RuntimeMaterial *>(materialAsset.Value);
-                        // Assure that our material is valid
-                        // It's possible our loading thread hasn't finished creating it for us
-                        if (material->Material.Value != InvalidMaterial.Value)
-                        {
-                            meshes[rendererCount] = {static_cast<uint32_t>(Asset::getAssetFromResource(renderer->MeshResource).Value)};
-                            materials[rendererCount] = material->Material;
-                            rendererCount++;
-                        }
+                        meshes[rendererCount] = { static_cast<uint32_t>(Asset::getAssetFromResource(renderer->MeshResource).Value) };
+                        materials[rendererCount] = material->Material;
+                        rendererCount++;
                     }
                 }
             }
+        }
 
+        ViewDesc viewDesc = {};
+        {
+            Mat3x4 meshTransform =
             {
-                IB::Mat3x4 meshTransform =
-                    {
-                        {{1.0f, 0.0f, 0.0f, 0.0f},
-                         {0.0f, 1.0f, 0.0f, 5.0f},
-                         {0.0f, 0.0f, 1.0f, 0.0f}},
-                    };
+                {{1.0f, 0.0f, 0.0f, 0.0f},
+                 {0.0f, 1.0f, 0.0f, 5.0f},
+                 {0.0f, 0.0f, 1.0f, 0.0f}},
+            };
 
-                IB::Float3 viewPos = IB::Float3{-2.0f, 1.0f, 0.0f};
-                IB::Mat4x4 view =
-                    {
-                        {{1.0f, 0.0f, 0.0f, -viewPos.x},
-                         {0.0f, 0.0f, 1.0f, -viewPos.z},
-                         {0.0f, 1.0f, 0.0f, -viewPos.y},
-                         {0.0f, 0.0f, 0.0f, 1.0f}},
-                    };
+            Float3 viewPos = Float3{ -2.0f, 1.0f, 0.0f };
+            Mat4x4 view =
+            {
+                {{1.0f, 0.0f, 0.0f, -viewPos.x},
+                 {0.0f, 0.0f, 1.0f, -viewPos.z},
+                 {0.0f, 1.0f, 0.0f, -viewPos.y},
+                 {0.0f, 0.0f, 0.0f, 1.0f}},
+            };
 
-                float fov = 1.0f / tanf(3.1415f * 0.25);
-                const float f = 45.0f;
-                const float n = 1.0f;
-                const float a = 1.0f;
-                IB::Mat4x4 projection =
-                    {
-                        {{fov / a, 0.0f, 0.0f, 0.0f},
-                         {0.0f, -fov, 0.0f, 0.0f},
-                         {0.0f, 0.0f, f / (f - n), -n * f / (f - n)},
-                         {0.0f, 0.0f, 1.0, 0.0f}},
-                    };
+            float fov = 1.0f / tanf(3.1415f * 0.25);
+            const float f = 45.0f;
+            const float n = 1.0f;
+            const float a = 1.0f;
+            Mat4x4 projection =
+            {
+                {{fov / a, 0.0f, 0.0f, 0.0f},
+                 {0.0f, -fov, 0.0f, 0.0f},
+                 {0.0f, 0.0f, f / (f - n), -n * f / (f - n)},
+                 {0.0f, 0.0f, 1.0, 0.0f}},
+            };
 
-                IB::Mat4x4 viewProj = mul(projection, view);
+            Mat4x4 viewProj = mul(projection, view);
 
-                IB::ViewDesc::MeshInstances meshInstances[32];
+            ViewDesc::MeshInstances* meshInstances = allocateArray<ViewDesc::MeshInstances>(allocator, rendererCount);
 
-                for (uint32_t i = 0; i < rendererCount; i++)
-                {
-                    meshInstances[i].Mesh = meshes[i];
-                    meshInstances[i].Transforms = &meshTransform;
-                    meshInstances[i].Count = 1;
-                }
-
-                IB::ViewDesc::Batch meshBatch = {};
-                meshBatch.Material = materials[0]; // TODO
-                meshBatch.Meshes = meshInstances;
-                meshBatch.MeshCount = rendererCount;
-
-                IB::ViewDesc viewDesc = {};
-                if (rendererCount > 0)
-                {
-                    IB::ViewDesc::ForwardPass worldPass;
-                    worldPass.Batches = &meshBatch;
-                    worldPass.BatchCount = 1;
-                    viewDesc.Forward.Passes[IB::ViewDesc::ForwardPass::Default] = worldPass;
-                }
-
-                viewDesc.ViewProj = viewProj;
-                viewDesc.ImGuiDrawData = imguiDrawData;
-                drawView(viewDesc);
-
-                // Clean up our ImGui data
-                if (imguiDrawData != nullptr)
-                {
-                    for (int32_t i = 0; i < imguiDrawData->CmdListsCount; i++)
-                    {
-                        IM_DELETE(imguiDrawData->CmdLists[i]);
-                    }
-                    deallocateArray(imguiDrawData->CmdLists, imguiDrawData->CmdListsCount);
-                    deallocate(imguiDrawData);
-                }
+            for (uint32_t i = 0; i < rendererCount; i++)
+            {
+                meshInstances[i].Mesh = meshes[i];
+                meshInstances[i].Transforms = allocateArray<Mat3x4>(allocator, 1, meshTransform);
+                meshInstances[i].Count = 1;
             }
 
-            uint32_t previousPendingFrameCount = PendingFrameCount;
-            PendingFrameCount--;
-            if (previousPendingFrameCount == MaxPendingFrameCount)
+            ViewDesc::Batch* meshBatch = allocateArray<ViewDesc::Batch>(allocator, 1);
+            meshBatch->Material = materials[0]; // TODO
+            meshBatch->Meshes = meshInstances;
+            meshBatch->MeshCount = rendererCount;
+
+            if (rendererCount > 0)
             {
-                signalThreadEvent(PendingFrameEvent);
+                ViewDesc::ForwardPass worldPass;
+                worldPass.Batches = meshBatch;
+                worldPass.BatchCount = 1;
+                viewDesc.Forward.Passes[ViewDesc::ForwardPass::Default] = worldPass;
             }
-            return IB::JobResult::Complete;
-        },
-                         RendererJobQueueIndex);
+
+            viewDesc.ViewProj = viewProj;
+            viewDesc.ImGuiDrawData = imguiDrawData;
+        }
+
+        return viewDesc;
     }
 
-    void waitOnDraws()
+    void drawCellView(ViewDesc const& viewDesc)
     {
-        while (volatileLoad(&PendingFrameCount) > 0)
+        drawView(viewDesc);
+
+        // Clean up our ImGui data
+        if (viewDesc.ImGuiDrawData != nullptr)
         {
+            for (int32_t i = 0; i < viewDesc.ImGuiDrawData->CmdListsCount; i++)
+            {
+                IM_DELETE(viewDesc.ImGuiDrawData->CmdLists[i]);
+            }
+            deallocateArray(viewDesc.ImGuiDrawData->CmdLists, viewDesc.ImGuiDrawData->CmdListsCount);
+            deallocate(viewDesc.ImGuiDrawData);
         }
     }
 

@@ -9,6 +9,8 @@
 
 namespace IB
 {
+    constexpr uint32_t RendererJobQueueIndex = 0;
+
     namespace Serialization
     {
         struct FileStream;
@@ -61,13 +63,19 @@ namespace IB
         WindowHandle *Window;
     };
 
+    struct StackAllocator;
+
     IB_API void initRendererFrontend(RendererFrontendDesc const &frontendDesc);
     IB_API void killRendererFrontend();
 
     IB_API PropertyHandle createRendererProperty(char const* meshPath, char const* materialPath);
     IB_API MaterialAssetHandle createMaterialAsset(MaterialAsset asset);
-    IB_API JobHandle drawCellAsync(CellHandle cell, ImDrawData* imguiDrawCommands);
-    IB_API void waitOnDraws();
+
+    // Can be called from any thread
+    IB_API ViewDesc gatherCellView(CellHandle cell, ImDrawData* imguiDrawCommands, StackAllocator* allocator);
+
+    // Must be called from our renderer queue
+    IB_API void drawCellView(ViewDesc const& viewDesc);
 
     IB_API void toBinary(Serialization::FileStream *stream, MeshAsset const &mesh);
     IB_API void fromBinary(Serialization::MemoryStream *stream, MeshAsset *mesh, uint32_t versionNumber);

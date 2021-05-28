@@ -2,6 +2,7 @@
 #include <IBEngine/IBJobs.h>
 #include <IBEngine/IBEntity.h>
 #include <IBEngine/IBRendererFrontend.h>
+#include <IBEngine/IBAllocator.h>
 
 void waitOnJob(IB::JobHandle job)
 {
@@ -83,10 +84,11 @@ int main()
         },
             &message);
 
-        IB::drawCellAsync(cellHandle, nullptr);
+        uint8_t tempMemory[1024 * 1024];
+        IB::StackAllocator allocator = IB::createStackAllocator(tempMemory, 1024 * 1024);
+        IB::drawCellView(IB::gatherCellView(cellHandle, nullptr, &allocator));
     }
 
-    IB::waitOnDraws();
     IB::Asset::releaseResourceAsync(cellResource);
 
     IB::killEntitySystem();

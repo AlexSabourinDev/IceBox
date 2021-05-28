@@ -1,10 +1,12 @@
 #pragma once
 
 #include "IBEngineAPI.h"
+#include "IBLogging.h"
 
 #include <stdint.h>
 #include <utility>
 #include <new>
+#include <type_traits>
 
 /*
 ## Why do we want a custom allocator?
@@ -42,23 +44,30 @@ namespace IB
     }
 
     template <typename T>
-    void deallocate(T *object)
+    void deallocate(T const*object)
     {
         object->~T();
-        memoryFree(object);
+        memoryFree(const_cast<T *>(object));
     }
 
     template <typename T, typename... TArgs>
     T *allocateArray(uint32_t count, TArgs &&... args)
     {
-        void *memory = memoryAllocate(sizeof(T) * count, alignof(T));
-        T *arrayMemory = reinterpret_cast<T *>(memory);
-        for (uint32_t i = 0; i < count; i++)
+        if (count > 0)
         {
-            new (arrayMemory + i) T(std::forward<TArgs>(args)...);
-        }
+            void *memory = memoryAllocate(sizeof(T) * count, alignof(T));
+            T *arrayMemory = reinterpret_cast<T *>(memory);
+            for (uint32_t i = 0; i < count; i++)
+            {
+                new (arrayMemory + i) T(std::forward<TArgs>(args)...);
+            }
 
-        return arrayMemory;
+            return arrayMemory;
+        }
+        else
+        {
+            return nullptr;
+        }
     }
 
     template <typename T>
@@ -115,4 +124,53 @@ namespace IB
 
         BlockPool Pool = createBlockPool(sizeof(T), alignof(T));
     };
+
+    struct StackAllocator // Ownership and cleanup of allocator is owned by the external system.
+    {
+        void* MemoryHead = nullptr;
+        void* MemoryIter = nullptr;
+        uint32_t MaxSize = 0;
+    };
+
+    inline StackAllocator createStackAllocator(void *memory, uint32_t maxSize)
+    {
+        return { memory, memory, maxSize };
+    }
+
+    inline void reset(StackAllocator* allocator)
+    {
+        allocator->MemoryIter = allocator->MemoryHead;
+    }
+
+    void *memoryAllocate(StackAllocator* allocator, uint32_t size, uint32_t alignment);
+
+    template<typename T, typename... TArgs>
+    T *allocate(StackAllocator* allocator, TArgs&&... args)
+    {
+        static_assert(std::is_trivially_destructible_v<T>, "Object must be trivially destructible. Any destruction logic will be ignored in this allocator.");
+        void* memory = memoryAllocate(allocator, sizeof(T), alignof(T));
+        T* object = new (memory) T;
+        return object;
+    }
+
+    template<typename T, typename... TArgs>
+    T *allocateArray(StackAllocator* allocator, uint32_t count, TArgs&&... args)
+    {
+        static_assert(std::is_trivially_destructible_v<T>, "Object must be trivially destructible. Any destruction logic will be ignored in this allocator.");
+        if (count > 0)
+        {
+            void *memory = memoryAllocate(allocator, sizeof(T) * count, alignof(T));
+            T *arrayMemory = reinterpret_cast<T *>(memory);
+            for (uint32_t i = 0; i < count; i++)
+            {
+                new (arrayMemory + i) T(std::forward<TArgs>(args)...);
+            }
+
+            return arrayMemory;
+        }
+        else
+        {
+            return nullptr;
+        }
+    }
 } // namespace IB

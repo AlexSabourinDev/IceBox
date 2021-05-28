@@ -148,7 +148,7 @@ namespace IB
             };
 
             Batch *Batches;
-            uint32_t BatchCount;
+            uint32_t BatchCount = 0;
         };
 
         struct

@@ -977,4 +977,20 @@ namespace IB
             }
         }
     }
+
+    void *memoryAllocate(StackAllocator* allocator, uint32_t size, uint32_t alignment)
+    {
+        uintptr_t address = reinterpret_cast<uintptr_t>(allocator->MemoryIter);
+        if ((address % alignment) != 0)
+        {
+            address += alignment - address % alignment;
+        }
+
+        void* memory = reinterpret_cast<void*>(address);
+
+        address += size;
+        allocator->MemoryIter = reinterpret_cast<void*>(address);
+        IB_ASSERT((address - reinterpret_cast<uintptr_t>(allocator->MemoryHead)) <= allocator->MaxSize, "Too much memory allocated to this allocator! Consider increasing it's size.");
+        return memory;
+    }
 } // namespace IB

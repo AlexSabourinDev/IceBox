@@ -43,8 +43,9 @@ namespace IB
 
     struct JobHandle
     {
-        uint64_t Value;
+        uint64_t Value = UINT64_MAX;
     };
+    constexpr JobHandle InvalidJob = { UINT64_MAX };
 
     IB_API void initJobSystem();
     IB_API void killJobSystem();
