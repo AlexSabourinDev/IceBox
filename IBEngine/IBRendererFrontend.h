@@ -3,12 +3,28 @@
 #include <stdint.h>
 
 #include "IBEngineAPI.h"
-#include "IBEntity.h"
-#include "IBJobs.h"
-#include "IBRenderer.h"
 
+struct ImDrawData;
 namespace IB
 {
+    namespace Asset
+    {
+        enum Handle : uint64_t;
+        constexpr Handle toHandle(uint64_t value);
+    }
+
+    namespace Property
+    {
+        enum Handle : uint64_t;
+    }
+
+    namespace Cell
+    {
+        enum Handle : uint64_t;
+    }
+
+    struct ViewDesc;
+
     constexpr uint32_t RendererJobQueueIndex = 0;
 
     namespace Serialization
@@ -47,7 +63,12 @@ namespace IB
         uint64_t Value;
     };
 
-    inline Asset::AssetHandle toAssetHandle(MaterialAssetHandle handle) { return { handle.Value }; };
+    inline Asset::Handle toAssetHandle(MaterialAssetHandle handle) { return Asset::toHandle(handle.Value); };
+
+    namespace ImageFormat
+    {
+        enum Enum : uint32_t;
+    }
 
     struct ImageAsset
     {
@@ -57,10 +78,13 @@ namespace IB
         uint8_t const* Data;
     };
 
-    struct WindowHandle;
+    namespace Window
+    {
+        enum Handle : uintptr_t;
+    }
     struct RendererFrontendDesc
     {
-        WindowHandle *Window;
+        Window::Handle Window;
     };
 
     struct StackAllocator;
@@ -68,11 +92,11 @@ namespace IB
     IB_API void initRendererFrontend(RendererFrontendDesc const &frontendDesc);
     IB_API void killRendererFrontend();
 
-    IB_API PropertyHandle createRendererProperty(char const* meshPath, char const* materialPath);
+    IB_API Property::Handle createRendererProperty(char const* meshPath, char const* materialPath);
     IB_API MaterialAssetHandle createMaterialAsset(MaterialAsset asset);
 
     // Can be called from any thread
-    IB_API ViewDesc gatherCellView(CellHandle cell, ImDrawData* imguiDrawCommands, StackAllocator* allocator);
+    IB_API ViewDesc gatherCellView(Cell::Handle cell, ImDrawData* imguiDrawCommands, StackAllocator* allocator);
 
     // Must be called from our renderer queue
     IB_API void drawCellView(ViewDesc const& viewDesc);

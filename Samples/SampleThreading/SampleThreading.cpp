@@ -48,17 +48,17 @@ int main()
 
     for (uint32_t i = 0; i < 10; i++)
     {
-        IB::JobHandle sleepJob = IB::launchJob([]()
+        IB::Job::Handle sleepJob = IB::launchJob([]()
         {
             Sleep(100);
             return IB::JobResult::Complete;
         });
-        IB::JobHandle continueJob1 = IB::continueJob([]()
+        IB::Job::Handle continueJob1 = IB::continueJob([]()
         {
             Sleep(10);
             return IB::JobResult::Complete;
         }, &sleepJob, 1);
-        IB::JobHandle continueJob2 = IB::continueJob([]()
+        IB::Job::Handle continueJob2 = IB::continueJob([]()
         {
             Sleep(10);
             return IB::JobResult::Complete;
@@ -82,13 +82,13 @@ int main()
 
     for (uint32_t i = 0; i < 10; i++)
     {
-        IB::JobHandle sleepJob = IB::launchJob([]()
+        IB::Job::Handle sleepJob = IB::launchJob([]()
         {
             Sleep(100);
             return IB::JobResult::Complete;
         });
 
-        IB::JobHandle continueJobs[10];
+        IB::Job::Handle continueJobs[10];
         for (uint32_t j = 0; j < 10; j++)
         {
             continueJobs[j] = IB::continueJob([]()
@@ -108,12 +108,12 @@ int main()
         while (Counter != 1) {}
     }
 
-    IB::JobHandle myHandle;
+    IB::Job::Handle myHandle;
     myHandle = IB::reserveJob([&myHandle]()
     {
         if (Counter == 0)
         {
-            IB::JobHandle childJob = IB::launchJob([]()
+            IB::Job::Handle childJob = IB::launchJob([]()
             {
                 Sleep(10);
                 return IB::JobResult::Complete;

@@ -4,6 +4,8 @@
 #include "IBAsset.h"
 #include "IBLogging.h"
 #include "IBAllocator.h"
+#include "IBEntity.h"
+#include "IBJobs.h"
 
 #include <imgui/imgui.h>
 
@@ -11,7 +13,7 @@ namespace
 {
     constexpr uint32_t InitPassesJobQueueIndex = 1;
 
-    IB::ImageHandle toImageHandle(IB::Asset::AssetHandle asset) { return {static_cast<uint32_t>(asset.Value)}; }
+    IB::ImageHandle toImageHandle(IB::Asset::Handle asset) { return {static_cast<uint32_t>(IB::Asset::toValue(asset))}; }
 
     class ImageAssetStreamer : public IB::Asset::IStreamer
     {
@@ -29,7 +31,7 @@ namespace
                 IB::ImageAsset image;
                 fromBinary(&context->Stream, &image, context->SaveVersion);
 
-                IB::JobHandle imageCreate = IB::launchJob([image, imageHandle = &context->Data]() {
+                IB::Job::Handle imageCreate = IB::launchJob([image, imageHandle = &context->Data]() {
                     IB::ImageDesc imageDesc = {};
                     imageDesc.Format = image.Format;
                     imageDesc.Width = image.Width;
@@ -45,11 +47,11 @@ namespace
             }
             else
             {
-                return IB::Asset::complete({context->Data});
+                return IB::Asset::complete(IB::Asset::toHandle(context->Data));
             }
         }
 
-        void unloadThreadSafe(IB::Asset::AssetHandle) override
+        void unloadThreadSafe(IB::Asset::Handle) override
         {
             // TODO: Handle image destruction
         }
@@ -72,7 +74,7 @@ namespace
                 IB::MeshAsset mesh;
                 fromBinary(&context->Stream, &mesh, context->SaveVersion);
 
-                IB::JobHandle meshCreate = IB::launchJob([mesh, meshHandle = &context->Data]() {
+                IB::Job::Handle meshCreate = IB::launchJob([mesh, meshHandle = &context->Data]() {
                     IB::MeshDesc meshDesc = {};
                     meshDesc.Vertices.Data = mesh.Vertices;
                     meshDesc.Vertices.Count = mesh.VertexCount;
@@ -88,11 +90,11 @@ namespace
             }
             else
             {
-                return IB::Asset::complete({context->Data});
+                return IB::Asset::complete(IB::Asset::toHandle(context->Data));
             }
         }
 
-        void unloadThreadSafe(IB::Asset::AssetHandle) override
+        void unloadThreadSafe(IB::Asset::Handle) override
         {
             // TODO: Handle mesh destruction
         }
@@ -103,7 +105,7 @@ namespace
     {
         IB::MaterialHandle Material;
         IB::MaterialAsset Asset;
-        IB::Asset::ResourceHandle AlbedoTexture;
+        IB::Resource::Handle AlbedoTexture;
     };
 
     IB::ThreadSafePool<RuntimeMaterial> MaterialPool;
@@ -123,9 +125,9 @@ namespace
                 RuntimeMaterial &materialData = MaterialPool.add();
                 fromBinary(&context->Stream, &materialData.Asset, context->SaveVersion);
 
-                IB::JobHandle textureJob = IB::Asset::loadResourceAsync(materialData.Asset.AlbedoPath, IB::Asset::toFourCC("IMAG"), &materialData.AlbedoTexture);
-                IB::JobHandle materialJob = IB::continueJob([materialPtr = &materialData, contextData = &context->Data]() {
-                    IB::Asset::ResourceHandle textureResource = materialPtr->AlbedoTexture;
+                IB::Job::Handle textureJob = IB::Asset::loadResourceAsync(materialData.Asset.AlbedoPath, IB::Asset::toFourCC("IMAG"), &materialData.AlbedoTexture);
+                IB::Job::Handle materialJob = IB::continueJob([materialPtr = &materialData, contextData = &context->Data]() {
+                    IB::Resource::Handle textureResource = materialPtr->AlbedoTexture;
 
                     IB::ForwardDesc materialDesc = {};
                     materialDesc.AlbedoTint = materialPtr->Asset.AlbedoTint;
@@ -141,19 +143,19 @@ namespace
             }
             else
             {
-                return IB::Asset::complete({context->Data});
+                return IB::Asset::complete(IB::Asset::toHandle(context->Data));
             }
         }
 
         void saveThreadSafe(IB::Asset::SaveContext *context) override
         {
-            RuntimeMaterial *material = reinterpret_cast<RuntimeMaterial *>(context->Asset.Value);
+            RuntimeMaterial *material = reinterpret_cast<RuntimeMaterial *>(IB::Asset::toValue(context->Asset));
             toBinary(context->Stream, material->Asset);
         }
 
-        void unloadThreadSafe(IB::Asset::AssetHandle asset) override
+        void unloadThreadSafe(IB::Asset::Handle asset) override
         {
-            RuntimeMaterial *material = reinterpret_cast<RuntimeMaterial *>(asset.Value);
+            RuntimeMaterial *material = reinterpret_cast<RuntimeMaterial *>(IB::Asset::toValue(asset));
             IB::Asset::releaseResourceAsync(material->AlbedoTexture);
             // TODO: Handle material destruction in renderer backend
             MaterialPool.remove(*material);
@@ -161,9 +163,9 @@ namespace
     };
     MaterialAssetStreamer MaterialStreamer;
 
-    IB::ShaderAsset *toShaderAsset(IB::Asset::AssetHandle handle)
+    IB::ShaderAsset *toShaderAsset(IB::Asset::Handle handle)
     {
-        return reinterpret_cast<IB::ShaderAsset *>(handle.Value);
+        return reinterpret_cast<IB::ShaderAsset *>(IB::Asset::toValue(handle));
     }
 
     class ShaderAssetStreamer : public IB::Asset::IStreamer
@@ -174,10 +176,10 @@ namespace
             IB::ShaderAsset *shaders = IB::allocate<IB::ShaderAsset>();
             fromBinary(&context->Stream, shaders, context->SaveVersion);
 
-            return IB::Asset::complete({reinterpret_cast<uint64_t>(shaders)});
+            return IB::Asset::complete(IB::Asset::toHandle(reinterpret_cast<uint64_t>(shaders)));
         }
 
-        void unloadThreadSafe(IB::Asset::AssetHandle asset) override
+        void unloadThreadSafe(IB::Asset::Handle asset) override
         {
             IB::deallocate(toShaderAsset(asset));
         }
@@ -186,8 +188,8 @@ namespace
 
     struct RendererProperty
     {
-        IB::Asset::ResourceHandle MeshResource;
-        IB::Asset::ResourceHandle MaterialResource;
+        IB::Resource::Handle MeshResource;
+        IB::Resource::Handle MaterialResource;
     };
     IB::ThreadSafePool<RendererProperty> RendererProperties;
 
@@ -219,26 +221,26 @@ namespace
                     MaterialJob,
                     JobCount
                 };
-                IB::JobHandle jobs[JobCount];
+                IB::Job::Handle jobs[JobCount];
 
                 jobs[MeshJob] = IB::Asset::loadResourceAsync(meshPath, IB::Asset::toFourCC("MESH"),
-                                                             [](void *data, IB::Asset::ResourceHandle resource, IB::Asset::ResourceLoad::State loadState) {
+                                                             [](void *data, IB::Resource::Handle resource, IB::Asset::ResourceLoad::State loadState) {
                                                                  // Assign our mesh resource even when it's loading
                                                                  // We want to gracefully handle the resource not being available yet.
                                                                  if (loadState >= IB::Asset::ResourceLoad::Loading)
                                                                  {
-                                                                     *reinterpret_cast<IB::Asset::ResourceHandle *>(data) = resource;
+                                                                     *reinterpret_cast<IB::Resource::Handle *>(data) = resource;
                                                                  }
                                                              },
                                                              &renderer.MeshResource);
 
                 jobs[MaterialJob] = IB::Asset::loadResourceAsync(materialPath, IB::Asset::toFourCC("MATE"),
-                                                                 [](void *data, IB::Asset::ResourceHandle resource, IB::Asset::ResourceLoad::State loadState) {
+                                                                 [](void *data, IB::Resource::Handle resource, IB::Asset::ResourceLoad::State loadState) {
                                                                      // Assign our mesh resource even when it's loading
                                                                      // We want to gracefully handle the resource not being available yet.
                                                                      if (loadState >= IB::Asset::ResourceLoad::Loading)
                                                                      {
-                                                                         *reinterpret_cast<IB::Asset::ResourceHandle *>(data) = resource;
+                                                                         *reinterpret_cast<IB::Resource::Handle *>(data) = resource;
                                                                      }
                                                                  },
                                                                  &renderer.MaterialResource);
@@ -247,13 +249,13 @@ namespace
             }
             else
             {
-                return IB::Asset::complete({context->Data});
+                return IB::Asset::complete(IB::Asset::toHandle(context->Data));
             }
         }
 
         void saveThreadSafe(IB::Asset::SaveContext *context) override
         {
-            RendererProperty *renderer = reinterpret_cast<RendererProperty *>(context->Asset.Value);
+            RendererProperty *renderer = reinterpret_cast<RendererProperty *>(IB::Asset::toValue(context->Asset));
             char const *meshPath = IB::Asset::getResourcePath(renderer->MeshResource);
             toBinary(context->Stream, meshPath);
 
@@ -261,9 +263,9 @@ namespace
             toBinary(context->Stream, materialPath);
         }
 
-        void unloadThreadSafe(IB::Asset::AssetHandle asset) override
+        void unloadThreadSafe(IB::Asset::Handle asset) override
         {
-            RendererProperty *renderer = reinterpret_cast<RendererProperty *>(asset.Value);
+            RendererProperty *renderer = reinterpret_cast<RendererProperty *>(IB::Asset::toValue(asset));
             IB::Asset::releaseResourceAsync(renderer->MeshResource);
             IB::Asset::releaseResourceAsync(renderer->MaterialResource);
             RendererProperties.remove(*renderer);
@@ -292,7 +294,7 @@ namespace IB
         initRenderer(rendererDesc);
 
         Asset::loadResourceAsync("SampleForward.shdr", Asset::toFourCC("SHDR"),
-                                 [](void*, Asset::ResourceHandle resource, IB::Asset::ResourceLoad::State loadState) {
+                                 [](void*, Resource::Handle resource, IB::Asset::ResourceLoad::State loadState) {
                                      if (loadState == Asset::ResourceLoad::Available)
                                      {
                                          launchJob([resource]() {
@@ -321,41 +323,41 @@ namespace IB
                   RendererJobQueueIndex);
     }
 
-    PropertyHandle createRendererProperty(char const *meshPath, char const *materialPath)
+    Property::Handle createRendererProperty(char const *meshPath, char const *materialPath)
     {
         RendererProperty &renderer = RendererProperties.add();
         IB::Asset::loadResourceAsync(meshPath, IB::Asset::toFourCC("MESH"),
-                                     [](void *data, IB::Asset::ResourceHandle resource, IB::Asset::ResourceLoad::State loadState) {
+                                     [](void *data, IB::Resource::Handle resource, IB::Asset::ResourceLoad::State loadState) {
                                          // Assign our mesh resource even when it's loading
                                          // We want to gracefully handle the resource not being available yet.
                                          if (loadState >= IB::Asset::ResourceLoad::Loading)
                                          {
-                                             *reinterpret_cast<IB::Asset::ResourceHandle *>(data) = resource;
+                                             *reinterpret_cast<IB::Resource::Handle *>(data) = resource;
                                          }
                                      },
                                      &renderer.MeshResource);
 
         IB::Asset::loadResourceAsync(materialPath, IB::Asset::toFourCC("MATE"),
-                                     [](void *data, IB::Asset::ResourceHandle resource, IB::Asset::ResourceLoad::State loadState) {
+                                     [](void *data, IB::Resource::Handle resource, IB::Asset::ResourceLoad::State loadState) {
                                          // Assign our mesh resource even when it's loading
                                          // We want to gracefully handle the resource not being available yet.
                                          if (loadState >= IB::Asset::ResourceLoad::Loading)
                                          {
-                                             *reinterpret_cast<IB::Asset::ResourceHandle *>(data) = resource;
+                                             *reinterpret_cast<IB::Resource::Handle *>(data) = resource;
                                          }
                                      },
                                      &renderer.MaterialResource);
 
-        return {reinterpret_cast<uint64_t>(&renderer)};
+        return Property::toHandle(reinterpret_cast<uint64_t>(&renderer));
     }
 
     MaterialAssetHandle createMaterialAsset(MaterialAsset asset)
     {
         RuntimeMaterial &materialData = MaterialPool.add();
         materialData.Asset = asset;
-        JobHandle textureJob = Asset::loadResourceAsync(asset.AlbedoPath, Asset::toFourCC("IMAG"), &materialData.AlbedoTexture);
+        Job::Handle textureJob = Asset::loadResourceAsync(asset.AlbedoPath, Asset::toFourCC("IMAG"), &materialData.AlbedoTexture);
         continueJob([materialPtr = &materialData]() {
-            IB::Asset::ResourceHandle textureResource = materialPtr->AlbedoTexture;
+            IB::Resource::Handle textureResource = materialPtr->AlbedoTexture;
             IB::ForwardDesc materialDesc = {};
             materialDesc.AlbedoTint = materialPtr->Asset.AlbedoTint;
             materialDesc.AlbedoImage = toImageHandle(IB::Asset::getAssetFromResource(textureResource));
@@ -367,7 +369,7 @@ namespace IB
         return {reinterpret_cast<uint64_t>(&materialData)};
     }
 
-    ViewDesc gatherCellView(CellHandle cell, ImDrawData* sourceImguiDrawCommands, StackAllocator* allocator)
+    ViewDesc gatherCellView(Cell::Handle cell, ImDrawData* sourceImguiDrawCommands, StackAllocator* allocator)
     {
         // Clone our imgui draw data
         ImDrawData* imguiDrawData = nullptr;
@@ -381,7 +383,7 @@ namespace IB
             }
         }
 
-        EntityHandle *entities;
+        Entity::Handle *entities;
         uint32_t entityCount;
         getEntityList(cell, &entities, &entityCount);
 
@@ -390,19 +392,19 @@ namespace IB
         MaterialHandle materials[32];
         for (uint32_t i = 0; i < entityCount; i++)
         {
-            PropertyHandle handle = getPropertyFromEntity(entities[i], Asset::toFourCC("RNDR"));
-            if (handle.Value != InvalidProperty.Value)
+            Property::Handle handle = getPropertyFromEntity(entities[i], Asset::toFourCC("RNDR"));
+            if (handle != InvalidProperty)
             {
-                RendererProperty *renderer = reinterpret_cast<RendererProperty *>(handle.Value);
+                RendererProperty *renderer = reinterpret_cast<RendererProperty *>(handle);
                 if (Asset::isResourceAssetAvailable(renderer->MeshResource) && Asset::isResourceAssetAvailable(renderer->MaterialResource))
                 {
-                    Asset::AssetHandle materialAsset = Asset::getAssetFromResource(renderer->MaterialResource);
-                    RuntimeMaterial *material = reinterpret_cast<RuntimeMaterial *>(materialAsset.Value);
+                    Asset::Handle materialAsset = Asset::getAssetFromResource(renderer->MaterialResource);
+                    RuntimeMaterial *material = reinterpret_cast<RuntimeMaterial *>(Asset::toValue(materialAsset));
                     // Assure that our material is valid
                     // It's possible our loading thread hasn't finished creating it for us
-                    if (material->Material.Value != InvalidMaterial.Value)
+                    if (material->Material != InvalidMaterial)
                     {
-                        meshes[rendererCount] = { static_cast<uint32_t>(Asset::getAssetFromResource(renderer->MeshResource).Value) };
+                        meshes[rendererCount] = { static_cast<uint32_t>(Asset::toValue(Asset::getAssetFromResource(renderer->MeshResource))) };
                         materials[rendererCount] = material->Material;
                         rendererCount++;
                     }

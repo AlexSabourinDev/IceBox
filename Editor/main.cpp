@@ -1,5 +1,7 @@
 #define _CRT_SECURE_NO_WARNINGS
 
+#include <IBEngine/IBAsset.h>
+#include <IBEngine/IBEntity.h>
 #include <IBEngine/IBRenderer.h>
 #include <IBEngine/IBRendererFrontend.h>
 #include <IBEngine/IBSerialization.h>
@@ -7,6 +9,7 @@
 #include <IBEngine/IBPlatform.h>
 #include <IBEngine/IBAllocator.h>
 #include <IBEngine/IBCollection.h>
+#include <IBEngine/IBJobs.h>
 
 #include <imgui/imgui.h>
 
@@ -48,19 +51,27 @@ namespace
     }
 
     // Global until we figure out state storage.
-    Asset::ResourceHandle CellResource = {};
+    Resource::Handle CellResource = {};
     bool EditorAlive = true;
     constexpr uint32_t PlatformJobQueue = 2;
-    WindowHandle Window;
+    Window::Handle WindowHandle;
 } // namespace
 
 namespace IB
 {
     namespace Editor
     {
-        FileInfo LoadCellInfo;
+        struct AssetBrowserState
+        {
+            FileInfo LoadCellInfo;
+        };
 
-        void assetBrowserFileTree(char const* rootPath, char const* folder)
+        struct
+        {
+            Entity::Handle SelectedEntity;
+        } EditorState;
+
+        void assetBrowserFileTree(char const* rootPath, char const* folder, AssetBrowserState* assetBrowser)
         {
             char directoryPath[MaxFilePath] = { 0 };
             sprintf(directoryPath, "%s%s/", rootPath, folder);
@@ -76,17 +87,18 @@ namespace IB
                 {
                     if (ImGui::TreeNode(fileInfo.Path))
                     {
-                        assetBrowserFileTree(directoryPath, fileInfo.Path);
+                        assetBrowserFileTree(directoryPath, fileInfo.Path, assetBrowser);
                         ImGui::TreePop();
                     }
                 }
                 else
                 {
-                    if (ImGui::Button(fileInfo.Path))
+                    ImGui::TreeNodeEx(fileInfo.Path, ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen);
+                    if (ImGui::IsItemClicked())
                     {
                         if (hasExtension(fileInfo.Path, ".cell"))
                         {
-                            LoadCellInfo = fileInfo;
+                            assetBrowser->LoadCellInfo = fileInfo;
                             ImGui::OpenPopup("Load Cell?");
                         }
                     }
@@ -113,24 +125,64 @@ namespace IB
 
             if (ImGui::Begin("Asset Browser"))
             {
-                assetBrowserFileTree("../Assets/", "Compiled");
+                static AssetBrowserState assetBrowserState = {};
+                assetBrowserFileTree("../Assets/", "Compiled", &assetBrowserState);
+
+                if (ImGui::BeginPopupModal("Load Cell?"))
+                {
+                    if (ImGui::Button("OK", ImVec2(120, 0)))
+                    {
+                        Asset::loadResourceAsync(assetBrowserState.LoadCellInfo.Path, Asset::toFourCC("CELL"), &CellResource);
+                        ImGui::CloseCurrentPopup();
+                    }
+
+                    ImGui::SetItemDefaultFocus();
+                    ImGui::SameLine();
+                    if (ImGui::Button("Cancel", ImVec2(120, 0)))
+                    {
+                        ImGui::CloseCurrentPopup();
+                    }
+                    ImGui::EndPopup();
+                }
             }
+            ImGui::End();
 
-            if (ImGui::BeginPopupModal("Load Cell?"))
+            if (ImGui::Begin("Cell"))
             {
-                if (ImGui::Button("OK", ImVec2(120, 0)))
+                if (Asset::isResourceAssetAvailable(CellResource))
                 {
-                    Asset::loadResourceAsync(LoadCellInfo.Path, Asset::toFourCC("CELL"), &CellResource);
-                    ImGui::CloseCurrentPopup();
-                }
+                    Cell::Handle currentCell = toCellHandle(Asset::getAssetFromResource(CellResource));
 
-                ImGui::SetItemDefaultFocus();
-                ImGui::SameLine();
-                if (ImGui::Button("Cancel", ImVec2(120, 0)))
-                {
-                    ImGui::CloseCurrentPopup();
+                    Entity::Handle *entities;
+                    uint32_t entityCount;
+                    getEntityList(currentCell, &entities, &entityCount);
+
+                    for (uint32_t i = 0; i < entityCount; i++)
+                    {
+                        ImGui::TreeNodeEx(getEntityName(entities[i]), ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen);
+                        if (ImGui::IsItemClicked())
+                        {
+                            EditorState.SelectedEntity = entities[i];
+                        }
+                    }
                 }
-                ImGui::EndPopup();
+            }
+            ImGui::End();
+
+            if (ImGui::Begin("Inspector"))
+            {
+                if (EditorState.SelectedEntity != InvalidEntity)
+                {
+                    if (ImGui::BeginTable("Inspector Table", 2))
+                    {
+                        ImGui::TableNextColumn();
+                        ImGui::Text("Name");
+
+                        ImGui::TableNextColumn();
+                        ImGui::Text(getEntityName(EditorState.SelectedEntity));
+                        ImGui::EndTable();
+                    }
+                }
             }
             ImGui::End();
 
@@ -147,8 +199,8 @@ namespace IB
 
         StackAllocator RenderFrameAllocators[MaxPendingFrameCount];
 
-        JobHandle SubmittedEditorHandle = InvalidJob;
-        JobHandle SubmittedViewGather = InvalidJob;
+        Job::Handle SubmittedEditorHandle = InvalidJob;
+        Job::Handle SubmittedViewGather = InvalidJob;
 
         void init()
         {
@@ -208,8 +260,8 @@ namespace IB
             resetThreadEvent(PendingFrameEvent);
 
             // Handles all window messages. Might interact with editor state
-            JobHandle platformJob;
-            if (SubmittedEditorHandle.Value == InvalidJob.Value)
+            Job::Handle platformJob;
+            if (SubmittedEditorHandle == InvalidJob)
             {
                 platformJob = launchJob(&platformMessageQueueJob, PlatformJobQueue);
             }
@@ -220,9 +272,9 @@ namespace IB
 
             // Writes:
             // All frontend state (potentially)
-            JobHandle editorDependencies[2] = {platformJob, SubmittedViewGather};
+            Job::Handle editorDependencies[2] = {platformJob, SubmittedViewGather};
             // Wait on our previous view gather if present.
-            uint32_t dependencyCount = SubmittedViewGather.Value != InvalidJob.Value ? 2 : 1;
+            uint32_t dependencyCount = SubmittedViewGather != InvalidJob ? 2 : 1;
             SubmittedEditorHandle = continueJob(&editorJob, editorDependencies, dependencyCount);
 
             StackAllocator *renderFrameAllocator = &RenderFrameAllocators[QueuedFrameCount % MaxPendingFrameCount];
@@ -234,7 +286,7 @@ namespace IB
             // Frontend Renderer state
             // Transform state
             SubmittedViewGather = continueJob([viewDescriptor, renderFrameAllocator]() {
-                CellHandle currentCell = InvalidCell;
+                Cell::Handle currentCell = InvalidCell;
                 // Todo: needs a volatile load. Don't want the compiler to cache our load
                 if (Asset::isResourceAssetAvailable(CellResource))
                 {
@@ -286,7 +338,7 @@ int main()
             winDesc.Width = 1024;
             winDesc.Height = 720;
             winDesc.OnWindowMessage = &primaryWindowHandler;
-            Window = createWindow(winDesc);
+            WindowHandle = createWindow(winDesc);
 
             signalThreadEvent(platformEvent);
             return JobResult::Complete;
@@ -296,9 +348,12 @@ int main()
         waitOnThreadEvent(platformEvent);
 
         Serialization::initSerialization();
-        initRendererFrontend({&Window});
+        initRendererFrontend({ WindowHandle });
         initEntitySystem();
         JobGraph::init();
+
+        ImGuiIO& io = ImGui::GetIO();
+        io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
     }
 
     {
@@ -319,7 +374,7 @@ int main()
         Serialization::killSerialization();
 
         launchJob([platformEvent]() {
-            destroyWindow(Window);
+            destroyWindow(WindowHandle);
             signalThreadEvent(platformEvent);
             return JobResult::Complete;
         },

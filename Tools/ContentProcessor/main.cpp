@@ -29,7 +29,7 @@ void processTexture(char const *rawPath, char const *compiledPath)
     imageAsset.Height = static_cast<uint32_t>(y);
     imageAsset.Data = imageData;
 
-    IB::File file = IB::openFile(compiledPath, IB::OpenFileOptions::Overwrite | IB::OpenFileOptions::Write);
+    IB::File::Handle file = IB::openFile(compiledPath, IB::OpenFileOptions::Overwrite | IB::OpenFileOptions::Write);
     IB::Serialization::FileStream fileStream{ file };
     toBinary(&fileStream, IB::Serialization::Version);
     toBinary(&fileStream, imageAsset);
@@ -89,7 +89,7 @@ void processMesh(char const *rawPath, char const *compiledPath)
         asset.IndexCount = mesh->mNumFaces * 3;
     }
 
-    IB::File file = IB::openFile(compiledPath, IB::OpenFileOptions::Overwrite | IB::OpenFileOptions::Write);
+    IB::File::Handle file = IB::openFile(compiledPath, IB::OpenFileOptions::Overwrite | IB::OpenFileOptions::Write);
     IB::Serialization::FileStream fileStream{ file };
     toBinary(&fileStream, IB::Serialization::Version);
     toBinary(&fileStream, asset);
@@ -106,7 +106,7 @@ void processShader(char const *rawPath, char const *compiledPath)
     ComPtr<IDxcCompiler3> compiler;
     DxcCreateInstance(CLSID_DxcCompiler, IID_PPV_ARGS(&compiler));
 
-    IB::File shaderFile = IB::openFile(rawPath, IB::OpenFileOptions::Read);
+    IB::File::Handle shaderFile = IB::openFile(rawPath, IB::OpenFileOptions::Read);
     void *shaderData = IB::mapFile(shaderFile);
     DxcBuffer shaderBuffer;
     shaderBuffer.Ptr = shaderData;
@@ -176,7 +176,7 @@ void processShader(char const *rawPath, char const *compiledPath)
     shaderAsset.FragShader = reinterpret_cast<uint8_t*>(fragShader->GetBufferPointer());
     shaderAsset.FragShaderSize = static_cast<uint32_t>(fragShader->GetBufferSize());
 
-    IB::File writeFile = IB::openFile(compiledPath, IB::OpenFileOptions::Overwrite | IB::OpenFileOptions::Write);
+    IB::File::Handle writeFile = IB::openFile(compiledPath, IB::OpenFileOptions::Overwrite | IB::OpenFileOptions::Write);
     IB::Serialization::FileStream fileStream{ writeFile };
     toBinary(&fileStream, IB::Serialization::Version);
     toBinary(&fileStream, shaderAsset);

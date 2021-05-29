@@ -4,10 +4,14 @@
 #include <string.h>
 
 #include "IBEngineAPI.h"
-#include "IBPlatform.h"
 
 namespace IB
 {
+    namespace File
+    {
+        enum Handle : uintptr_t;
+    }
+
     namespace Serialization
     {
         extern const uint32_t Version;
@@ -17,9 +21,9 @@ namespace IB
 
         struct FileStream
         {
-            FileStream(IB::File file) : File(file){};
+            FileStream(File::Handle file) : File(file){};
 
-            IB::File File;
+            File::Handle File;
             static constexpr uint32_t BufferSize = 4096;
             uint8_t Buffer[BufferSize];
             uint32_t BufferCursor = 0;

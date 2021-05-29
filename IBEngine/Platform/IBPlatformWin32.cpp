@@ -210,7 +210,7 @@ namespace
         }
     }
 
-    IB::WindowHandle createWindowWin32(IB::WindowDesc desc, HWND parentWindowHandle, DWORD style)
+    IB::Window::Handle createWindowWin32(IB::WindowDesc desc, HWND parentWindowHandle, DWORD style)
     {
         HINSTANCE hinstance = GetModuleHandle(NULL);
 
@@ -254,7 +254,7 @@ namespace
         }
         IB_ASSERT(i < MaxActiveWindows, "Failed to add our window to our list of windows.");
 
-        return IB::WindowHandle{i};
+        return IB::Window::toHandle(i);
     }
 
     struct ActiveFileMapping
@@ -292,10 +292,10 @@ namespace IB
     namespace Win32
     {
         // Must be externed for access
-        void getWindowHandleAndInstance(WindowHandle handle, HWND *window, HINSTANCE *instance)
+        void getWindowHandleAndInstance(Window::Handle handle, HWND *window, HINSTANCE *instance)
         {
             *instance = GetModuleHandle(NULL);
-            *window = ActiveWindows[handle.Value].WindowHandle;
+            *window = ActiveWindows[Window::toValue(handle)].WindowHandle;
         }
 
         void getPlatformMessageData(WindowMessagePlatformData const* platformData, HWND* hwnd, UINT* msg, WPARAM* wparam, LPARAM* lparam)
@@ -307,15 +307,15 @@ namespace IB
         }
     } // namespace Win32
 
-    WindowHandle createWindow(WindowDesc desc)
+    Window::Handle createWindow(WindowDesc desc)
     {
         return createWindowWin32(desc, nullptr, WS_OVERLAPPEDWINDOW);
     }
 
-    void destroyWindow(WindowHandle window)
+    void destroyWindow(Window::Handle window)
     {
-        DestroyWindow(ActiveWindows[window.Value].WindowHandle);
-        ActiveWindows[window.Value] = {};
+        DestroyWindow(ActiveWindows[Window::toValue(window)].WindowHandle);
+        ActiveWindows[Window::toValue(window)] = {};
     }
 
     void consumeMessageQueue(void (*consumerFunc)(void *data, PlatformMessage message), void *data)
@@ -565,7 +565,7 @@ namespace IB
         DebugBreak();
     }
 
-    File openFile(char const *filepath, uint32_t options)
+    File::Handle openFile(char const *filepath, uint32_t options)
     {
         DWORD access = 0;
         if ((options & OpenFileOptions::Read) != 0)
@@ -591,20 +591,20 @@ namespace IB
         HANDLE fileHandle = CreateFile(filepath, access, FILE_SHARE_READ, NULL, open, FILE_ATTRIBUTE_NORMAL, NULL);
         if (fileHandle == INVALID_HANDLE_VALUE)
         {
-            return File{};
+            return File::toHandle(0);
         }
 
-        return File{reinterpret_cast<uintptr_t>(fileHandle)};
+        return File::toHandle(reinterpret_cast<uintptr_t>(fileHandle));
     }
 
-    void closeFile(File file)
+    void closeFile(File::Handle file)
     {
-        CloseHandle(reinterpret_cast<HANDLE>(file.Value));
+        CloseHandle(reinterpret_cast<HANDLE>(File::toValue(file)));
     }
 
-    void *mapFile(File file)
+    void *mapFile(File::Handle file)
     {
-        HANDLE fileHandle = reinterpret_cast<HANDLE>(file.Value);
+        HANDLE fileHandle = reinterpret_cast<HANDLE>(File::toValue(file));
         HANDLE fileMapping = CreateFileMapping(fileHandle, NULL, PAGE_READONLY, 0, 0, NULL);
         void *map = MapViewOfFile(fileMapping, FILE_MAP_READ, 0, 0, 0);
 
@@ -621,11 +621,11 @@ namespace IB
         return map;
     }
 
-    void unmapFile(File file)
+    void unmapFile(File::Handle file)
     {
         for (uint32_t i = 0; i < MaxFileMappingCount; i++)
         {
-            if (volatileLoad(&ActiveFileMappings[i].FileHandle) == reinterpret_cast<HANDLE>(file.Value))
+            if (volatileLoad(&ActiveFileMappings[i].FileHandle) == reinterpret_cast<HANDLE>(File::toValue(file)))
             {
                 void *mapping = ActiveFileMappings[i].Mapping;
                 HANDLE handle = ActiveFileMappings[i].MapHandle;
@@ -641,9 +641,9 @@ namespace IB
         }
     }
 
-    void writeToFile(File file, void const *data, size_t size, uint32_t offset)
+    void writeToFile(File::Handle file, void const *data, size_t size, uint32_t offset)
     {
-        HANDLE fileHandle = reinterpret_cast<HANDLE>(file.Value);
+        HANDLE fileHandle = reinterpret_cast<HANDLE>(File::toValue(file));
 
         SetFilePointer(fileHandle, offset, NULL, FILE_BEGIN);
 
@@ -654,9 +654,9 @@ namespace IB
         SetFilePointer(fileHandle, 0, NULL, FILE_BEGIN);
     }
 
-    void appendToFile(File file, void const *data, size_t size)
+    void appendToFile(File::Handle file, void const *data, size_t size)
     {
-        HANDLE fileHandle = reinterpret_cast<HANDLE>(file.Value);
+        HANDLE fileHandle = reinterpret_cast<HANDLE>(File::toValue(file));
 
         SetFilePointer(fileHandle, 0, NULL, FILE_END);
         DWORD bytesWritten;
@@ -666,9 +666,9 @@ namespace IB
         SetFilePointer(fileHandle, 0, NULL, FILE_BEGIN);
     }
 
-    size_t fileSize(File file)
+    size_t fileSize(File::Handle file)
     {
-        HANDLE fileHandle = reinterpret_cast<HANDLE>(file.Value);
+        HANDLE fileHandle = reinterpret_cast<HANDLE>(File::toValue(file));
 
         DWORD high;
         DWORD low;

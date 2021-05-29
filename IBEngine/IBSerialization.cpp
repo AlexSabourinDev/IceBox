@@ -11,7 +11,7 @@ namespace IB
 {
     namespace Serialization
     {
-        const uint32_t Version = 1;
+        const uint32_t Version = 2;
 
         void initSerialization()
         {

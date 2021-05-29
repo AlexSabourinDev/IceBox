@@ -36,10 +36,13 @@ struct ImDrawData;
 namespace IB
 {
     struct WindowMessagePlatformData;
-    struct WindowHandle;
+    namespace Window
+    {
+        enum Handle : uintptr_t;
+    }
     struct RendererDesc
     {
-        WindowHandle const*Window;
+        Window::Handle Window;
     };
 
     struct ForwardPassDesc
@@ -78,9 +81,9 @@ namespace IB
         uint32_t Value;
     };
 
-    struct ImageFormat
+    namespace ImageFormat
     {
-        enum Enum
+        enum Enum : uint32_t
         {
             RGBA8 = 0,
             Count
@@ -118,6 +121,9 @@ namespace IB
     {
         uint32_t Value;
     };
+    inline bool operator==(MaterialHandle const& left, MaterialHandle const& right) { return left.Value == right.Value; }
+    inline bool operator!=(MaterialHandle const& left, MaterialHandle const& right) { return left.Value != right.Value; }
+
     constexpr MaterialHandle InvalidMaterial = { 0 };
 
     struct ViewDesc

@@ -1,45 +1,61 @@
 #pragma once
 
 #include "IBEngineAPI.h"
-#include "IBAsset.h"
+#include <stdint.h>
 
 namespace IB
 {
-    struct PropertyHandle
+    namespace Asset
     {
-        uint64_t Value = UINT64_MAX;
-    };
-    constexpr PropertyHandle InvalidProperty = { UINT64_MAX };
+        enum FourCC : uint32_t;
+        enum Handle : uint64_t;
+        constexpr Handle toHandle(uint64_t value);
+        constexpr uint64_t toValue(Handle handle);
+    }
 
-    struct EntityHandle
+    namespace Property
     {
-        uint64_t Value;
+        enum Handle : uint64_t { };
+        constexpr Handle toHandle(uint64_t value) { return static_cast<Handle>(value); }
+        constexpr uint64_t toValue(Handle handle) { return static_cast<uint64_t>(handle); }
     };
+    constexpr Property::Handle InvalidProperty = Property::toHandle(UINT64_MAX);
 
-    struct CellHandle
+    namespace Entity
     {
-        uint64_t Value = UINT64_MAX;
+        enum Handle : uint64_t {};
+        constexpr Handle toHandle(uint64_t value) { return static_cast<Handle>(value); }
+        constexpr uint64_t toValue(Handle handle) { return static_cast<uint64_t>(handle); }
     };
-    constexpr CellHandle InvalidCell = { UINT64_MAX };
+    constexpr Entity::Handle InvalidEntity = Entity::toHandle(0);
 
-    inline PropertyHandle toPropertyHandle(Asset::AssetHandle asset) { return { asset.Value }; }
-    inline Asset::AssetHandle toAssetHandle(PropertyHandle property) { return { property.Value }; }
-    inline EntityHandle toEntityHandle(Asset::AssetHandle asset) { return { asset.Value }; }
-    inline CellHandle toCellHandle(Asset::AssetHandle asset) { return { asset.Value }; }
-    inline Asset::AssetHandle toAssetHandle(EntityHandle entity) { return { entity.Value }; }
-    inline Asset::AssetHandle toAssetHandle(CellHandle cell) { return { cell.Value }; }
+    namespace Cell
+    {
+        enum Handle : uint64_t {};
+        constexpr Handle toHandle(uint64_t value) { return static_cast<Handle>(value); }
+        constexpr uint64_t toValue(Handle handle) { return static_cast<uint64_t>(handle); }
+    };
+    constexpr Cell::Handle InvalidCell = Cell::toHandle(UINT64_MAX);
+
+    inline Property::Handle toPropertyHandle(Asset::Handle asset) { return Property::toHandle(Asset::toValue(asset)); }
+    inline Asset::Handle toAssetHandle(Property::Handle property) { return Asset::toHandle(Property::toValue(property)); }
+    inline Entity::Handle toEntityHandle(Asset::Handle asset) { return Entity::toHandle(Asset::toValue(asset)); }
+    inline Cell::Handle toCellHandle(Asset::Handle asset) { return Cell::toHandle(Asset::toValue(asset)); }
+    inline Asset::Handle toAssetHandle(Entity::Handle entity) { return Asset::toHandle(Entity::toValue(entity)); }
+    inline Asset::Handle toAssetHandle(Cell::Handle cell) { return Asset::toHandle(Cell::toValue(cell)); }
 
     IB_API void initEntitySystem();
     IB_API void killEntitySystem();
 
     // Entity API
-    IB_API EntityHandle createEntity();
-    IB_API void addPropertyToEntity(EntityHandle entity, Asset::FourCC type, PropertyHandle propertyHandle);
-    IB_API PropertyHandle getPropertyFromEntity(EntityHandle entity, Asset::FourCC type);
+    IB_API Entity::Handle createEntity();
+    IB_API void addPropertyToEntity(Entity::Handle entity, Asset::FourCC type, Property::Handle propertyHandle);
+    IB_API Property::Handle getPropertyFromEntity(Entity::Handle entity, Asset::FourCC type);
+    IB_API char const* getEntityName(Entity::Handle entity);
 
     // Cell API
-    IB_API CellHandle createCell();
-    IB_API void addEntityToCell(CellHandle cell, EntityHandle entity);
-    IB_API void getEntityList(CellHandle cell, EntityHandle** entities, uint32_t* entityCount);
+    IB_API Cell::Handle createCell();
+    IB_API void addEntityToCell(Cell::Handle cell, Entity::Handle entity);
+    IB_API void getEntityList(Cell::Handle cell, Entity::Handle** entities, uint32_t* entityCount);
 }
 

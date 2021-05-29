@@ -2,8 +2,29 @@
 #include "IBAsset.h"
 #include "IBAllocator.h"
 #include "IBLogging.h"
+#include "IBJobs.h"
+#include "IBPlatform.h"
 
 #include <string.h>
+
+namespace IB
+{
+    namespace Resource
+    {
+        namespace
+        {
+            struct Data
+            {
+                IB::Asset::FourCC Type = {};
+                uint32_t PathHash = 0;
+                IB::Job::Handle LoadingJob = {};
+                IB::Asset::Handle Asset = IB::Asset::InvalidAsset;
+                IB::File::Handle File = {};
+                char Path[IB::MaxFilePath] = {};
+            };
+        }
+    }
+}
 
 namespace
 {
@@ -44,7 +65,7 @@ namespace
     struct StreamerData
     {
         IB::Asset::IStreamer *Streamer = nullptr;
-        IB::Asset::FourCC Type = {0};
+        IB::Asset::FourCC Type = IB::Asset::InvalidFourCC;
     };
 
     constexpr uint32_t MaxStreamerCount = 100;
@@ -53,24 +74,13 @@ namespace
     struct LoadResult
     {
         IB::JobResult Result;
-        IB::Asset::AssetHandle Asset;
-    };
-
-    constexpr uint32_t MaxPathSize = 255;
-    struct Resource
-    {
-        IB::Asset::FourCC Type = {};
-        uint32_t PathHash = 0;
-        IB::JobHandle LoadingJob = {};
-        IB::Asset::AssetHandle Asset = {};
-        IB::File File = {};
-        char Path[MaxPathSize] = {};
+        IB::Asset::Handle Asset;
     };
 
     struct ResourceEntry
     {
         uint32_t RefCount;
-        Resource *Resource;
+        IB::Resource::Data *Resource;
     };
 
     constexpr uint32_t MaxTableEntries = 1024 * 1024;
@@ -80,7 +90,7 @@ namespace
     {
         for (uint32_t i = 0; i < MaxStreamerCount; i++)
         {
-            if (Streamers[i].Type.Value == type.Value)
+            if (Streamers[i].Type == type)
             {
                 return Streamers[i].Streamer;
             }
@@ -108,14 +118,14 @@ namespace
         }
     }
 
-    IB::JobHandle loadBinaryAsync(Resource *resource, IB::Asset::FourCC type, IB::Asset::OnResourceLoad *onResourceLoad, void *data)
+    IB::Job::Handle loadBinaryAsync(IB::Resource::Data *resource, IB::Asset::FourCC type, IB::Asset::OnResourceLoad *onResourceLoad, void *data)
     {
         IB::Asset::IStreamer *streamer = getStreamer(type);
         IB_ASSERT(streamer != nullptr, "Failed to find streamer!");
 
         IB::Asset::LoadContext *loadContext = IB::allocate<IB::Asset::LoadContext>();
-        IB::JobHandle fileJob = IB::launchJob([resource, loadContext]() {
-            char fullPath[MaxPathSize] = {};
+        IB::Job::Handle fileJob = IB::launchJob([resource, loadContext]() {
+            char fullPath[IB::MaxFilePath] = {};
             sprintf(fullPath, "%s/%s", AssetPath, resource->Path);
 
             resource->File = IB::openFile(fullPath, IB::OpenFileOptions::Read);
@@ -131,12 +141,12 @@ namespace
             {
                 resource->Asset = loadResult.Asset;
 
-                onResourceLoad(data, IB::Asset::ResourceHandle{resource->PathHash}, IB::Asset::ResourceLoad::Available);
+                onResourceLoad(data, IB::Resource::toHandle(resource->PathHash), IB::Asset::ResourceLoad::Available);
                 IB::deallocate(loadContext);
             }
             return loadResult.Result;
         });
-        continueJob(loadContext->Handle, &fileJob, 1);
+        IB::continueJob(loadContext->Handle, &fileJob, 1);
 
         return loadContext->Handle;
     }
@@ -147,17 +157,17 @@ namespace IB
 {
     namespace Asset
     {
-        LoadContinuation wait(JobHandle *dependencies, uint32_t dependencyCount, uint32_t nextState)
+        LoadContinuation wait(Job::Handle *dependencies, uint32_t dependencyCount, uint32_t nextState)
         {
             LoadContinuation result = {};
-            memcpy(result.Data.Advance.Dependencies, dependencies, sizeof(JobHandle) * dependencyCount);
+            memcpy(result.Data.Advance.Dependencies, dependencies, sizeof(Job::Handle) * dependencyCount);
             result.Data.Advance.DependencyCount = dependencyCount;
             result.Data.Advance.NextState = nextState;
             result.Continuation = LoadContinuation::Advance;
             return result;
         }
 
-        LoadContinuation complete(AssetHandle handle)
+        LoadContinuation complete(Asset::Handle handle)
         {
             LoadContinuation result = {};
             result.Data.Complete.Handle = handle;
@@ -165,11 +175,17 @@ namespace IB
             return result;
         }
 
+        void IStreamer::saveThreadSafe(SaveContext *context)
+        {
+            (void)context;
+            IB_ASSERT(false, "Loader does not support saving this asset");
+        }
+
         void addStreamer(FourCC type, IStreamer *streamer)
         {
             for (uint32_t i = 0; i < MaxStreamerCount; i++)
             {
-                if (Streamers[i].Type.Value == 0)
+                if (Streamers[i].Type == InvalidFourCC)
                 {
                     Streamers[i].Type = type;
                     Streamers[i].Streamer = streamer;
@@ -178,7 +194,7 @@ namespace IB
             }
         }
 
-        ResourceHandle createResourceThreadSafe(char const *assetPath, FourCC type, AssetHandle asset)
+        Resource::Handle createResourceThreadSafe(char const *assetPath, FourCC type, Asset::Handle asset)
         {
             uint32_t pathHash = hash(assetPath);
             uint32_t hashTableIndex = pathHash % MaxTableEntries;
@@ -186,12 +202,12 @@ namespace IB
             bool newAssetEntry = atomicIncrement(&ResourceHashTable[hashTableIndex].RefCount) == 1;
             IB_ASSERT(newAssetEntry, "createResource should only be called on an asset that does not exist!");
 
-            Resource *resource = allocate<Resource>();
+            IB::Resource::Data *resource = allocate<IB::Resource::Data>();
             resource->PathHash = hash(assetPath);
             resource->Type = type;
             resource->Asset = asset;
 
-            IB_ASSERT(strlen(assetPath) < MaxPathSize - 1, "Path is too long!");
+            IB_ASSERT(strlen(assetPath) < IB::MaxFilePath - 1, "Path is too long!");
             strcpy(resource->Path, assetPath);
 
             // Assure that the writes to our resource are visible
@@ -199,10 +215,10 @@ namespace IB
             threadRelease();
             volatileStore(&ResourceHashTable[hashTableIndex].Resource, resource);
 
-            return ResourceHandle{pathHash};
+            return Resource::toHandle(pathHash);
         }
 
-        JobHandle loadSubAssetAsync(LoadContext const* parentContext, FourCC type, AssetHandle parentAsset, OnSubAssetLoad *onSubAssetLoad, void *data)
+        Job::Handle loadSubAssetAsync(LoadContext const* parentContext, FourCC type, Asset::Handle parentAsset, OnSubAssetLoad *onSubAssetLoad, void *data)
         {
             LoadContext *context = allocate<LoadContext>(parentContext->Stream, parentAsset);
             context->SaveVersion = parentContext->SaveVersion;
@@ -223,7 +239,7 @@ namespace IB
             return context->Handle;
         }
 
-        JobHandle loadResourceAsync(char const *assetPath, FourCC type, OnResourceLoad *onResourceLoad, void *data)
+        Job::Handle loadResourceAsync(char const *assetPath, FourCC type, OnResourceLoad *onResourceLoad, void *data)
         {
             uint32_t pathHash = hash(assetPath);
             uint32_t hashTableIndex = pathHash % MaxTableEntries;
@@ -232,7 +248,7 @@ namespace IB
             // Assure that we don't load our asset pointer before we've guaranteed our ref count
             threadAcquire();
 
-            JobHandle requestHandle = {};
+            Job::Handle requestHandle = {};
             if (!newAssetEntry)
             {
                 // We could be asking for our asset to be loaded twice before our first load is complete.
@@ -244,22 +260,22 @@ namespace IB
                 // Our reads are dependent on the volatileLoad above however, perhaps we can avoid the acquire due to a data dependency?
                 threadAcquire();
 
-                Resource *resource = volatileLoad(&ResourceHashTable[hashTableIndex].Resource);
+                IB::Resource::Data *resource = volatileLoad(&ResourceHashTable[hashTableIndex].Resource);
 
                 // If our data loads are reordered above the branch,
                 // and our loaded asset data has not been written yet
                 // We'll simply wait until the loading job is visible
                 // and submit a "continue" job to be run after our loading job
 
-                if (resource->Asset.Value != InvalidAsset.Value)
+                if (resource->Asset != InvalidAsset)
                 {
-                    onResourceLoad(data, ResourceHandle{pathHash}, ResourceLoad::Available);
+                    onResourceLoad(data, Resource::toHandle(pathHash), ResourceLoad::Available);
                 }
                 else
                 {
                     requestHandle = continueJob([resource, onResourceLoad, data, pathHash]() {
-                        IB_ASSERT(resource->Asset.Value != InvalidAsset.Value, "No asset handle loaded!");
-                        onResourceLoad(data, ResourceHandle{pathHash}, ResourceLoad::Available);
+                        IB_ASSERT(resource->Asset != InvalidAsset, "No asset handle loaded!");
+                        onResourceLoad(data, Resource::toHandle(pathHash), ResourceLoad::Available);
                         return JobResult::Complete;
                     },
                                                 &resource->LoadingJob, 1);
@@ -267,11 +283,11 @@ namespace IB
             }
             else // New resource, request load
             {
-                Resource *resource = allocate<Resource>();
+                IB::Resource::Data *resource = allocate<IB::Resource::Data>();
                 resource->PathHash = pathHash;
                 resource->Type = type;
 
-                IB_ASSERT(strlen(assetPath) < MaxPathSize - 1, "Path is too long!");
+                IB_ASSERT(strlen(assetPath) < IB::MaxFilePath - 1, "Path is too long!");
                 strcpy(resource->Path, assetPath);
 
                 requestHandle = loadBinaryAsync(resource, type, onResourceLoad, data);
@@ -281,15 +297,15 @@ namespace IB
                 // before we write our resource to the table
                 threadRelease();
                 volatileStore(&ResourceHashTable[hashTableIndex].Resource, resource);
-                onResourceLoad(data, ResourceHandle{ pathHash }, ResourceLoad::Loading);
+                onResourceLoad(data, Resource::toHandle( pathHash ), ResourceLoad::Loading);
             }
 
             return requestHandle;
         }
 
-        JobHandle releaseResourceAsync(ResourceHandle resourceHandle)
+        Job::Handle releaseResourceAsync(Resource::Handle resourceHandle)
         {
-            uint32_t mappingIndex = resourceHandle.Hash % MaxTableEntries;
+            uint32_t mappingIndex = Resource::toValue(resourceHandle) % MaxTableEntries;
             // We could be asking to release our resource before our resource has been assigned to the resource table.
             while (volatileLoad(&ResourceHashTable[mappingIndex].Resource) == nullptr)
             {
@@ -299,7 +315,7 @@ namespace IB
             threadAcquire();
 
             // Load and copy our data before we do our decrement.
-            Resource *resource = volatileLoad(&ResourceHashTable[mappingIndex].Resource);
+            IB::Resource::Data *resource = volatileLoad(&ResourceHashTable[mappingIndex].Resource);
 
             // Make sure our asset pointer load is completed before our ref count store is complete
             // If it isn't, we can potentially load someone else's data
@@ -316,7 +332,7 @@ namespace IB
             // Thread 2: Allocate data and add to table
             threadLoadStoreFence();
 
-            JobHandle job = {};
+            Job::Handle job = {};
             if (atomicDecrement(&ResourceHashTable[mappingIndex].RefCount) == 0)
             {
                 auto onUnload = [resource]() {
@@ -328,7 +344,7 @@ namespace IB
                 };
 
                 // At this point, we own the loaded asset. We're free to do what we want with it's data
-                if (volatileLoad(&resource->Asset.Value) == InvalidAsset.Value) // Not loaded yet
+                if (volatileLoad(&resource->Asset) == InvalidAsset) // Not loaded yet
                 {
                     job = continueJob(onUnload, &resource->LoadingJob, 1);
                 }
@@ -341,28 +357,28 @@ namespace IB
             return job;
         }
 
-        void unloadSubAssetThreadSafe(AssetHandle asset, FourCC type)
+        void unloadSubAssetThreadSafe(Asset::Handle asset, FourCC type)
         {
             getStreamer(type)->unloadThreadSafe(asset);
         }
 
-        JobHandle saveResourceAsync(ResourceHandle resourceHandle)
+        Job::Handle saveResourceAsync(Resource::Handle resourceHandle)
         {
             return launchJob([resourceHandle]() {
-                uint32_t hashTableIndex = resourceHandle.Hash % MaxTableEntries;
+                uint32_t hashTableIndex = Resource::toValue(resourceHandle) % MaxTableEntries;
 
                 atomicIncrement(&ResourceHashTable[hashTableIndex].RefCount); // Keep a reference count as we save, we don't want to dump our asset
 
                 IB_ASSERT(volatileLoad(&ResourceHashTable[hashTableIndex].Resource) != nullptr, "Asset should be in our table!");
-                Resource *resource = volatileLoad(&ResourceHashTable[hashTableIndex].Resource);
+                IB::Resource::Data *resource = volatileLoad(&ResourceHashTable[hashTableIndex].Resource);
                 // Assure we don't move our resource reads/writes past this point.
                 // Our reads are dependent on the volatileLoad above however, perhaps we can avoid the acquire due to a data dependency?
                 threadAcquire();
 
-                char fullPath[MaxPathSize] = {};
+                char fullPath[IB::MaxFilePath] = {};
                 sprintf(fullPath, "%s/%s", AssetPath, resource->Path);
 
-                IB::File file = IB::openFile(fullPath, OpenFileOptions::Create | OpenFileOptions::Overwrite | OpenFileOptions::Write);
+                IB::File::Handle file = IB::openFile(fullPath, OpenFileOptions::Create | OpenFileOptions::Overwrite | OpenFileOptions::Write);
 
                 Serialization::FileStream fileStream = {file};
                 Serialization::toBinary(&fileStream, Serialization::Version);
@@ -380,28 +396,28 @@ namespace IB
             });
         }
 
-        void saveSubAssetThreadSafe(Serialization::FileStream *stream, FourCC type, AssetHandle asset)
+        void saveSubAssetThreadSafe(Serialization::FileStream *stream, FourCC type, Asset::Handle asset)
         {
             SaveContext saveContext = {stream, asset};
             getStreamer(type)->saveThreadSafe(&saveContext);
         }
 
-        AssetHandle getAssetFromResource(ResourceHandle resourceHandle)
+        Asset::Handle getAssetFromResource(Resource::Handle resourceHandle)
         {
-            uint32_t hashTableIndex = resourceHandle.Hash % MaxTableEntries;
+            uint32_t hashTableIndex = Resource::toValue(resourceHandle) % MaxTableEntries;
             IB_ASSERT(ResourceHashTable[hashTableIndex].RefCount > 0, "Resource is not loaded!");
 
             return ResourceHashTable[hashTableIndex].Resource->Asset;
         }
 
-        bool isResourceAssetAvailable(ResourceHandle resourceHandle)
+        bool isResourceAssetAvailable(Resource::Handle resourceHandle)
         {
-            if (resourceHandle.Hash != InvalidResource.Hash)
+            if (resourceHandle != InvalidResource)
             {
-                uint32_t hashTableIndex = resourceHandle.Hash % MaxTableEntries;
+                uint32_t hashTableIndex = Resource::toValue(resourceHandle) % MaxTableEntries;
                 IB_ASSERT(ResourceHashTable[hashTableIndex].RefCount > 0, "Resource is not loaded!");
 
-                return ResourceHashTable[hashTableIndex].Resource->Asset.Value != InvalidAsset.Value;
+                return ResourceHashTable[hashTableIndex].Resource->Asset != InvalidAsset;
             }
             else
             {
@@ -409,12 +425,12 @@ namespace IB
             }
         }
 
-        char const *getResourcePath(ResourceHandle resourceHandle)
+        char const *getResourcePath(Resource::Handle resourceHandle)
         {
-            uint32_t hashTableIndex = resourceHandle.Hash % MaxTableEntries;
+            uint32_t hashTableIndex = Resource::toValue(resourceHandle) % MaxTableEntries;
             IB_ASSERT(ResourceHashTable[hashTableIndex].RefCount > 0, "Resource is not loaded!");
 
-            Resource *resource = volatileLoad(&ResourceHashTable[hashTableIndex].Resource);
+            IB::Resource::Data *resource = volatileLoad(&ResourceHashTable[hashTableIndex].Resource);
             // Assure we don't move our resource reads/writes past this point.
             // Our reads are dependent on the volatileLoad above however, perhaps we can avoid the acquire due to a data dependency?
             threadAcquire();

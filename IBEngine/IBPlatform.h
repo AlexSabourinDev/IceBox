@@ -107,9 +107,11 @@ namespace IB
     };
 
     struct WindowMessagePlatformData;
-    struct WindowHandle
+    namespace Window
     {
-        uintptr_t Value;
+        enum Handle : uintptr_t {};
+        constexpr Handle toHandle(uintptr_t value) { return static_cast<Handle>(value); }
+        constexpr uintptr_t toValue(Handle handle) { return static_cast<uintptr_t>(handle); }
     };
     struct WindowDesc
     {
@@ -121,8 +123,8 @@ namespace IB
         int32_t Height = 0;
     };
 
-    IB_API WindowHandle createWindow(WindowDesc desc);
-    IB_API void destroyWindow(WindowHandle window);
+    IB_API Window::Handle createWindow(WindowDesc desc);
+    IB_API void destroyWindow(Window::Handle window);
 
     // Messaging API
     // IceBox's platform abstraction is a message queue.
@@ -216,11 +218,13 @@ namespace IB
     IB_API void debugBreak();
 
     // File API
-    struct File
+    namespace File
     {
-        uintptr_t Value;
+        enum Handle : uintptr_t {};
+        constexpr Handle toHandle(uintptr_t value) { return static_cast<Handle>(value); }
+        constexpr uintptr_t toValue(Handle handle) { return static_cast<uintptr_t>(handle); }
     };
-    constexpr File InvalidFile = File{0};
+    constexpr File::Handle InvalidFile = File::toHandle(0);
 
     struct OpenFileOptions
     {
@@ -233,13 +237,13 @@ namespace IB
         };
     };
 
-    IB_API File openFile(char const *filepath, uint32_t options); // Threadsafe
-    IB_API void closeFile(File file);                             // Threadsafe
-    IB_API void *mapFile(File file);                              // Threadsafe
-    IB_API void unmapFile(File file);                             // Threadsafe as long as you don't unmap the same file in another thread
-    IB_API void writeToFile(File file, void const *data, size_t size, uint32_t offset = 0);
-    IB_API void appendToFile(File file, void const *data, size_t size);
-    IB_API size_t fileSize(File file);
+    IB_API File::Handle openFile(char const *filepath, uint32_t options); // Threadsafe
+    IB_API void closeFile(File::Handle file);                             // Threadsafe
+    IB_API void *mapFile(File::Handle file);                              // Threadsafe
+    IB_API void unmapFile(File::Handle file);                             // Threadsafe as long as you don't unmap the same file in another thread
+    IB_API void writeToFile(File::Handle file, void const *data, size_t size, uint32_t offset = 0);
+    IB_API void appendToFile(File::Handle file, void const *data, size_t size);
+    IB_API size_t fileSize(File::Handle file);
     IB_API bool doesFileExist(char const *filepath);
 
     // File system

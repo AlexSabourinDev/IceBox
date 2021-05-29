@@ -72,7 +72,7 @@ int main()
         return false;
     };
 
-    IB::WindowHandle window = IB::createWindow(winDesc);
+    IB::Window::Handle window = IB::createWindow(winDesc);
     IB_LOG(IB::LogLevel::Log, "Sample", "Window created!");
 
     IB::PlatformMessage message = IB::PlatformMessage::None;

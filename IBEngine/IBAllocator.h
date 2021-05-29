@@ -1,7 +1,6 @@
 #pragma once
 
 #include "IBEngineAPI.h"
-#include "IBLogging.h"
 
 #include <stdint.h>
 #include <utility>

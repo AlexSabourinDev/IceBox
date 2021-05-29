@@ -2,12 +2,15 @@
 #include <IBEngine/IBJobs.h>
 #include <IBEngine/IBEntity.h>
 #include <IBEngine/IBRendererFrontend.h>
+#include <IBEngine/IBRenderer.h>
 #include <IBEngine/IBAllocator.h>
+#include <IBEngine/IBAsset.h>
+#include <IBEngine/IBPlatform.h>
 
-void waitOnJob(IB::JobHandle job)
+void waitOnJob(IB::Job::Handle job)
 {
     IB::ThreadEvent threadEvent = IB::createThreadEvent();
-    continueJob([threadEvent]()
+    IB::continueJob([threadEvent]()
     {
         IB::signalThreadEvent(threadEvent);
         return IB::JobResult::Complete;
@@ -34,33 +37,33 @@ int main()
 
         return false;
     };
-    IB::WindowHandle window = IB::createWindow(winDesc);
+    IB::Window::Handle window = IB::createWindow(winDesc);
 
     IB::Serialization::initSerialization();
     IB::initJobSystem();
-    IB::initRendererFrontend({ &window });
+    IB::initRendererFrontend({ window });
     IB::initEntitySystem();
 
     bool const createAndSaveCell = false;
     if(createAndSaveCell)
     {
-        IB::CellHandle cellHandle = IB::createCell();
-        IB::Asset::ResourceHandle cellResource = IB::Asset::createResourceThreadSafe("TestCell.cell", IB::Asset::toFourCC("CELL"), IB::toAssetHandle(cellHandle));
+        IB::Cell::Handle cellHandle = IB::createCell();
+        IB::Resource::Handle cellResource = IB::Asset::createResourceThreadSafe("TestCell.cell", IB::Asset::toFourCC("CELL"), IB::toAssetHandle(cellHandle));
 
         IB::MaterialAsset materialAsset;
         materialAsset.AlbedoPath = "bubbles.tex";
         materialAsset.AlbedoTint = IB::toRGBA(1.0f, 1.0f, 1.0f, 1.0f);
         IB::MaterialAssetHandle materialHandle = IB::createMaterialAsset(materialAsset);
-        IB::Asset::ResourceHandle materialResource = IB::Asset::createResourceThreadSafe("Test.mat", IB::Asset::toFourCC("MATE"), IB::toAssetHandle(materialHandle));
+        IB::Resource::Handle materialResource = IB::Asset::createResourceThreadSafe("Test.mat", IB::Asset::toFourCC("MATE"), IB::toAssetHandle(materialHandle));
 
         {
-            IB::EntityHandle entityHandle = IB::createEntity();
-            IB::PropertyHandle rendererProperty = IB::createRendererProperty("Box.msh", "Test.mat");
+            IB::Entity::Handle entityHandle = IB::createEntity();
+            IB::Property::Handle rendererProperty = IB::createRendererProperty("Box.msh", "Test.mat");
             IB::addPropertyToEntity(entityHandle, IB::Asset::toFourCC("RNDR"), rendererProperty);
             IB::addEntityToCell(cellHandle, entityHandle);
         }
 
-        IB::JobHandle saveJob = IB::Asset::saveResourceAsync(materialResource);
+        IB::Job::Handle saveJob = IB::Asset::saveResourceAsync(materialResource);
         waitOnJob(saveJob);
 
         saveJob = IB::Asset::saveResourceAsync(cellResource);
@@ -70,10 +73,10 @@ int main()
         IB::Asset::releaseResourceAsync(cellResource);
     }
 
-    IB::Asset::ResourceHandle cellResource;
-    IB::JobHandle loadJob = IB::Asset::loadResourceAsync("TestCell.cell", IB::Asset::toFourCC("CELL"), &cellResource);
+    IB::Resource::Handle cellResource;
+    IB::Job::Handle loadJob = IB::Asset::loadResourceAsync("TestCell.cell", IB::Asset::toFourCC("CELL"), &cellResource);
     waitOnJob(loadJob);
-    IB::CellHandle cellHandle = IB::toCellHandle(IB::Asset::getAssetFromResource(cellResource));
+    IB::Cell::Handle cellHandle = IB::toCellHandle(IB::Asset::getAssetFromResource(cellResource));
 
     IB::PlatformMessage message = IB::PlatformMessage::None;
     while (message != IB::PlatformMessage::Quit)

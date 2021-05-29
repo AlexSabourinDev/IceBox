@@ -28,10 +28,10 @@ int main()
 
         return false;;
     };
-    IB::WindowHandle window = IB::createWindow(winDesc);
+    IB::Window::Handle window = IB::createWindow(winDesc);
 
     IB::RendererDesc rendererDesc = {};
-    rendererDesc.Window = &window;
+    rendererDesc.Window = window;
     IB::initRenderer(rendererDesc);
 
     IB::PlatformMessage message = IB::PlatformMessage::None;

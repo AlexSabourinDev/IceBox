@@ -41,17 +41,20 @@ namespace IB
         uint32_t QueueIndex = AllJobQueues;
     };
 
-    struct JobHandle
+    namespace Job
     {
-        uint64_t Value = UINT64_MAX;
-    };
-    constexpr JobHandle InvalidJob = { UINT64_MAX };
+        enum Handle : uint64_t {};
+        constexpr Handle toHandle(uint64_t value) { return static_cast<Handle>(value); }
+        constexpr uint64_t toValue(Handle handle) { return static_cast<uint64_t>(handle); }
+    }
+
+    constexpr Job::Handle InvalidJob = Job::toHandle(UINT64_MAX);
 
     IB_API void initJobSystem();
     IB_API void killJobSystem();
 
-    IB_API JobHandle launchJob(JobDesc desc);
-    IB_API JobHandle continueJob(JobDesc desc, JobHandle* dependencies, uint32_t dependencyCount);
+    IB_API Job::Handle launchJob(JobDesc desc);
+    IB_API Job::Handle continueJob(JobDesc desc, Job::Handle* dependencies, uint32_t dependencyCount);
 
     // This continuation API allows us to put a job to sleep
     // but to execute it again in the future.
@@ -78,10 +81,10 @@ namespace IB
     // Since the job might trigger and complete before the value is stored
     // As a result, you want to reserve the job to get the handle before launching the job.
     // An example of this is:
-    // JobHandle = reserveJob(JobThatReferencesJobHandle)
+    // JobHandle = reserveJob(JobThatReferencesJob::Handle)
     // launchJob(jobHandle)
     // Whereas
-    // JobHandle = launchJob(JobThatReferencesJobHandle)
+    // JobHandle = launchJob(JobThatReferencesJob::Handle)
     // might introduce subtle bugs.
     //
     // Jobs can also be created with a QueueIndex that will
@@ -90,15 +93,15 @@ namespace IB
     // involved in putting a large chunk of jobs in the same queue.
 
     // Reserve a job for later execution
-    IB_API JobHandle reserveJob(JobDesc desc);
+    IB_API Job::Handle reserveJob(JobDesc desc);
 
-    IB_API void launchJob(JobHandle handle);
-    IB_API void continueJob(JobHandle handle, JobHandle* dependencies, uint32_t dependencyCount);
+    IB_API void launchJob(Job::Handle handle);
+    IB_API void continueJob(Job::Handle handle, Job::Handle* dependencies, uint32_t dependencyCount);
 
     // Utility API
 
     template <typename T>
-    JobHandle launchJob(const T &functor, uint32_t queueIndex = AllJobQueues)
+    Job::Handle launchJob(const T &functor, uint32_t queueIndex = AllJobQueues)
     {
         static_assert(sizeof(T) <= MaxJobDataSize, "Functor is too large for job. Consider allocating it on the heap.");
 
@@ -110,7 +113,7 @@ namespace IB
     }
 
     template <typename T>
-    JobHandle continueJob(const T &functor, JobHandle* dependencies, uint32_t dependencyCount, uint32_t queueIndex = AllJobQueues)
+    Job::Handle continueJob(const T &functor, Job::Handle* dependencies, uint32_t dependencyCount, uint32_t queueIndex = AllJobQueues)
     {
         static_assert(sizeof(T) <= MaxJobDataSize, "Functor is too large for job. Consider allocating it on the heap.");
 
@@ -122,7 +125,7 @@ namespace IB
     }
 
     template <typename T>
-    JobHandle reserveJob(const T &functor, uint32_t queueIndex = AllJobQueues)
+    Job::Handle reserveJob(const T &functor, uint32_t queueIndex = AllJobQueues)
     {
         static_assert(sizeof(T) <= MaxJobDataSize, "Functor is too large for job. Consider allocating it on the heap.");
 

@@ -870,14 +870,14 @@ namespace IB
     // Forward declared from IBPlatformWin32.cpp
     namespace Win32
     {
-        void getWindowHandleAndInstance(WindowHandle handle, HWND *window, HINSTANCE *instance);
+        void getWindowHandleAndInstance(Window::Handle handle, HWND *window, HINSTANCE *instance);
         void getPlatformMessageData(WindowMessagePlatformData const *platformData, HWND *hwnd, UINT *msg, WPARAM *wparam, LPARAM *lparam);
     } // namespace Win32
 } // namespace IB
 
 namespace
 {
-    VkSurfaceKHR createSurface(IB::WindowHandle window)
+    VkSurfaceKHR createSurface(IB::Window::Handle window)
     {
         HWND windowHandle;
         HINSTANCE instanceHandle;
@@ -920,7 +920,7 @@ namespace IB
             IB_VKCHECK(vkCreateInstance(&createInfo, NoAllocator, &RendererContext.VulkanInstance));
         }
 
-        RendererContext.Present.Surface = createSurface(*desc.Window);
+        RendererContext.Present.Surface = createSurface(desc.Window);
 
         // Device
         {
@@ -1522,7 +1522,7 @@ namespace IB
 
             HWND windowHandle;
             HINSTANCE instanceHandle;
-            IB::Win32::getWindowHandleAndInstance(*desc.Window, &windowHandle, &instanceHandle);
+            IB::Win32::getWindowHandleAndInstance(desc.Window, &windowHandle, &instanceHandle);
             ImGui_ImplWin32_Init(windowHandle);
 
             ImGui_ImplVulkan_InitInfo initInfo = {};

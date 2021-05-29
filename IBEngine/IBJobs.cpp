@@ -119,24 +119,34 @@ https://stackoverflow.com/questions/4537753/when-should-i-use-mm-sfence-mm-lfenc
 
 */
 
+namespace IB
+{
+    namespace Job
+    {
+        namespace
+        {
+#pragma warning(disable : 4324) // We don't care about the padding complaint here.
+            struct alignas(64) Data
+            {
+                alignas(16) uint8_t Data[IB::MaxJobDataSize];
+                void* Func = nullptr;
+                uint32_t Generation = 0;
+                uint32_t QueueIndex = IB::AllJobQueues;
+            };
+#pragma warning(default : 4324)
+        }
+    }
+}
+
 namespace
 {
     uint32_t const WorkerCount = IB::processorCount();
 
     constexpr uint32_t MaxJobCount = 1024;
-#pragma warning(disable : 4324) // We don't care about the padding complaint here.
-    struct alignas(64) Job
-    {
-        alignas(16) uint8_t Data[IB::MaxJobDataSize];
-        void* Func = nullptr;
-        uint32_t Generation = 0;
-        uint32_t QueueIndex = IB::AllJobQueues;
-    };
-#pragma warning(default : 4324)
 
     struct JobQueue
     {
-        Job *Jobs[MaxJobCount] = {};  // Mark as volatile, we don't want to cache our loads.
+        IB::Job::Data *Jobs[MaxJobCount] = {};  // Mark as volatile, we don't want to cache our loads.
         uint32_t Producer = 0; // Represents where we're going to write next
         uint32_t Consumer = 0;        // Represents where we're going to read next, advance before reading
     };
@@ -152,7 +162,7 @@ namespace
     WorkerThread Workers[MaxWorkerCount];
 
     constexpr uint32_t MaxJobPoolCount = MaxJobCount * MaxWorkerCount;
-    Job JobPool[MaxJobPoolCount] = {};
+    IB::Job::Data JobPool[MaxJobPoolCount] = {};
 
     constexpr uint32_t MaxWaitCount = 1 << 16;
     constexpr uint32_t MaxJobWaiters = 10;
@@ -162,9 +172,9 @@ namespace
         uint32_t WaitCounts[MaxWaitCount];
     } WaitList;
 
-    Job* takeJob(IB::JobDesc desc)
+    IB::Job::Data* takeJob(IB::JobDesc desc)
     {
-        Job *job = nullptr;
+        IB::Job::Data *job = nullptr;
 
         // Get a job from our pool
         // Many threads can be trying to pull from the pool at the same time
@@ -191,7 +201,7 @@ namespace
     }
 
     thread_local uint32_t NextWorker = 0;
-    void commitJob(Job* job)
+    void commitJob(IB::Job::Data* job)
     {
         // Keep trying to allocator to various workers.
         // If all the worker queues are full, then we'll iterate until they aren't.
@@ -236,7 +246,7 @@ namespace
         IB::signalThreadEvent(Workers[commitedWorkerIndex].SleepEvent); // Signal our sleeping worker
     }
 
-    void waitJob(Job* job, IB::JobHandle* dependencies, uint32_t dependencyCount)
+    void waitJob(IB::Job::Data* job, IB::Job::Handle* dependencies, uint32_t dependencyCount)
     {
         // Try to commit a wait counter for our dependency count.
         uint32_t waitIndex = 0;
@@ -252,8 +262,8 @@ namespace
         // Add our job to the wait list of all our dependencies
         for (uint32_t dep = 0; dep < dependencyCount; dep++)
         {
-            uint32_t sourceJobIndex = dependencies[dep].Value & 0xFFFFFFFF;
-            uint32_t sourceJobGeneration = dependencies[dep].Value >> 32;
+            uint32_t sourceJobIndex = IB::Job::toValue(dependencies[dep]) & 0xFFFFFFFF;
+            uint32_t sourceJobGeneration = IB::Job::toValue(dependencies[dep]) >> 32;
 
             uint16_t jobIndex = static_cast<uint16_t>(job - JobPool);
             uint64_t waitHandle = ((static_cast<uint64_t>(sourceJobGeneration) + 1) << 32) | (waitIndex << 16) | jobIndex;
@@ -356,7 +366,7 @@ namespace
                 break;
             }
 
-            Job *job = IB::volatileLoad(&queue->Jobs[queue->Consumer]);
+            IB::Job::Data *job = IB::volatileLoad(&queue->Jobs[queue->Consumer]);
             // Note that our job might have marked itself for continuation while it's also active in another thread.
             // If it was put to sleep in this result, it will simply be removed from the queue
             // As a result, it should behave correctly if the job completes before it is even put to sleep.
@@ -365,7 +375,7 @@ namespace
 
             // Queue management
             {
-                IB::volatileStore<Job *volatile>(&queue->Jobs[queue->Consumer], nullptr);
+                IB::volatileStore<IB::Job::Data *volatile>(&queue->Jobs[queue->Consumer], nullptr);
                 // Make sure other threads see our writes to the job queue before we move our consumer index forward.
                 // This fence is not necessary, but having it allows us to have some extra
                 // asserts on the producer side to make sure producers aren't stomping on each other.
@@ -458,47 +468,47 @@ namespace IB
         }
     }
 
-    JobHandle reserveJob(JobDesc desc)
+    Job::Handle reserveJob(JobDesc desc)
     {
-        Job* job = takeJob(desc);
-        return { (static_cast<uint64_t>(job->Generation) << 32) | static_cast<uint32_t>(job - JobPool) };
+        Job::Data* job = takeJob(desc);
+        return Job::toHandle((static_cast<uint64_t>(job->Generation) << 32) | static_cast<uint32_t>(job - JobPool));
     }
 
-    JobHandle continueJob(JobDesc desc, JobHandle* dependencies, uint32_t dependencyCount)
+    Job::Handle continueJob(JobDesc desc, Job::Handle* dependencies, uint32_t dependencyCount)
     {
-        Job* job = takeJob(desc);
+        Job::Data* job = takeJob(desc);
         // Retrieve our job generation before we potentially commit our job.
         // if might execute and complete before we even reach our return.
         uint32_t jobGeneration = volatileLoad(&job->Generation);
         waitJob(job, dependencies, dependencyCount);
-        return { (static_cast<uint64_t>(jobGeneration) << 32) | static_cast<uint32_t>(job - JobPool) };
+        return Job::toHandle((static_cast<uint64_t>(jobGeneration) << 32) | static_cast<uint32_t>(job - JobPool));
     }
 
-    void continueJob(JobHandle handle, JobHandle* dependencies, uint32_t dependencyCount)
+    void continueJob(Job::Handle handle, Job::Handle* dependencies, uint32_t dependencyCount)
     {
-        uint32_t jobIndex = handle.Value & 0xFFFFFFFF;
-        uint32_t generation = handle.Value >> 32;
-        Job* job = &JobPool[jobIndex];
+        uint32_t jobIndex = IB::Job::toValue(handle) & 0xFFFFFFFF;
+        uint32_t generation = IB::Job::toValue(handle) >> 32;
+        Job::Data* job = &JobPool[jobIndex];
         IB_ASSERT(job->Generation == generation, "Asking to continue a job that was completed. Did we put it to sleep?");
         waitJob(job, dependencies, dependencyCount);
     }
 
-    void launchJob(JobHandle handle)
+    void launchJob(Job::Handle handle)
     {
-        uint32_t jobIndex = handle.Value & 0xFFFFFFFF;
-        uint32_t generation = handle.Value >> 32;
-        Job* job = &JobPool[jobIndex];
+        uint32_t jobIndex = IB::Job::toValue(handle) & 0xFFFFFFFF;
+        uint32_t generation = IB::Job::toValue(handle) >> 32;
+        Job::Data* job = &JobPool[jobIndex];
         IB_ASSERT(job->Generation == generation, "Asking to continue a job that was completed. Did we put it to sleep?");
         commitJob(job);
     }
 
-    JobHandle launchJob(JobDesc desc)
+    Job::Handle launchJob(JobDesc desc)
     {
-        Job* job = takeJob(desc);
+        Job::Data* job = takeJob(desc);
         // Grab our job generation before we commit it.
         // The job generation might increment if we get preempted before our return.
         uint32_t jobGeneration = volatileLoad(&job->Generation);
         commitJob(job);
-        return { (static_cast<uint64_t>(jobGeneration) << 32) | static_cast<uint32_t>(job - JobPool) };
+        return Job::toHandle((static_cast<uint64_t>(jobGeneration) << 32) | static_cast<uint32_t>(job - JobPool));
     }
 } // namespace IB
