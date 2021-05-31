@@ -5,6 +5,8 @@
 #include "IBPlatform.h"
 #include "IBLogging.h"
 
+#include <imgui/imgui.h>
+
 namespace IB
 {
     namespace Property
@@ -226,10 +228,31 @@ namespace IB
         CellAssetStreamer CellStreamer;
     }
 
+    namespace Editor
+    {
+        using FrameCallback = void(Asset::Handle asset);
+        void addAssetEditor(Asset::FourCC type, FrameCallback* frame);
+    }
+
     void initEntitySystem()
     {
         Asset::addStreamer(Asset::toFourCC("ENTT"), &EntityStreamer);
         Asset::addStreamer(Asset::toFourCC("CELL"), &CellStreamer);
+
+        Editor::addAssetEditor(Asset::toFourCC("ENTT"),
+            [](Asset::Handle asset)
+        {
+            Entity::Data* entity = reinterpret_cast<Entity::Data*>(toEntityHandle(asset));
+            if (ImGui::BeginTable("Inspector Table", 2))
+            {
+                ImGui::TableNextColumn();
+                ImGui::Text("Name");
+
+                ImGui::TableNextColumn();
+                ImGui::InputText("", entity->Name, Entity::MaxNameLength);
+                ImGui::EndTable();
+            }
+        });
     }
 
     void killEntitySystem()

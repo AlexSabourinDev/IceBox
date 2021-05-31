@@ -68,8 +68,22 @@ namespace IB
 
         struct
         {
-            Entity::Handle SelectedEntity;
-        } EditorState;
+            Asset::Handle SelectedAsset;
+            Asset::FourCC SelectedAssetType;
+        } InspectorState;
+
+        struct AssetEditor
+        {
+            using FrameCallback = void(Asset::Handle asset);
+            Asset::FourCC Type;
+            FrameCallback* Frame;
+        };
+        DynamicArray<AssetEditor> AssetEditors;
+
+        void addAssetEditor(Asset::FourCC type, AssetEditor::FrameCallback* frame)
+        {
+            AssetEditors.add(type, frame);
+        }
 
         void assetBrowserFileTree(char const* rootPath, char const* folder, AssetBrowserState* assetBrowser)
         {
@@ -162,7 +176,8 @@ namespace IB
                         ImGui::TreeNodeEx(getEntityName(entities[i]), ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen);
                         if (ImGui::IsItemClicked())
                         {
-                            EditorState.SelectedEntity = entities[i];
+                            InspectorState.SelectedAsset = toAssetHandle(entities[i]);
+                            InspectorState.SelectedAssetType = Asset::toFourCC("ENTT");
                         }
                     }
                 }
@@ -171,16 +186,15 @@ namespace IB
 
             if (ImGui::Begin("Inspector"))
             {
-                if (EditorState.SelectedEntity != InvalidEntity)
+                if (InspectorState.SelectedAsset != Asset::InvalidAsset)
                 {
-                    if (ImGui::BeginTable("Inspector Table", 2))
+                    for (uint32_t i = 0; i < AssetEditors.count(); i++)
                     {
-                        ImGui::TableNextColumn();
-                        ImGui::Text("Name");
-
-                        ImGui::TableNextColumn();
-                        ImGui::Text(getEntityName(EditorState.SelectedEntity));
-                        ImGui::EndTable();
+                        if (AssetEditors[i].Type == InspectorState.SelectedAssetType)
+                        {
+                            AssetEditors[i].Frame(InspectorState.SelectedAsset);
+                            break;
+                        }
                     }
                 }
             }
