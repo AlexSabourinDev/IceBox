@@ -85,6 +85,18 @@ namespace IB
             AssetEditors.add(type, frame);
         }
 
+        void drawAssetEditor(Asset::FourCC type, Asset::Handle handle)
+        {
+            for (uint32_t i = 0; i < AssetEditors.count(); i++)
+            {
+                if (AssetEditors[i].Type == type)
+                {
+                    AssetEditors[i].Frame(handle);
+                    break;
+                }
+            }
+        }
+
         void assetBrowserFileTree(char const* rootPath, char const* folder, AssetBrowserState* assetBrowser)
         {
             char directoryPath[MaxFilePath] = { 0 };
@@ -108,7 +120,7 @@ namespace IB
                 else
                 {
                     ImGui::TreeNodeEx(fileInfo.Path, ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen);
-                    if (ImGui::IsItemClicked())
+                    if (ImGui::IsItemClicked() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
                     {
                         if (hasExtension(fileInfo.Path, ".cell"))
                         {
@@ -180,6 +192,16 @@ namespace IB
                             InspectorState.SelectedAssetType = Asset::toFourCC("ENTT");
                         }
                     }
+
+                    if (ImGui::BeginPopupContextWindow())
+                    {
+                        if (ImGui::Button("Create Entity"))
+                        {
+                            addEntityToCell(currentCell, createEntity());
+                            ImGui::CloseCurrentPopup();
+                        }
+                        ImGui::EndPopup();
+                    }
                 }
             }
             ImGui::End();
@@ -188,14 +210,7 @@ namespace IB
             {
                 if (InspectorState.SelectedAsset != Asset::InvalidAsset)
                 {
-                    for (uint32_t i = 0; i < AssetEditors.count(); i++)
-                    {
-                        if (AssetEditors[i].Type == InspectorState.SelectedAssetType)
-                        {
-                            AssetEditors[i].Frame(InspectorState.SelectedAsset);
-                            break;
-                        }
-                    }
+                    drawAssetEditor(InspectorState.SelectedAssetType, InspectorState.SelectedAsset);
                 }
             }
             ImGui::End();

@@ -282,6 +282,38 @@ namespace
 
 namespace IB
 {
+    namespace Editor
+    {
+        using FrameCallback = void(Asset::Handle asset);
+        void addAssetEditor(Asset::FourCC type, FrameCallback* frame);
+        void drawAssetEditor(Asset::FourCC type, Asset::Handle handle);
+
+        void rendererEditor(Asset::Handle asset)
+        {
+            RendererProperty *renderer = reinterpret_cast<RendererProperty *>(toPropertyHandle(asset));
+            if (ImGui::TreeNode("Renderer"))
+            {
+                if (ImGui::BeginTable("Inspector Table", 2))
+                {
+                    ImGui::TableNextColumn();
+                    ImGui::Text("Mesh");
+
+                    ImGui::TableNextColumn();
+                    ImGui::Text(Asset::getResourcePath(renderer->MeshResource));
+
+                    ImGui::TableNextColumn();
+                    ImGui::Text("Material");
+
+                    ImGui::TableNextColumn();
+                    ImGui::Text(Asset::getResourcePath(renderer->MaterialResource));
+
+                    ImGui::EndTable();
+                }
+                ImGui::TreePop();
+            }
+        }
+    }
+
     void initRendererFrontend(RendererFrontendDesc const &desc)
     {
         Asset::addStreamer(Asset::toFourCC("MESH"), &MeshStreamer);
@@ -312,6 +344,8 @@ namespace IB
                                              InitPassesJobQueueIndex);
                                      }
                                  });
+
+        Editor::addAssetEditor(Asset::toFourCC("RNDR"), &Editor::rendererEditor);
     }
 
     void killRendererFrontend()

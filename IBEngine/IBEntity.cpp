@@ -232,17 +232,13 @@ namespace IB
     {
         using FrameCallback = void(Asset::Handle asset);
         void addAssetEditor(Asset::FourCC type, FrameCallback* frame);
-    }
+        void drawAssetEditor(Asset::FourCC type, Asset::Handle handle);
 
-    void initEntitySystem()
-    {
-        Asset::addStreamer(Asset::toFourCC("ENTT"), &EntityStreamer);
-        Asset::addStreamer(Asset::toFourCC("CELL"), &CellStreamer);
-
-        Editor::addAssetEditor(Asset::toFourCC("ENTT"),
-            [](Asset::Handle asset)
+        void entityEditor(Asset::Handle asset)
         {
             Entity::Data* entity = reinterpret_cast<Entity::Data*>(toEntityHandle(asset));
+            ImGui::Text("Entity");
+            ImGui::Separator();
             if (ImGui::BeginTable("Inspector Table", 2))
             {
                 ImGui::TableNextColumn();
@@ -250,9 +246,26 @@ namespace IB
 
                 ImGui::TableNextColumn();
                 ImGui::InputText("", entity->Name, Entity::MaxNameLength);
+
                 ImGui::EndTable();
             }
-        });
+
+            ImGui::Text("Properties");
+            ImGui::Separator();
+
+            for (uint32_t i = 0; i < entity->Properties.count(); i++)
+            {
+                Editor::drawAssetEditor(entity->Properties[i].Type, toAssetHandle(entity->Properties[i].Handle));
+            }
+        }
+    }
+
+    void initEntitySystem()
+    {
+        Asset::addStreamer(Asset::toFourCC("ENTT"), &EntityStreamer);
+        Asset::addStreamer(Asset::toFourCC("CELL"), &CellStreamer);
+
+        Editor::addAssetEditor(Asset::toFourCC("ENTT"), &Editor::entityEditor);
     }
 
     void killEntitySystem()
