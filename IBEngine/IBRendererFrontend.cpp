@@ -6,6 +6,7 @@
 #include "IBAllocator.h"
 #include "IBEntity.h"
 #include "IBJobs.h"
+#include "IBEditor.h"
 
 #include <imgui/imgui.h>
 
@@ -284,10 +285,6 @@ namespace IB
 {
     namespace Editor
     {
-        using FrameCallback = void(Asset::Handle asset);
-        void addAssetEditor(Asset::FourCC type, FrameCallback* frame);
-        void drawAssetEditor(Asset::FourCC type, Asset::Handle handle);
-
         void rendererEditor(Asset::Handle asset)
         {
             RendererProperty *renderer = reinterpret_cast<RendererProperty *>(toPropertyHandle(asset));

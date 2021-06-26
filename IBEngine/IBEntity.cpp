@@ -4,6 +4,7 @@
 #include "IBAsset.h"
 #include "IBPlatform.h"
 #include "IBLogging.h"
+#include "IBEditor.h"
 
 #include <imgui/imgui.h>
 
@@ -230,10 +231,6 @@ namespace IB
 
     namespace Editor
     {
-        using FrameCallback = void(Asset::Handle asset);
-        void addAssetEditor(Asset::FourCC type, FrameCallback* frame);
-        void drawAssetEditor(Asset::FourCC type, Asset::Handle handle);
-
         void entityEditor(Asset::Handle asset)
         {
             Entity::Data* entity = reinterpret_cast<Entity::Data*>(toEntityHandle(asset));

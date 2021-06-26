@@ -58,6 +58,7 @@
       <Filter>ImGui</Filter>
     </ClInclude>
     <ClInclude Include="IBCollection.h" />
+    <ClInclude Include="IBEditor.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Platform\IBPlatformWin32.cpp">
@@ -95,6 +96,7 @@
     <ClCompile Include="..\SDK\imgui_docking\imgui\imgui_impl_win32.cpp">
       <Filter>ImGui</Filter>
     </ClCompile>
+    <ClCompile Include="IBEditor.cpp" />
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="..\Assets\Raw\SampleForward.hlsl">

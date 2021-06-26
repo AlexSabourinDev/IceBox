@@ -23,6 +23,7 @@
     <ClInclude Include="IBCollection.h" />
     <ClInclude Include="IBAllocator.h" />
     <ClInclude Include="IBAsset.h" />
+    <ClInclude Include="IBEditor.h" />
     <ClInclude Include="IBEngineAPI.h" />
     <ClInclude Include="IBEntity.h" />
     <ClInclude Include="IBJobs.h" />
@@ -44,6 +45,7 @@
     <ClCompile Include="..\SDK\imgui_docking\imgui\imgui_widgets.cpp" />
     <ClCompile Include="IBAllocator.cpp" />
     <ClCompile Include="IBAsset.cpp" />
+    <ClCompile Include="IBEditor.cpp" />
     <ClCompile Include="IBEntity.cpp" />
     <ClCompile Include="IBJobs.cpp" />
     <ClCompile Include="IBLogging.cpp" />
