@@ -35,13 +35,21 @@ namespace IB
     {
         struct AssetBrowserState
         {
-            FileInfo LoadCellInfo;
+            FileInfo LoadResourceInfo;
         };
 
         struct
         {
-            Asset::Handle SelectedAsset;
-            Asset::FourCC SelectedAssetType;
+            struct
+            {
+                union
+                {
+                    Asset::Handle Asset = InvalidAsset;
+                    Resource::Handle Resource;
+                };
+                bool IsResource = false;
+                Asset::FourCC Type;
+            } Selected;
         } InspectorState;
 
         struct AssetEditor
@@ -91,11 +99,11 @@ namespace IB
                 else
                 {
                     ImGui::TreeNodeEx(fileInfo.Path, ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen);
-                    if (ImGui::IsItemClicked() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
+                    if (ImGui::IsItemClicked() && hasExtension(fileInfo.Path, ".cell"))
                     {
-                        if (hasExtension(fileInfo.Path, ".cell"))
+                        if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
                         {
-                            assetBrowser->LoadCellInfo = fileInfo;
+                            assetBrowser->LoadResourceInfo = fileInfo;
                             ImGui::OpenPopup("Load Cell?");
                         }
                     }
@@ -129,7 +137,18 @@ namespace IB
                 {
                     if (ImGui::Button("OK", ImVec2(120, 0)))
                     {
-                        Asset::loadResourceAsync(assetBrowserState.LoadCellInfo.Path, Asset::toFourCC("CELL"), state->CellResource);
+                        Asset::loadResourceAsync(assetBrowserState.LoadResourceInfo.Path, Asset::toFourCC("CELL"),
+                            [](void *data, Resource::Handle resource, Asset::ResourceLoad::State loadState)
+                            {
+                                if (loadState >= Asset::ResourceLoad::Loading)
+                                {
+                                    *reinterpret_cast<Resource::Handle *>(data) = resource;
+                                }
+                            }, state->CellResource);
+                        InspectorState.Selected.Resource = *state->CellResource;
+                        InspectorState.Selected.IsResource = true;
+                        InspectorState.Selected.Type = Asset::toFourCC("CELL");
+
                         ImGui::CloseCurrentPopup();
                     }
 
@@ -159,8 +178,9 @@ namespace IB
                         ImGui::TreeNodeEx(getEntityName(entities[i]), ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen);
                         if (ImGui::IsItemClicked())
                         {
-                            InspectorState.SelectedAsset = toAssetHandle(entities[i]);
-                            InspectorState.SelectedAssetType = Asset::toFourCC("ENTT");
+                            InspectorState.Selected.Asset = toAssetHandle(entities[i]);
+                            InspectorState.Selected.IsResource = false;
+                            InspectorState.Selected.Type = Asset::toFourCC("ENTT");
                         }
                     }
 
@@ -179,9 +199,22 @@ namespace IB
 
             if (ImGui::Begin("Inspector"))
             {
-                if (InspectorState.SelectedAsset != Asset::InvalidAsset)
+                Asset::Handle assetHandle = InvalidAsset;
+                if (InspectorState.Selected.IsResource)
                 {
-                    drawAssetEditor(InspectorState.SelectedAssetType, InspectorState.SelectedAsset);
+                    if (Asset::isResourceAssetAvailable(InspectorState.Selected.Resource))
+                    {
+                        assetHandle = Asset::getAssetFromResource(InspectorState.Selected.Resource);
+                    }
+                }
+                else
+                {
+                    assetHandle = InspectorState.Selected.Asset;
+                }
+
+                if (assetHandle != InvalidAsset)
+                {
+                    drawAssetEditor(InspectorState.Selected.Type, assetHandle);
                 }
             }
             ImGui::End();

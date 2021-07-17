@@ -48,8 +48,8 @@ namespace IB
         struct MemoryStream
         {
             MemoryStream() = default;
-            MemoryStream(uint8_t *memory) : Memory(memory) {}
-            uint8_t *Memory = nullptr;
+            MemoryStream(uint8_t const*memory) : Memory(memory) {}
+            uint8_t const*Memory = nullptr;
         };
 
         IB_API void fromBinary(MemoryStream *stream, void *data, size_t size);

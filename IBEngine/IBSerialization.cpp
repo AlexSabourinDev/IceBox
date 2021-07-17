@@ -11,7 +11,7 @@ namespace IB
 {
     namespace Serialization
     {
-        const uint32_t Version = 2;
+        const uint32_t Version = 3;
 
         void initSerialization()
         {
@@ -56,7 +56,7 @@ namespace IB
 
         void const *fromBinary(MemoryStream *stream, size_t size)
         {
-            void *memory = stream->Memory;
+            void const *memory = stream->Memory;
             stream->Memory += size;
             return memory;
         }

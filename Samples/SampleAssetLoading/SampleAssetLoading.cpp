@@ -92,8 +92,8 @@ int main()
         IB::Resource::Handle meshAsset1;
         IB::Resource::Handle meshAsset2;
 
-        IB::Asset::loadResourceAsync("Box.msh", IB::Asset::toFourCC("MESH"), &meshAsset1);
-        IB::Job::Handle meshJob = IB::Asset::loadResourceAsync("Box.msh", IB::Asset::toFourCC("MESH"), &meshAsset2);
+        IB::Asset::loadResourceAsync("Box.msh", { IB::Asset::toFourCC("MESH") }, &meshAsset1);
+        IB::Job::Handle meshJob = IB::Asset::loadResourceAsync("Box.msh", { IB::Asset::toFourCC("MESH") }, &meshAsset2);
         waitOnJob(meshJob);
 
         IB_ASSERT(meshAsset1 == meshAsset2, "Loaded the same asset.");
@@ -125,7 +125,7 @@ int main()
         waitOnJob(saveJob);
 
         IB::Resource::Handle savedEntityResource;
-        IB::Job::Handle entityJob = IB::Asset::loadResourceAsync("TestEntity.entt", IB::Asset::toFourCC("ENTT"), &savedEntityResource);
+        IB::Job::Handle entityJob = IB::Asset::loadResourceAsync("TestEntity.entt", { IB::Asset::toFourCC("ENTT") }, &savedEntityResource);
         waitOnJob(entityJob);
         IB_ASSERT(savedEntityResource == entityResource, "Failed to load the same asset!");
 
@@ -136,7 +136,7 @@ int main()
 
     {
         IB::Resource::Handle entityResource;
-        IB::Job::Handle entityJob = IB::Asset::loadResourceAsync("TestEntity.entt", IB::Asset::toFourCC("ENTT"), &entityResource);
+        IB::Job::Handle entityJob = IB::Asset::loadResourceAsync("TestEntity.entt", { IB::Asset::toFourCC("ENTT") }, &entityResource);
         waitOnJob(entityJob);
         entityJob = IB::Asset::releaseResourceAsync(entityResource);
         waitOnJob(entityJob);

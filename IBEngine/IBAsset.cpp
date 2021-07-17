@@ -18,7 +18,7 @@ namespace IB
                 IB::Asset::FourCC Type = {};
                 uint32_t PathHash = 0;
                 IB::Job::Handle LoadingJob = {};
-                IB::Asset::Handle Asset = IB::Asset::InvalidAsset;
+                IB::Asset::Handle Asset = IB::InvalidAsset;
                 IB::File::Handle File = {};
                 char Path[IB::MaxFilePath] = {};
             };
@@ -65,7 +65,7 @@ namespace
     struct StreamerData
     {
         IB::Asset::IStreamer *Streamer = nullptr;
-        IB::Asset::FourCC Type = IB::Asset::InvalidFourCC;
+        IB::Asset::FourCC Type = IB::InvalidFourCC;
     };
 
     constexpr uint32_t MaxStreamerCount = 100;
@@ -218,11 +218,12 @@ namespace IB
             return Resource::toHandle(pathHash);
         }
 
-        Job::Handle loadSubAssetAsync(LoadContext const* parentContext, FourCC type, Asset::Handle parentAsset, OnSubAssetLoad *onSubAssetLoad, void *data)
+        Job::Handle loadSubAssetAsync(LoadContext const* parentContext, DeltaAssetDesc deltaAssetDesc, Asset::Handle parentAsset, OnSubAssetLoad *onSubAssetLoad, void *data)
         {
             LoadContext *context = allocate<LoadContext>(parentContext->Stream, parentAsset);
             context->SaveVersion = parentContext->SaveVersion;
-            IB::Asset::IStreamer *streamer = getStreamer(type);
+            context->BaseAsset = deltaAssetDesc.BaseAsset;
+            IB::Asset::IStreamer *streamer = getStreamer(deltaAssetDesc.Type);
             if (streamer != nullptr)
             {
                 context->Handle = reserveJob([context, streamer, onSubAssetLoad, data]() {
@@ -241,6 +242,12 @@ namespace IB
 
         Job::Handle loadResourceAsync(char const *assetPath, FourCC type, OnResourceLoad *onResourceLoad, void *data)
         {
+            if (assetPath[0] == '\0')
+            {
+                onResourceLoad(data, InvalidResource, ResourceLoad::NotExisting);
+                return {};
+            }
+
             uint32_t pathHash = hash(assetPath);
             uint32_t hashTableIndex = pathHash % MaxTableEntries;
 
@@ -273,6 +280,8 @@ namespace IB
                 }
                 else
                 {
+                    onResourceLoad(data, Resource::toHandle(pathHash), ResourceLoad::Loading);
+
                     requestHandle = continueJob([resource, onResourceLoad, data, pathHash]() {
                         IB_ASSERT(resource->Asset != InvalidAsset, "No asset handle loaded!");
                         onResourceLoad(data, Resource::toHandle(pathHash), ResourceLoad::Available);
@@ -303,8 +312,23 @@ namespace IB
             return requestHandle;
         }
 
+        void acquireResource(Resource::Handle resource)
+        {
+            if (resource != InvalidResource)
+            {
+                uint32_t mappingIndex = Resource::toValue(resource) % MaxTableEntries;
+                bool newAssetEntry = atomicIncrement(&ResourceHashTable[mappingIndex].RefCount) == 1;
+                IB_ASSERT(!newAssetEntry, "Acquiring a resource must mean that we already had our resource loaded and a ref count.");
+            }
+        }
+
         Job::Handle releaseResourceAsync(Resource::Handle resourceHandle)
         {
+            if (resourceHandle == InvalidResource)
+            {
+                return {};
+            }
+
             uint32_t mappingIndex = Resource::toValue(resourceHandle) % MaxTableEntries;
             // We could be asking to release our resource before our resource has been assigned to the resource table.
             while (volatileLoad(&ResourceHashTable[mappingIndex].Resource) == nullptr)
@@ -396,10 +420,15 @@ namespace IB
             });
         }
 
-        void saveSubAssetThreadSafe(Serialization::FileStream *stream, FourCC type, Asset::Handle asset)
+        void saveSubAssetThreadSafe(Serialization::FileStream *stream, DeltaAssetDesc deltaAssetDesc, Asset::Handle asset)
         {
-            SaveContext saveContext = {stream, asset};
-            getStreamer(type)->saveThreadSafe(&saveContext);
+            SaveContext saveContext = {stream, asset, deltaAssetDesc.BaseAsset};
+            getStreamer(deltaAssetDesc.Type)->saveThreadSafe(&saveContext);
+        }
+
+        Asset::Handle cloneAssetThreadSafe(Asset::Handle asset, FourCC type)
+        {
+            return getStreamer(type)->cloneThreadSafe(asset);
         }
 
         Asset::Handle getAssetFromResource(Resource::Handle resourceHandle)
@@ -427,15 +456,22 @@ namespace IB
 
         char const *getResourcePath(Resource::Handle resourceHandle)
         {
-            uint32_t hashTableIndex = Resource::toValue(resourceHandle) % MaxTableEntries;
-            IB_ASSERT(ResourceHashTable[hashTableIndex].RefCount > 0, "Resource is not loaded!");
+            if (resourceHandle == InvalidResource)
+            {
+                return "";
+            }
+            else
+            {
+                uint32_t hashTableIndex = Resource::toValue(resourceHandle) % MaxTableEntries;
+                IB_ASSERT(ResourceHashTable[hashTableIndex].RefCount > 0, "Resource is not loaded!");
 
-            IB::Resource::Data *resource = volatileLoad(&ResourceHashTable[hashTableIndex].Resource);
-            // Assure we don't move our resource reads/writes past this point.
-            // Our reads are dependent on the volatileLoad above however, perhaps we can avoid the acquire due to a data dependency?
-            threadAcquire();
+                IB::Resource::Data *resource = volatileLoad(&ResourceHashTable[hashTableIndex].Resource);
+                // Assure we don't move our resource reads/writes past this point.
+                // Our reads are dependent on the volatileLoad above however, perhaps we can avoid the acquire due to a data dependency?
+                threadAcquire();
 
-            return resource->Path;
+                return resource->Path;
+            }
         }
 
     } // namespace Asset

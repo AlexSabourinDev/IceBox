@@ -13,6 +13,12 @@ namespace IB
         constexpr uint64_t toValue(Handle handle);
     }
 
+    namespace Resource
+    {
+        enum Handle : uint32_t;
+        constexpr Handle toHandle(uint32_t value);
+    }
+
     namespace Property
     {
         enum Handle : uint64_t { };
@@ -54,7 +60,7 @@ namespace IB
     IB_API char const* getEntityName(Entity::Handle entity);
 
     // Cell API
-    IB_API Cell::Handle createCell();
+    IB_API Cell::Handle createCell(Resource::Handle baseCell = Resource::toHandle(0));
     IB_API void addEntityToCell(Cell::Handle cell, Entity::Handle entity);
     IB_API void getEntityList(Cell::Handle cell, Entity::Handle** entities, uint32_t* entityCount);
 }

@@ -74,7 +74,7 @@ namespace IB
                         fromBinary(&context->Stream, &offset);
 
                         // Passing pointer to dynamic array item is OK here. We've reserved the memory and will not resize until the load is complete.
-                        loadHandles[handleCount++] = IB::Asset::loadSubAssetAsync(context, entityProperty.Type, Asset::InvalidAsset,
+                        loadHandles[handleCount++] = IB::Asset::loadSubAssetAsync(context, { entityProperty.Type }, InvalidAsset,
                             [](void *data, IB::Asset::Handle asset)
                             {
                                 *reinterpret_cast<IB::Property::Handle *>(data) = toPropertyHandle(asset);
@@ -104,7 +104,7 @@ namespace IB
                     uint32_t dummyWriteSize = 0;
                     toBinary(context->Stream, dummyWriteSize);
                     uint32_t writeStart = flush(context->Stream);
-                    IB::Asset::saveSubAssetThreadSafe(context->Stream, entity->Properties[i].Type, toAssetHandle(entity->Properties[i].Handle));
+                    IB::Asset::saveSubAssetThreadSafe(context->Stream, { entity->Properties[i].Type }, toAssetHandle(entity->Properties[i].Handle));
                     uint32_t writeEnd = flush(context->Stream);
 
                     // Write our written size right before our sub asset.
@@ -123,14 +123,42 @@ namespace IB
 
                 ActiveEntities.remove(*entity);
             }
+
+            Asset::Handle cloneThreadSafe(IB::Asset::Handle assetHandle) override
+            {
+                Entity::Data* sourceEntity = reinterpret_cast<Entity::Data*>(Asset::toValue(assetHandle));
+
+                Entity::Data& clonedEntity = ActiveEntities.add();
+                clonedEntity.Properties.reserve(sourceEntity->Properties.count());
+                for (uint32_t i = 0; i < sourceEntity->Properties.count(); i++)
+                {
+                    Property::Data& propertyData = clonedEntity.Properties.add();
+                    propertyData.Type = sourceEntity->Properties[i].Type;
+                    Asset::Handle propertyAsset = toAssetHandle(sourceEntity->Properties[i].Handle);
+                    Asset::Handle clonedPropertyAsset = Asset::cloneAssetThreadSafe(propertyAsset, propertyData.Type);
+                    propertyData.Handle = toPropertyHandle(clonedPropertyAsset);
+                }
+
+                return Asset::toHandle(reinterpret_cast<uint64_t>(&clonedEntity));
+            }
         };
 
         EntityAssetStreamer EntityStreamer;
 
+        struct EntityID
+        {
+            uint32_t HierarchyID = 0; // How high up the parent hierarchy is our entity
+            uint32_t LocalID = 0; // Local ID within our cell
+        };
+
         struct CellAsset
         {
+            Resource::Handle BaseCell = InvalidResource;
             DynamicArray<Entity::Handle> Entities;
+            DynamicArray<EntityID> EntityIDs;
+            uint32_t NextEntityID = 0;
         };
+        CellAsset EmptyCellAsset = {};
 
         // Since we don't expect to have many cells, a simple threadsafe allocation scheme is fine
 
@@ -138,17 +166,33 @@ namespace IB
         CellAsset Cells[MaxCellCount];
         uint32_t CellAllocations[MaxCellCount] = {};
 
+        int32_t getBaseEntityIndex(EntityID const entityID, CellAsset const& baseCell)
+        {
+            int32_t entityIndex = -1;
+            for (uint32_t i = 0; i < baseCell.EntityIDs.count(); i++)
+            {
+                if (baseCell.EntityIDs[i].HierarchyID == entityID.HierarchyID - 1
+                    && baseCell.EntityIDs[i].LocalID == entityID.LocalID)
+                {
+                    entityIndex = i;
+                    break;
+                }
+            }
+            return entityIndex;
+        };
+
         class CellAssetStreamer : public Asset::IStreamer
         {
             IB::Asset::LoadContinuation loadAsync(IB::Asset::LoadContext *context) override
             {
                 enum State
                 {
-                    LoadEntities = 0,
+                    LoadBase = 0,
+                    LoadEntities,
                     Complete
                 };
 
-                if (context->State == LoadEntities)
+                if (context->State == LoadBase)
                 {
                     uint32_t createdCell = MaxCellCount;
                     for (uint32_t i = 0; i < MaxCellCount; i++)
@@ -156,28 +200,66 @@ namespace IB
                         if (atomicCompareExchange(&CellAllocations[i], false, true) == false)
                         {
                             createdCell = i;
+                            break;
                         }
                     }
                     IB_ASSERT(createdCell != MaxCellCount, "Failed to create a cell! How many cells do we have active?");
 
                     CellAsset& cell = Cells[createdCell];
+                    context->Data = createdCell;
+
+                    char const *baseCellPath = "";
+                    fromBinary(&context->Stream, &baseCellPath);
+
+                    Job::Handle baseCellLoad = Asset::loadResourceAsync(baseCellPath, { Asset::toFourCC("CELL") }, &cell.BaseCell);
+                    return IB::Asset::wait(&baseCellLoad, 1, LoadEntities);
+                }
+                else if (context->State == LoadEntities)
+                {
+                    CellAsset& cell = Cells[context->Data];
+
+                    CellAsset* baseCell = &EmptyCellAsset;
+                    if (cell.BaseCell != InvalidResource)
+                    {
+                        Asset::Handle baseCellAsset = Asset::getAssetFromResource(cell.BaseCell);
+                        baseCell = &Cells[Asset::toValue(baseCellAsset)];
+                    }
+
+                    fromBinary(&context->Stream, &cell.NextEntityID);
 
                     uint32_t entityCount;
                     fromBinary(&context->Stream, &entityCount);
                     cell.Entities.reserve(entityCount);
+                    cell.EntityIDs.reserve(entityCount);
 
                     IB_ASSERT(entityCount <= IB::Asset::MaxDependencyCount, "Too many properties!");
                     IB::Job::Handle loadHandles[IB::Asset::MaxDependencyCount];
                     uint32_t handleCount = 0;
                     for (uint32_t i = 0; i < entityCount; i++)
                     {
+                        EntityID& entityID = cell.EntityIDs.add();
+                        fromBinary(&context->Stream, &entityID);
+
                         IB::Entity::Handle& entity = cell.Entities.add();
+
+                        bool baseHasEntity = false;
+                        fromBinary(&context->Stream, &baseHasEntity);
+
+                        Asset::Handle baseAsset = InvalidAsset;
+                        if (baseHasEntity)
+                        {
+                            int32_t entityIndex = getBaseEntityIndex(entityID, *baseCell);
+                            if (entityIndex >= 0)
+                            {
+                                baseAsset = toAssetHandle(baseCell->Entities[entityIndex]);
+                            }
+                        }
 
                         uint32_t offset;
                         fromBinary(&context->Stream, &offset);
 
                         // Passing pointer to dynamic array item is OK here. We've reserved the memory and will not resize until the load is complete.
-                        loadHandles[handleCount++] = IB::Asset::loadSubAssetAsync(context, IB::Asset::toFourCC("ENTT"), Asset::InvalidAsset,
+                        loadHandles[handleCount++] = IB::Asset::loadSubAssetAsync(context, { IB::Asset::toFourCC("ENTT"), baseAsset }, InvalidAsset,
                             [](void *data, IB::Asset::Handle asset)
                             {
                                 *reinterpret_cast<IB::Entity::Handle *>(data) = toEntityHandle(asset);
@@ -186,7 +268,6 @@ namespace IB
                         advance(&context->Stream, offset);
                     }
 
-                    context->Data = createdCell;
                     return IB::Asset::wait(loadHandles, handleCount, Complete);
                 }
                 else
@@ -197,15 +278,40 @@ namespace IB
 
             void saveThreadSafe(IB::Asset::SaveContext *context) override
             {
-                CellAsset& cell = Cells[Asset::toValue(context->Asset)];
+                CellAsset const& cell = Cells[Asset::toValue(context->Asset)];
+                char const *baseCellPath = IB::Asset::getResourcePath(cell.BaseCell);
+                toBinary(context->Stream, baseCellPath);
+                toBinary(context->Stream, cell.NextEntityID);
+
+                CellAsset const* baseCell = &EmptyCellAsset;
+                if (cell.BaseCell != InvalidResource)
+                {
+                    Asset::Handle baseCellAsset = Asset::getAssetFromResource(cell.BaseCell);
+                    baseCell = &Cells[Asset::toValue(baseCellAsset)];
+                }
+
                 toBinary(context->Stream, cell.Entities.count());
                 for (uint32_t i = 0; i < cell.Entities.count(); i++)
                 {
+                    EntityID const entityID = cell.EntityIDs[i];
+                    toBinary(context->Stream, entityID);
+
+                    int32_t const baseEntityIndex = getBaseEntityIndex(entityID, *baseCell);
+
+                    bool const baseHasEntity = baseEntityIndex >= 0;
+                    toBinary(context->Stream, baseHasEntity);
+
+                    Asset::Handle baseEntityAsset = InvalidAsset;
+                    if (baseHasEntity)
+                    {
+                        baseEntityAsset = toAssetHandle(baseCell->Entities[baseEntityIndex]);
+                    }
+
                     uint32_t dummyWriteSize = 0;
                     toBinary(context->Stream, dummyWriteSize);
                     uint32_t writeStart = flush(context->Stream);
 
-                    IB::Asset::saveSubAssetThreadSafe(context->Stream, IB::Asset::toFourCC("ENTT"), toAssetHandle(cell.Entities[i]));
+                    IB::Asset::saveSubAssetThreadSafe(context->Stream, { IB::Asset::toFourCC("ENTT"), baseEntityAsset }, toAssetHandle(cell.Entities[i]));
 
                     uint32_t writeEnd = flush(context->Stream);
 
@@ -218,11 +324,14 @@ namespace IB
             void unloadThreadSafe(IB::Asset::Handle assetHandle) override
             {
                 CellAsset& cell = Cells[Asset::toValue(assetHandle)];
+                Asset::releaseResourceAsync(cell.BaseCell);
                 for (uint32_t i = 0; i < cell.Entities.count(); i++)
                 {
                     IB::Asset::unloadSubAssetThreadSafe(toAssetHandle(cell.Entities[i]), IB::Asset::toFourCC("ENTT"));
                 }
 
+                cell = {};
+                threadRelease(); // Make sure our writes are released before we tell the other threads.
                 volatileStore<uint32_t>(&CellAllocations[Asset::toValue(assetHandle)], false);
             }
         };
@@ -255,6 +364,29 @@ namespace IB
                 Editor::drawAssetEditor(entity->Properties[i].Type, toAssetHandle(entity->Properties[i].Handle));
             }
         }
+
+        void cellEditor(Asset::Handle asset)
+        {
+            Cell::Handle cellHandle = toCellHandle(asset);
+            CellAsset& cell = Cells[Cell::toValue(cellHandle)];
+
+            ImGui::Text("Cell");
+            ImGui::Separator();
+
+            if (ImGui::BeginTable("Inspector Table", 2))
+            {
+                if (cell.BaseCell != InvalidResource)
+                {
+                    ImGui::TableNextColumn();
+                    ImGui::Text("Base Cell");
+
+                    ImGui::TableNextColumn();
+                    ImGui::Text(Asset::getResourcePath(cell.BaseCell));
+                }
+
+                ImGui::EndTable();
+            }
+        }
     }
 
     void initEntitySystem()
@@ -262,6 +394,7 @@ namespace IB
         Asset::addStreamer(Asset::toFourCC("ENTT"), &EntityStreamer);
         Asset::addStreamer(Asset::toFourCC("CELL"), &CellStreamer);
 
+        Editor::addAssetEditor(Asset::toFourCC("CELL"), &Editor::cellEditor);
         Editor::addAssetEditor(Asset::toFourCC("ENTT"), &Editor::entityEditor);
     }
 
@@ -313,25 +446,53 @@ namespace IB
         }
     }
 
-    Cell::Handle createCell()
+    Cell::Handle createCell(Resource::Handle baseCell)
     {
-        uint32_t createdCell = MaxCellCount;
+        uint32_t createdCellIndex = MaxCellCount;
         for (uint32_t i = 0; i < MaxCellCount; i++)
         {
             if (atomicCompareExchange(&CellAllocations[i], false, true) == false)
             {
-                createdCell = i;
+                createdCellIndex = i;
+                break;
             }
         }
 
-        IB_ASSERT(createdCell != MaxCellCount, "Failed to create a cell! How many cells do we have active?");
-        return Cell::toHandle(createdCell);
+        IB_ASSERT(createdCellIndex != MaxCellCount, "Failed to create a cell! How many cells do we have active?");
+
+        CellAsset& createdCell = Cells[createdCellIndex];
+        if (baseCell != InvalidResource)
+        {
+            Asset::acquireResource(baseCell);
+            createdCell.BaseCell = baseCell;
+
+            Asset::Handle cellAssetHandle = Asset::getAssetFromResource(baseCell);
+            CellAsset& baseCellAsset = Cells[Asset::toValue(cellAssetHandle)];
+
+            uint32_t const entityCount = baseCellAsset.EntityIDs.count();
+            createdCell.EntityIDs.reserve(entityCount);
+            createdCell.Entities.reserve(entityCount);
+
+            for (uint32_t i = 0; i < entityCount; i++)
+            {
+                Asset::Handle baseEntityAsset = toAssetHandle(baseCellAsset.Entities[i]);
+                Asset::Handle clonedAsset = Asset::cloneAssetThreadSafe(baseEntityAsset, Asset::toFourCC("ENTT"));
+                if (clonedAsset != InvalidAsset)
+                {
+                    createdCell.EntityIDs.add(baseCellAsset.EntityIDs[i].HierarchyID + 1, baseCellAsset.EntityIDs[i].LocalID);
+                    createdCell.Entities.add(toEntityHandle(clonedAsset));
+                }
+            }
+        }
+
+        return Cell::toHandle(createdCellIndex);
     }
 
     void addEntityToCell(Cell::Handle cellHandle, Entity::Handle entity)
     {
         CellAsset& cell = Cells[Cell::toValue(cellHandle)];
         cell.Entities.add(entity);
+        cell.EntityIDs.add(EntityID{0, cell.NextEntityID++});
     }
 
     void getEntityList(Cell::Handle cellHandle, Entity::Handle** entities, uint32_t* entityCount)

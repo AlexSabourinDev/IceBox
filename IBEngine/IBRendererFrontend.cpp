@@ -126,7 +126,7 @@ namespace
                 RuntimeMaterial &materialData = MaterialPool.add();
                 fromBinary(&context->Stream, &materialData.Asset, context->SaveVersion);
 
-                IB::Job::Handle textureJob = IB::Asset::loadResourceAsync(materialData.Asset.AlbedoPath, IB::Asset::toFourCC("IMAG"), &materialData.AlbedoTexture);
+                IB::Job::Handle textureJob = IB::Asset::loadResourceAsync(materialData.Asset.AlbedoPath, { IB::Asset::toFourCC("IMAG") }, &materialData.AlbedoTexture);
                 IB::Job::Handle materialJob = IB::continueJob([materialPtr = &materialData, contextData = &context->Data]() {
                     IB::Resource::Handle textureResource = materialPtr->AlbedoTexture;
 
@@ -224,7 +224,7 @@ namespace
                 };
                 IB::Job::Handle jobs[JobCount];
 
-                jobs[MeshJob] = IB::Asset::loadResourceAsync(meshPath, IB::Asset::toFourCC("MESH"),
+                jobs[MeshJob] = IB::Asset::loadResourceAsync(meshPath, { IB::Asset::toFourCC("MESH") },
                                                              [](void *data, IB::Resource::Handle resource, IB::Asset::ResourceLoad::State loadState) {
                                                                  // Assign our mesh resource even when it's loading
                                                                  // We want to gracefully handle the resource not being available yet.
@@ -235,7 +235,7 @@ namespace
                                                              },
                                                              &renderer.MeshResource);
 
-                jobs[MaterialJob] = IB::Asset::loadResourceAsync(materialPath, IB::Asset::toFourCC("MATE"),
+                jobs[MaterialJob] = IB::Asset::loadResourceAsync(materialPath, { IB::Asset::toFourCC("MATE") },
                                                                  [](void *data, IB::Resource::Handle resource, IB::Asset::ResourceLoad::State loadState) {
                                                                      // Assign our mesh resource even when it's loading
                                                                      // We want to gracefully handle the resource not being available yet.
@@ -270,6 +270,19 @@ namespace
             IB::Asset::releaseResourceAsync(renderer->MeshResource);
             IB::Asset::releaseResourceAsync(renderer->MaterialResource);
             RendererProperties.remove(*renderer);
+        }
+
+        IB::Asset::Handle cloneThreadSafe(IB::Asset::Handle asset) override
+        {
+            RendererProperty const *sourceRenderer = reinterpret_cast<RendererProperty *>(IB::Asset::toValue(asset));
+            IB::Asset::acquireResource(sourceRenderer->MeshResource);
+            IB::Asset::acquireResource(sourceRenderer->MaterialResource);
+
+            RendererProperty &clonedRenderer = RendererProperties.add();
+            clonedRenderer.MeshResource = sourceRenderer->MeshResource;
+            clonedRenderer.MaterialResource = sourceRenderer->MaterialResource;
+
+            return IB::Asset::toHandle(reinterpret_cast<uint64_t>(&clonedRenderer));
         }
     };
 
@@ -322,7 +335,7 @@ namespace IB
         RendererDesc rendererDesc = {desc.Window};
         initRenderer(rendererDesc);
 
-        Asset::loadResourceAsync("SampleForward.shdr", Asset::toFourCC("SHDR"),
+        Asset::loadResourceAsync("SampleForward.shdr", { Asset::toFourCC("SHDR") },
                                  [](void*, Resource::Handle resource, IB::Asset::ResourceLoad::State loadState) {
                                      if (loadState == Asset::ResourceLoad::Available)
                                      {
@@ -357,7 +370,7 @@ namespace IB
     Property::Handle createRendererProperty(char const *meshPath, char const *materialPath)
     {
         RendererProperty &renderer = RendererProperties.add();
-        IB::Asset::loadResourceAsync(meshPath, IB::Asset::toFourCC("MESH"),
+        IB::Asset::loadResourceAsync(meshPath, { IB::Asset::toFourCC("MESH") },
                                      [](void *data, IB::Resource::Handle resource, IB::Asset::ResourceLoad::State loadState) {
                                          // Assign our mesh resource even when it's loading
                                          // We want to gracefully handle the resource not being available yet.
@@ -368,7 +381,7 @@ namespace IB
                                      },
                                      &renderer.MeshResource);
 
-        IB::Asset::loadResourceAsync(materialPath, IB::Asset::toFourCC("MATE"),
+        IB::Asset::loadResourceAsync(materialPath, { IB::Asset::toFourCC("MATE") },
                                      [](void *data, IB::Resource::Handle resource, IB::Asset::ResourceLoad::State loadState) {
                                          // Assign our mesh resource even when it's loading
                                          // We want to gracefully handle the resource not being available yet.
@@ -386,7 +399,7 @@ namespace IB
     {
         RuntimeMaterial &materialData = MaterialPool.add();
         materialData.Asset = asset;
-        Job::Handle textureJob = Asset::loadResourceAsync(asset.AlbedoPath, Asset::toFourCC("IMAG"), &materialData.AlbedoTexture);
+        Job::Handle textureJob = Asset::loadResourceAsync(asset.AlbedoPath, { Asset::toFourCC("IMAG") }, &materialData.AlbedoTexture);
         continueJob([materialPtr = &materialData]() {
             IB::Resource::Handle textureResource = materialPtr->AlbedoTexture;
             IB::ForwardDesc materialDesc = {};
@@ -445,14 +458,7 @@ namespace IB
 
         ViewDesc viewDesc = {};
         {
-            Mat3x4 meshTransform =
-            {
-                {{1.0f, 0.0f, 0.0f, 0.0f},
-                 {0.0f, 1.0f, 0.0f, 5.0f},
-                 {0.0f, 0.0f, 1.0f, 0.0f}},
-            };
-
-            Float3 viewPos = Float3{ -2.0f, 1.0f, 0.0f };
+            Float3 viewPos = Float3{ 0.0f, 1.0f, 0.0f };
             Mat4x4 view =
             {
                 {{1.0f, 0.0f, 0.0f, -viewPos.x},
@@ -480,6 +486,13 @@ namespace IB
             for (uint32_t i = 0; i < rendererCount; i++)
             {
                 meshInstances[i].Mesh = meshes[i];
+                Mat3x4 meshTransform =
+                {
+                    {{1.0f, 0.0f, 0.0f, 2.0f * i},
+                     {0.0f, 1.0f, 0.0f, 5.0f},
+                     {0.0f, 0.0f, 1.0f, 0.0f}},
+                };
+
                 meshInstances[i].Transforms = allocateArray<Mat3x4>(allocator, 1, meshTransform);
                 meshInstances[i].Count = 1;
             }

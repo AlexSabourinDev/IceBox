@@ -44,7 +44,7 @@ int main()
     IB::initRendererFrontend({ window });
     IB::initEntitySystem();
 
-    bool const createAndSaveCell = false;
+    bool const createAndSaveCell = true;
     if(createAndSaveCell)
     {
         IB::Cell::Handle cellHandle = IB::createCell();
@@ -69,12 +69,26 @@ int main()
         saveJob = IB::Asset::saveResourceAsync(cellResource);
         waitOnJob(saveJob);
 
+        IB::Cell::Handle derivedCellHandle = IB::createCell(cellResource);
+        IB::Resource::Handle derivedCellResource = IB::Asset::createResourceThreadSafe("TestDerivedCell.cell", IB::Asset::toFourCC("CELL"), IB::toAssetHandle(derivedCellHandle));
+
+        {
+            IB::Entity::Handle entityHandle = IB::createEntity();
+            IB::Property::Handle rendererProperty = IB::createRendererProperty("Box.msh", "Test.mat");
+            IB::addPropertyToEntity(entityHandle, IB::Asset::toFourCC("RNDR"), rendererProperty);
+            IB::addEntityToCell(derivedCellHandle, entityHandle);
+        }
+
+        saveJob = IB::Asset::saveResourceAsync(derivedCellResource);
+        waitOnJob(saveJob);
+
         IB::Asset::releaseResourceAsync(materialResource);
         IB::Asset::releaseResourceAsync(cellResource);
+        IB::Asset::releaseResourceAsync(derivedCellResource);
     }
 
     IB::Resource::Handle cellResource;
-    IB::Job::Handle loadJob = IB::Asset::loadResourceAsync("TestCell.cell", IB::Asset::toFourCC("CELL"), &cellResource);
+    IB::Job::Handle loadJob = IB::Asset::loadResourceAsync("TestDerivedCell.cell", { IB::Asset::toFourCC("CELL") }, &cellResource);
     waitOnJob(loadJob);
     IB::Cell::Handle cellHandle = IB::toCellHandle(IB::Asset::getAssetFromResource(cellResource));
 
@@ -87,8 +101,8 @@ int main()
         },
             &message);
 
-        uint8_t tempMemory[1024 * 1024];
-        IB::StackAllocator allocator = IB::createStackAllocator(tempMemory, 1024 * 1024);
+        uint8_t tempMemory[1024];
+        IB::StackAllocator allocator = IB::createStackAllocator(tempMemory, 1024);
         IB::drawCellView(IB::gatherCellView(cellHandle, nullptr, &allocator));
     }
 
