@@ -1,3 +1,5 @@
+#define _CRT_SECURE_NO_WARNINGS
+
 #include "IBEntity.h"
 #include "IBAllocator.h"
 #include "IBCollection.h"
@@ -7,6 +9,8 @@
 #include "IBEditor.h"
 
 #include <imgui/imgui.h>
+
+#include <string.h>
 
 namespace IB
 {
@@ -27,16 +31,44 @@ namespace IB
         namespace
         {
             constexpr uint32_t MaxNameLength = 64;
+            struct EntityName
+            {
+                char String[MaxNameLength] = {};
+            };
+
+            bool operator!=(EntityName const& left, EntityName const& right)
+            {
+                return strcmp(left.String, right.String) != 0;
+            }
+
             struct Data
             {
                 DynamicArray<Property::Data> Properties;
-                char Name[MaxNameLength] = {};
+                EntityName Name;
             };
+
+            Entity::Data* toData(Asset::Handle assetHandle) { return reinterpret_cast<Entity::Data*>(Asset::toValue(assetHandle)); }
+            Entity::Data* toData(Entity::Handle entityHandle) { return reinterpret_cast<Entity::Data*>(Entity::toValue(entityHandle)); }
+        
+            Property::Handle findProperty(Entity::Data const* entityData, Asset::FourCC type)
+            {
+                for (uint32_t i = 0; i < entityData->Properties.count(); i++)
+                {
+                    if (entityData->Properties[i].Type == type)
+                    {
+                        return entityData->Properties[i].Handle;
+                    }
+                }
+
+                return InvalidProperty;
+            }
         }
     }
 
     namespace
     {
+        const Entity::Data EmptyEntity;
+
         ThreadSafePool<Entity::Data> ActiveEntities;
         class EntityAssetStreamer : public IB::Asset::IStreamer
         {
@@ -51,11 +83,17 @@ namespace IB
 
                 if (context->State == LoadProperties)
                 {
+                    Entity::Data const* baseEntity = &EmptyEntity;
+                    if (context->BaseAsset != InvalidAsset)
+                    {
+                        baseEntity = Entity::toData(context->BaseAsset);
+                    }
+
                     Entity::Data& entity = ActiveEntities.add();
 
                     if (context->SaveVersion > 1)
                     {
-                        fromBinary(&context->Stream, entity.Name, Entity::MaxNameLength);
+                        Serialization::Delta::fromBinary(&context->Stream, &entity.Name, baseEntity->Name);
                     }
 
                     uint32_t propertyCount;
@@ -70,11 +108,13 @@ namespace IB
                         Property::Data& entityProperty = entity.Properties.add();
 
                         fromBinary(&context->Stream, &entityProperty.Type);
+                        Property::Handle baseProperty = findProperty(baseEntity, entityProperty.Type);
+
                         uint32_t offset;
                         fromBinary(&context->Stream, &offset);
 
                         // Passing pointer to dynamic array item is OK here. We've reserved the memory and will not resize until the load is complete.
-                        loadHandles[handleCount++] = IB::Asset::loadSubAssetAsync(context, { entityProperty.Type }, InvalidAsset,
+                        loadHandles[handleCount++] = IB::Asset::loadSubAssetAsync(context, { entityProperty.Type, toAssetHandle(baseProperty) }, InvalidAsset,
                             [](void *data, IB::Asset::Handle asset)
                             {
                                 *reinterpret_cast<IB::Property::Handle *>(data) = toPropertyHandle(asset);
@@ -93,18 +133,26 @@ namespace IB
 
             void saveThreadSafe(IB::Asset::SaveContext *context) override
             {
-                Entity::Data* entity = reinterpret_cast<Entity::Data*>(Asset::toValue(context->Asset));
-                toBinary(context->Stream, entity->Name, Entity::MaxNameLength);
+                Entity::Data const* baseEntity = &EmptyEntity;
+                if (context->BaseAsset != InvalidAsset)
+                {
+                    baseEntity = Entity::toData(context->BaseAsset);
+                }
+
+                Entity::Data* entity = Entity::toData(context->Asset);
+                Serialization::Delta::toBinary(context->Stream, entity->Name, baseEntity->Name);
 
                 toBinary(context->Stream, entity->Properties.count());
                 for (uint32_t i = 0; i < entity->Properties.count(); i++)
                 {
                     toBinary(context->Stream, entity->Properties[i].Type);
 
+                    Property::Handle baseProperty = findProperty(baseEntity, entity->Properties[i].Type);
+
                     uint32_t dummyWriteSize = 0;
                     toBinary(context->Stream, dummyWriteSize);
                     uint32_t writeStart = flush(context->Stream);
-                    IB::Asset::saveSubAssetThreadSafe(context->Stream, { entity->Properties[i].Type }, toAssetHandle(entity->Properties[i].Handle));
+                    IB::Asset::saveSubAssetThreadSafe(context->Stream, { entity->Properties[i].Type, toAssetHandle(baseProperty) }, toAssetHandle(entity->Properties[i].Handle));
                     uint32_t writeEnd = flush(context->Stream);
 
                     // Write our written size right before our sub asset.
@@ -115,7 +163,7 @@ namespace IB
 
             void unloadThreadSafe(IB::Asset::Handle assetHandle) override
             {
-                Entity::Data* entity = reinterpret_cast<Entity::Data*>(Asset::toValue(assetHandle));
+                Entity::Data* entity = Entity::toData(assetHandle);
                 for (uint32_t i = 0; i < entity->Properties.count(); i++)
                 {
                     IB::Asset::unloadSubAssetThreadSafe(toAssetHandle(entity->Properties[i].Handle), entity->Properties[i].Type);
@@ -126,9 +174,11 @@ namespace IB
 
             Asset::Handle cloneThreadSafe(IB::Asset::Handle assetHandle) override
             {
-                Entity::Data* sourceEntity = reinterpret_cast<Entity::Data*>(Asset::toValue(assetHandle));
+                Entity::Data* sourceEntity = Entity::toData(assetHandle);
 
                 Entity::Data& clonedEntity = ActiveEntities.add();
+                clonedEntity.Name = sourceEntity->Name;
+
                 clonedEntity.Properties.reserve(sourceEntity->Properties.count());
                 for (uint32_t i = 0; i < sourceEntity->Properties.count(); i++)
                 {
@@ -342,16 +392,20 @@ namespace IB
     {
         void entityEditor(Asset::Handle asset)
         {
-            Entity::Data* entity = reinterpret_cast<Entity::Data*>(toEntityHandle(asset));
+            Entity::Data* entity = Entity::toData(asset);
             ImGui::Text("Entity");
             ImGui::Separator();
             if (ImGui::BeginTable("Inspector Table", 2))
             {
+                ImGui::TableSetupColumn("Property", ImGuiTableColumnFlags_WidthFixed);
+                ImGui::TableSetupColumn("Data", ImGuiTableColumnFlags_None);
+
                 ImGui::TableNextColumn();
                 ImGui::Text("Name");
 
                 ImGui::TableNextColumn();
-                ImGui::InputText("", entity->Name, Entity::MaxNameLength);
+                ImGui::SetNextItemWidth(-FLT_MIN);
+                ImGui::InputText("", entity->Name.String, Entity::MaxNameLength);
 
                 ImGui::EndTable();
             }
@@ -411,39 +465,38 @@ namespace IB
 
     void addPropertyToEntity(Entity::Handle entityHandle, Asset::FourCC type, Property::Handle propertyHandle)
     {
-        Entity::Data* entity = reinterpret_cast<Entity::Data*>(entityHandle);
+        Entity::Data* entity = Entity::toData(entityHandle);
+        IB_ASSERT(findProperty(entity, type) == InvalidProperty, "Assuming that we can't have multiple of a particular property.");
         entity->Properties.add(type, propertyHandle);
     }
 
     Property::Handle getPropertyFromEntity(Entity::Handle entityHandle, Asset::FourCC type)
     {
-        Entity::Data* entity = reinterpret_cast<Entity::Data*>(entityHandle);
-        for (uint32_t i = 0; i < entity->Properties.count(); i++)
-        {
-            if (entity->Properties[i].Type == type)
-            {
-                return entity->Properties[i].Handle;
-            }
-        }
-
-        return InvalidProperty;
+        return findProperty(Entity::toData(entityHandle), type);
     }
 
     char const* getEntityName(Entity::Handle entityHandle)
     {
-        Entity::Data* entity = reinterpret_cast<Entity::Data*>(entityHandle);
+        Entity::Data* entity = Entity::toData(entityHandle);
         if (entity == nullptr)
         {
             return "";
         }
-        else if (entity->Name[0] == '\0')
+        else if (entity->Name.String[0] == '\0')
         {
             return "Entity";
         }
         else
         {
-            return entity->Name;
+            return entity->Name.String;
         }
+    }
+
+    void setEntityName(Entity::Handle entityHandle, char const* name)
+    {
+        Entity::Data* entity = Entity::toData(entityHandle);
+        IB_ASSERT(strlen(name) < Entity::MaxNameLength, "Entity name is too long! Stomping on memory.");
+        strcpy(entity->Name.String, name);
     }
 
     Cell::Handle createCell(Resource::Handle baseCell)

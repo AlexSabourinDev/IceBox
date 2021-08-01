@@ -58,6 +58,7 @@ namespace IB
     IB_API void addPropertyToEntity(Entity::Handle entity, Asset::FourCC type, Property::Handle propertyHandle);
     IB_API Property::Handle getPropertyFromEntity(Entity::Handle entity, Asset::FourCC type);
     IB_API char const* getEntityName(Entity::Handle entity);
+    IB_API void setEntityName(Entity::Handle entityHandle, char const* name);
 
     // Cell API
     IB_API Cell::Handle createCell(Resource::Handle baseCell = Resource::toHandle(0));

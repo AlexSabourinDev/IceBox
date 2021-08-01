@@ -33,7 +33,7 @@ namespace IB
         IB_API uint32_t flush(FileStream *stream);
 
         template <typename T>
-        void toBinary(FileStream *stream, T value)
+        void toBinary(FileStream *stream, const T& value)
         {
             toBinary(stream, &value, sizeof(T));
         }
@@ -73,6 +73,59 @@ namespace IB
             uint32_t stringSize;
             fromBinary(stream, &stringSize);
             *string = fromBinary<char const *>(stream, stringSize);
+        }
+
+        namespace Delta
+        {
+            template <typename T>
+            void toBinary(FileStream *stream, T const& value, T const& baseValue)
+            {
+                bool isDifferent = value != baseValue;
+                toBinary(stream, isDifferent);
+                if (isDifferent)
+                {
+                    toBinary(stream, value);
+                }
+            }
+
+            inline void toBinary(FileStream *stream, char const* value, char const* baseValue)
+            {
+                bool isDifferent = strcmp(value, baseValue) != 0;
+                toBinary(stream, isDifferent);
+                if (isDifferent)
+                {
+                    toBinary(stream, value);
+                }
+            }
+
+            template <typename T>
+            void fromBinary(MemoryStream *stream, T *value, T const& baseValue)
+            {
+                bool isDifferent;
+                fromBinary(stream, &isDifferent);
+                if (isDifferent)
+                {
+                    fromBinary(stream, value);
+                }
+                else
+                {
+                    *value = baseValue;
+                }
+            }
+
+            inline void fromBinary(MemoryStream *stream, char const **value, char const* baseValue)
+            {
+                bool isDifferent;
+                fromBinary(stream, &isDifferent);
+                if (isDifferent)
+                {
+                    fromBinary(stream, value);
+                }
+                else
+                {
+                    *value = baseValue;
+                }
+            }
         }
     } // namespace Serialization
 } // namespace IB

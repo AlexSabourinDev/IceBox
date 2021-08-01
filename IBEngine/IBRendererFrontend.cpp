@@ -192,6 +192,11 @@ namespace
         IB::Resource::Handle MeshResource;
         IB::Resource::Handle MaterialResource;
     };
+    RendererProperty constexpr EmptyRendererProperty = {};
+
+    RendererProperty* toRendererProperty(IB::Asset::Handle assetHandle) { return reinterpret_cast<RendererProperty *>(IB::Asset::toValue(assetHandle)); }
+    RendererProperty* toRendererProperty(IB::Property::Handle propertyHandle) { return reinterpret_cast<RendererProperty *>(IB::Property::toValue(propertyHandle)); }
+
     IB::ThreadSafePool<RendererProperty> RendererProperties;
 
     class RendererPropertyAssetStreamer : public IB::Asset::IStreamer
@@ -207,14 +212,24 @@ namespace
 
             if (context->State == LoadMesh)
             {
+                RendererProperty const* baseRenderer = &EmptyRendererProperty;
+                if (context->BaseAsset != IB::InvalidAsset)
+                {
+                    baseRenderer = toRendererProperty(context->BaseAsset);
+                }
+
                 RendererProperty &renderer = RendererProperties.add();
                 context->Data = reinterpret_cast<uint64_t>(&renderer);
 
+                char const *baseMeshPath = IB::Asset::getResourcePath(baseRenderer->MeshResource);
+
                 char const *meshPath;
-                fromBinary(&context->Stream, &meshPath);
+                IB::Serialization::Delta::fromBinary(&context->Stream, &meshPath, baseMeshPath);
+
+                char const *baseMaterialPath = IB::Asset::getResourcePath(baseRenderer->MaterialResource);
 
                 char const *materialPath;
-                fromBinary(&context->Stream, &materialPath);
+                IB::Serialization::Delta::fromBinary(&context->Stream, &materialPath, baseMaterialPath);
 
                 enum
                 {
@@ -256,17 +271,25 @@ namespace
 
         void saveThreadSafe(IB::Asset::SaveContext *context) override
         {
-            RendererProperty *renderer = reinterpret_cast<RendererProperty *>(IB::Asset::toValue(context->Asset));
+            RendererProperty const* baseRenderer = &EmptyRendererProperty;
+            if (context->BaseAsset != IB::InvalidAsset)
+            {
+                baseRenderer = toRendererProperty(context->BaseAsset);
+            }
+
+            RendererProperty *renderer = toRendererProperty(context->Asset);
             char const *meshPath = IB::Asset::getResourcePath(renderer->MeshResource);
-            toBinary(context->Stream, meshPath);
+            char const *baseMeshPath = IB::Asset::getResourcePath(baseRenderer->MeshResource);
+            IB::Serialization::Delta::toBinary(context->Stream, meshPath, baseMeshPath);
 
             char const *materialPath = IB::Asset::getResourcePath(renderer->MaterialResource);
-            toBinary(context->Stream, materialPath);
+            char const *baseMaterialPath = IB::Asset::getResourcePath(baseRenderer->MaterialResource);
+            IB::Serialization::Delta::toBinary(context->Stream, materialPath, baseMaterialPath);
         }
 
         void unloadThreadSafe(IB::Asset::Handle asset) override
         {
-            RendererProperty *renderer = reinterpret_cast<RendererProperty *>(IB::Asset::toValue(asset));
+            RendererProperty *renderer = toRendererProperty(asset);
             IB::Asset::releaseResourceAsync(renderer->MeshResource);
             IB::Asset::releaseResourceAsync(renderer->MaterialResource);
             RendererProperties.remove(*renderer);
@@ -274,7 +297,7 @@ namespace
 
         IB::Asset::Handle cloneThreadSafe(IB::Asset::Handle asset) override
         {
-            RendererProperty const *sourceRenderer = reinterpret_cast<RendererProperty *>(IB::Asset::toValue(asset));
+            RendererProperty const *sourceRenderer = toRendererProperty(asset);
             IB::Asset::acquireResource(sourceRenderer->MeshResource);
             IB::Asset::acquireResource(sourceRenderer->MaterialResource);
 
@@ -300,7 +323,7 @@ namespace IB
     {
         void rendererEditor(Asset::Handle asset)
         {
-            RendererProperty *renderer = reinterpret_cast<RendererProperty *>(toPropertyHandle(asset));
+            RendererProperty *renderer = toRendererProperty(asset);
             if (ImGui::TreeNode("Renderer"))
             {
                 if (ImGui::BeginTable("Inspector Table", 2))
@@ -439,7 +462,7 @@ namespace IB
             Property::Handle handle = getPropertyFromEntity(entities[i], Asset::toFourCC("RNDR"));
             if (handle != InvalidProperty)
             {
-                RendererProperty *renderer = reinterpret_cast<RendererProperty *>(handle);
+                RendererProperty *renderer = toRendererProperty(handle);
                 if (Asset::isResourceAssetAvailable(renderer->MeshResource) && Asset::isResourceAssetAvailable(renderer->MaterialResource))
                 {
                     Asset::Handle materialAsset = Asset::getAssetFromResource(renderer->MaterialResource);

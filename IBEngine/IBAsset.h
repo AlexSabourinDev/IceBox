@@ -43,8 +43,8 @@ namespace IB
         struct LoadContext
         {
             Serialization::MemoryStream Stream;
-            Asset::Handle ParentAsset = InvalidAsset;
-            Asset::Handle BaseAsset = InvalidAsset;
+            Asset::Handle ParentAsset = InvalidAsset; // Our owning asset
+            Asset::Handle BaseAsset = InvalidAsset; // The asset from which we might derive
             Job::Handle Handle = {};
             uint64_t Data = 0;
             uint32_t State = 0;

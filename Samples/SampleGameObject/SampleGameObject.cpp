@@ -58,6 +58,7 @@ int main()
 
         {
             IB::Entity::Handle entityHandle = IB::createEntity();
+            IB::setEntityName(entityHandle, "EntityName01");
             IB::Property::Handle rendererProperty = IB::createRendererProperty("Box.msh", "Test.mat");
             IB::addPropertyToEntity(entityHandle, IB::Asset::toFourCC("RNDR"), rendererProperty);
             IB::addEntityToCell(cellHandle, entityHandle);
@@ -74,9 +75,25 @@ int main()
 
         {
             IB::Entity::Handle entityHandle = IB::createEntity();
+            IB::setEntityName(entityHandle, "EntityName02");
             IB::Property::Handle rendererProperty = IB::createRendererProperty("Box.msh", "Test.mat");
             IB::addPropertyToEntity(entityHandle, IB::Asset::toFourCC("RNDR"), rendererProperty);
             IB::addEntityToCell(derivedCellHandle, entityHandle);
+        }
+
+        {
+            IB::Entity::Handle *entities;
+            uint32_t entityCount;
+
+            IB::getEntityList(derivedCellHandle, &entities, &entityCount);
+            for (uint32_t i = 0; i < entityCount; i++)
+            {
+                if (strcmp(IB::getEntityName(entities[i]), "EntityName01") == 0)
+                {
+                    IB::setEntityName(entities[i], "EntityName01_Derived");
+                    break;
+                }
+            }
         }
 
         saveJob = IB::Asset::saveResourceAsync(derivedCellResource);

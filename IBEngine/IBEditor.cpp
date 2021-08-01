@@ -137,6 +137,11 @@ namespace IB
                 {
                     if (ImGui::Button("OK", ImVec2(120, 0)))
                     {
+                        if (*state->CellResource != InvalidResource)
+                        {
+                            Asset::releaseResourceAsync(*state->CellResource);
+                        }
+
                         Asset::loadResourceAsync(assetBrowserState.LoadResourceInfo.Path, Asset::toFourCC("CELL"),
                             [](void *data, Resource::Handle resource, Asset::ResourceLoad::State loadState)
                             {
