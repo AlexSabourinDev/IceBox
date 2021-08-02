@@ -161,7 +161,7 @@ int main()
     void *forwardSample = IB::mapFile(forwardSampleFile);
 
     IB::ShaderAsset shaders;
-    IB::Serialization::MemoryStream shaderReadStream{reinterpret_cast<uint8_t *>(forwardSample)};
+    IB::Serialization::ReadStream shaderReadStream{reinterpret_cast<uint8_t *>(forwardSample)};
 
     uint32_t versionNumber;
     fromBinary(&shaderReadStream, &versionNumber);
@@ -215,7 +215,7 @@ int main()
     void *meshData = IB::mapFile(meshFile);
 
     IB::MeshAsset mesh = {};
-    IB::Serialization::MemoryStream readStream{reinterpret_cast<uint8_t *>(meshData)};
+    IB::Serialization::ReadStream readStream{reinterpret_cast<uint8_t *>(meshData)};
     fromBinary(&readStream, &versionNumber);
     fromBinary(&readStream, &mesh, versionNumber);
 

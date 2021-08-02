@@ -42,7 +42,7 @@ namespace IB
     {
         struct LoadContext
         {
-            Serialization::MemoryStream Stream;
+            Serialization::ReadStream Stream;
             Asset::Handle ParentAsset = InvalidAsset; // Our owning asset
             Asset::Handle BaseAsset = InvalidAsset; // The asset from which we might derive
             Job::Handle Handle = {};
@@ -53,7 +53,7 @@ namespace IB
 
         struct SaveContext
         {
-            Serialization::FileStream *Stream;
+            Serialization::WriteStream *Stream;
             Asset::Handle Asset;
             Asset::Handle BaseAsset = InvalidAsset;
         };
@@ -119,7 +119,7 @@ namespace IB
         IB_API void addStreamer(FourCC type, IStreamer *streamer);
         IB_API Job::Handle loadSubAssetAsync(LoadContext const* parentContext, DeltaAssetDesc deltaAssetDesc, Asset::Handle parentAsset, OnSubAssetLoad *onSubAssetLoad, void *data);
         IB_API void unloadSubAssetThreadSafe(Asset::Handle asset, FourCC type);
-        IB_API void saveSubAssetThreadSafe(Serialization::FileStream *stream, DeltaAssetDesc deltaAssetDesc, Asset::Handle asset);
+        IB_API void saveSubAssetThreadSafe(Serialization::WriteStream *stream, DeltaAssetDesc deltaAssetDesc, Asset::Handle asset);
         IB_API Asset::Handle cloneAssetThreadSafe(Asset::Handle asset, FourCC type);
 
         // User API

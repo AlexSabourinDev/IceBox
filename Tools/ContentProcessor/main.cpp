@@ -29,11 +29,13 @@ void processTexture(char const *rawPath, char const *compiledPath)
     imageAsset.Height = static_cast<uint32_t>(y);
     imageAsset.Data = imageData;
 
+    IB::Serialization::WriteStream writeStream;
+    toBinary(&writeStream, IB::Serialization::Version);
+    toBinary(&writeStream, imageAsset);
+
     IB::File::Handle file = IB::openFile(compiledPath, IB::OpenFileOptions::Overwrite | IB::OpenFileOptions::Write);
-    IB::Serialization::FileStream fileStream{ file };
-    toBinary(&fileStream, IB::Serialization::Version);
-    toBinary(&fileStream, imageAsset);
-    flush(&fileStream);
+    IB::writeToFile(file, writeStream.Buffer, writeStream.BufferCursor);
+    IB::closeFile(file);
 
     stbi_image_free(imageData);
 }
@@ -89,11 +91,13 @@ void processMesh(char const *rawPath, char const *compiledPath)
         asset.IndexCount = mesh->mNumFaces * 3;
     }
 
+    IB::Serialization::WriteStream writeStream{};
+    toBinary(&writeStream, IB::Serialization::Version);
+    toBinary(&writeStream, asset);
+
     IB::File::Handle file = IB::openFile(compiledPath, IB::OpenFileOptions::Overwrite | IB::OpenFileOptions::Write);
-    IB::Serialization::FileStream fileStream{ file };
-    toBinary(&fileStream, IB::Serialization::Version);
-    toBinary(&fileStream, asset);
-    flush(&fileStream);
+    IB::writeToFile(file, writeStream.Buffer, writeStream.BufferCursor);
+    IB::closeFile(file);
 
     IB::deallocateArray(asset.Vertices, asset.VertexCount);
     IB::deallocateArray(asset.Indices, asset.IndexCount);
@@ -176,11 +180,13 @@ void processShader(char const *rawPath, char const *compiledPath)
     shaderAsset.FragShader = reinterpret_cast<uint8_t*>(fragShader->GetBufferPointer());
     shaderAsset.FragShaderSize = static_cast<uint32_t>(fragShader->GetBufferSize());
 
-    IB::File::Handle writeFile = IB::openFile(compiledPath, IB::OpenFileOptions::Overwrite | IB::OpenFileOptions::Write);
-    IB::Serialization::FileStream fileStream{ writeFile };
-    toBinary(&fileStream, IB::Serialization::Version);
-    toBinary(&fileStream, shaderAsset);
-    flush(&fileStream);
+    IB::Serialization::WriteStream writeStream{ };
+    toBinary(&writeStream, IB::Serialization::Version);
+    toBinary(&writeStream, shaderAsset);
+
+    IB::File::Handle file = IB::openFile(compiledPath, IB::OpenFileOptions::Overwrite | IB::OpenFileOptions::Write);
+    IB::writeToFile(file, writeStream.Buffer, writeStream.BufferCursor);
+    IB::closeFile(file);
 
     IB::unmapFile(shaderFile);
     IB::closeFile(shaderFile);

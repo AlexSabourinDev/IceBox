@@ -29,8 +29,8 @@ namespace IB
 
     namespace Serialization
     {
-        struct FileStream;
-        struct MemoryStream;
+        struct WriteStream;
+        struct ReadStream;
     } // namespace Serialization
 
     struct Vertex;
@@ -101,15 +101,15 @@ namespace IB
     // Must be called from our renderer queue
     IB_API void drawCellView(ViewDesc const& viewDesc);
 
-    IB_API void toBinary(Serialization::FileStream *stream, MeshAsset const &mesh);
-    IB_API void fromBinary(Serialization::MemoryStream *stream, MeshAsset *mesh, uint32_t versionNumber);
+    IB_API void toBinary(Serialization::WriteStream *stream, MeshAsset const &mesh);
+    IB_API void fromBinary(Serialization::ReadStream *stream, MeshAsset *mesh, uint32_t versionNumber);
 
-    IB_API void toBinary(Serialization::FileStream *stream, ShaderAsset const &shaders);
-    IB_API void fromBinary(Serialization::MemoryStream *stream, ShaderAsset *shaders, uint32_t versionNumber);
+    IB_API void toBinary(Serialization::WriteStream *stream, ShaderAsset const &shaders);
+    IB_API void fromBinary(Serialization::ReadStream *stream, ShaderAsset *shaders, uint32_t versionNumber);
 
-    IB_API void toBinary(Serialization::FileStream *stream, MaterialAsset const &material);
-    IB_API void fromBinary(Serialization::MemoryStream *stream, MaterialAsset *material, uint32_t versionNumber);
+    IB_API void toBinary(Serialization::WriteStream *stream, MaterialAsset const &material);
+    IB_API void fromBinary(Serialization::ReadStream *stream, MaterialAsset *material, uint32_t versionNumber);
 
-    IB_API void toBinary(Serialization::FileStream *stream, ImageAsset const &image);
-    IB_API void fromBinary(Serialization::MemoryStream *stream, ImageAsset *image, uint32_t versionNumber);
+    IB_API void toBinary(Serialization::WriteStream *stream, ImageAsset const &image);
+    IB_API void fromBinary(Serialization::ReadStream *stream, ImageAsset *image, uint32_t versionNumber);
 } // namespace IB

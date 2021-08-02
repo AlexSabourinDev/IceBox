@@ -19,56 +19,57 @@ namespace IB
         IB_API void initSerialization();
         IB_API void killSerialization();
 
-        struct FileStream
+        struct WriteStream
         {
-            FileStream(File::Handle file) : File(file){};
+            WriteStream() = default;
+            ~WriteStream();
+            WriteStream(WriteStream const&) = delete;
+            WriteStream& operator=(WriteStream const&) = delete;
 
-            File::Handle File;
-            static constexpr uint32_t BufferSize = 4096;
-            uint8_t Buffer[BufferSize];
+            uint8_t* Buffer = nullptr;
             uint32_t BufferCursor = 0;
+            uint32_t BufferSize = 0;
         };
 
-        IB_API void toBinary(FileStream *stream, void const *data, size_t size);
-        IB_API uint32_t flush(FileStream *stream);
+        IB_API void toBinary(WriteStream *stream, void const *data, size_t size);
 
         template <typename T>
-        void toBinary(FileStream *stream, const T& value)
+        void toBinary(WriteStream *stream, const T& value)
         {
             toBinary(stream, &value, sizeof(T));
         }
 
-        inline void toBinary(FileStream *stream, char const *string)
+        inline void toBinary(WriteStream *stream, char const *string)
         {
             uint32_t stringSize = static_cast<uint32_t>(strlen(string)) + 1;
             toBinary(stream, stringSize);
             toBinary(stream, string, stringSize);
         }
 
-        struct MemoryStream
+        struct ReadStream
         {
-            MemoryStream() = default;
-            MemoryStream(uint8_t const*memory) : Memory(memory) {}
+            ReadStream() = default;
+            ReadStream(uint8_t const*memory) : Memory(memory) {}
             uint8_t const*Memory = nullptr;
         };
 
-        IB_API void fromBinary(MemoryStream *stream, void *data, size_t size);
-        IB_API void const *fromBinary(MemoryStream *stream, size_t size);
-        IB_API void advance(MemoryStream *stream, size_t size);
+        IB_API void fromBinary(ReadStream *stream, void *data, size_t size);
+        IB_API void const *fromBinary(ReadStream *stream, size_t size);
+        IB_API void advance(ReadStream *stream, size_t size);
 
         template <typename T>
-        void fromBinary(MemoryStream *stream, T *value)
+        void fromBinary(ReadStream *stream, T *value)
         {
             fromBinary(stream, value, sizeof(T));
         }
 
         template <typename T>
-        T fromBinary(MemoryStream *stream, size_t size)
+        T fromBinary(ReadStream *stream, size_t size)
         {
             return reinterpret_cast<T>(fromBinary(stream, size));
         }
 
-        inline void fromBinary(MemoryStream *stream, char const **string)
+        inline void fromBinary(ReadStream *stream, char const **string)
         {
             uint32_t stringSize;
             fromBinary(stream, &stringSize);
@@ -78,7 +79,7 @@ namespace IB
         namespace Delta
         {
             template <typename T>
-            void toBinary(FileStream *stream, T const& value, T const& baseValue)
+            void toBinary(WriteStream *stream, T const& value, T const& baseValue)
             {
                 bool isDifferent = value != baseValue;
                 toBinary(stream, isDifferent);
@@ -88,7 +89,7 @@ namespace IB
                 }
             }
 
-            inline void toBinary(FileStream *stream, char const* value, char const* baseValue)
+            inline void toBinary(WriteStream *stream, char const* value, char const* baseValue)
             {
                 bool isDifferent = strcmp(value, baseValue) != 0;
                 toBinary(stream, isDifferent);
@@ -99,7 +100,7 @@ namespace IB
             }
 
             template <typename T>
-            void fromBinary(MemoryStream *stream, T *value, T const& baseValue)
+            void fromBinary(ReadStream *stream, T *value, T const& baseValue)
             {
                 bool isDifferent;
                 fromBinary(stream, &isDifferent);
@@ -113,7 +114,7 @@ namespace IB
                 }
             }
 
-            inline void fromBinary(MemoryStream *stream, char const **value, char const* baseValue)
+            inline void fromBinary(ReadStream *stream, char const **value, char const* baseValue)
             {
                 bool isDifferent;
                 fromBinary(stream, &isDifferent);

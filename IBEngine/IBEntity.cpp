@@ -151,13 +151,13 @@ namespace IB
 
                     uint32_t dummyWriteSize = 0;
                     toBinary(context->Stream, dummyWriteSize);
-                    uint32_t writeStart = flush(context->Stream);
+                    uint32_t writeStart = context->Stream->BufferCursor;
                     IB::Asset::saveSubAssetThreadSafe(context->Stream, { entity->Properties[i].Type, toAssetHandle(baseProperty) }, toAssetHandle(entity->Properties[i].Handle));
-                    uint32_t writeEnd = flush(context->Stream);
+                    uint32_t writeEnd = context->Stream->BufferCursor;
 
                     // Write our written size right before our sub asset.
                     uint32_t writeSize = writeEnd - writeStart;
-                    IB::writeToFile(context->Stream->File, &writeSize, sizeof(uint32_t), writeStart - sizeof(uint32_t));
+                    memcpy(context->Stream->Buffer + writeStart - sizeof(uint32_t), &writeSize, sizeof(uint32_t));
                 }
             }
 
@@ -359,15 +359,15 @@ namespace IB
 
                     uint32_t dummyWriteSize = 0;
                     toBinary(context->Stream, dummyWriteSize);
-                    uint32_t writeStart = flush(context->Stream);
+                    uint32_t writeStart = context->Stream->BufferCursor;
 
                     IB::Asset::saveSubAssetThreadSafe(context->Stream, { IB::Asset::toFourCC("ENTT"), baseEntityAsset }, toAssetHandle(cell.Entities[i]));
 
-                    uint32_t writeEnd = flush(context->Stream);
+                    uint32_t writeEnd = context->Stream->BufferCursor;
 
                     // Write our written size right before our sub asset.
                     uint32_t writeSize = writeEnd - writeStart;
-                    IB::writeToFile(context->Stream->File, &writeSize, sizeof(uint32_t), writeStart - sizeof(uint32_t));
+                    memcpy(context->Stream->Buffer + writeStart - sizeof(uint32_t), &writeSize, sizeof(uint32_t));
                 }
             }
 

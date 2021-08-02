@@ -402,16 +402,14 @@ namespace IB
                 char fullPath[IB::MaxFilePath] = {};
                 sprintf(fullPath, "%s/%s", AssetPath, resource->Path);
 
-                IB::File::Handle file = IB::openFile(fullPath, OpenFileOptions::Create | OpenFileOptions::Overwrite | OpenFileOptions::Write);
+                Serialization::WriteStream writeStream = {};
+                Serialization::toBinary(&writeStream, Serialization::Version);
 
-                Serialization::FileStream fileStream = {file};
-                Serialization::toBinary(&fileStream, Serialization::Version);
-
-                SaveContext saveContext = {&fileStream, resource->Asset};
+                SaveContext saveContext = {&writeStream, resource->Asset};
                 getStreamer(resource->Type)->saveThreadSafe(&saveContext);
-                flush(&fileStream);
 
-                // Once we're done saving to our file, assure that we close our write access to it.
+                IB::File::Handle file = IB::openFile(fullPath, OpenFileOptions::Create | OpenFileOptions::Overwrite | OpenFileOptions::Write);
+                IB::writeToFile(file, writeStream.Buffer, writeStream.BufferCursor);
                 IB::closeFile(file);
 
                 releaseResourceAsync(resourceHandle); // Go through our release flow to assure that we do the appropriate cleanup if we're the last reference.
@@ -420,7 +418,7 @@ namespace IB
             });
         }
 
-        void saveSubAssetThreadSafe(Serialization::FileStream *stream, DeltaAssetDesc deltaAssetDesc, Asset::Handle asset)
+        void saveSubAssetThreadSafe(Serialization::WriteStream *stream, DeltaAssetDesc deltaAssetDesc, Asset::Handle asset)
         {
             SaveContext saveContext = {stream, asset, deltaAssetDesc.BaseAsset};
             getStreamer(deltaAssetDesc.Type)->saveThreadSafe(&saveContext);

@@ -556,7 +556,7 @@ namespace IB
         }
     }
 
-    void toBinary(Serialization::FileStream *stream, MeshAsset const &mesh)
+    void toBinary(Serialization::WriteStream *stream, MeshAsset const &mesh)
     {
         Serialization::toBinary(stream, mesh.VertexCount);
         Serialization::toBinary(stream, mesh.IndexCount);
@@ -565,7 +565,7 @@ namespace IB
         Serialization::toBinary(stream, mesh.Indices, mesh.IndexCount * sizeof(uint16_t));
     }
 
-    void fromBinary(Serialization::MemoryStream *stream, MeshAsset *mesh, uint32_t /*versionNumber*/)
+    void fromBinary(Serialization::ReadStream *stream, MeshAsset *mesh, uint32_t /*versionNumber*/)
     {
         Serialization::fromBinary(stream, &mesh->VertexCount);
         Serialization::fromBinary(stream, &mesh->IndexCount);
@@ -574,7 +574,7 @@ namespace IB
         mesh->Indices = Serialization::fromBinary<uint16_t const *>(stream, mesh->IndexCount * sizeof(uint16_t));
     }
 
-    void toBinary(Serialization::FileStream *stream, ShaderAsset const &shaders)
+    void toBinary(Serialization::WriteStream *stream, ShaderAsset const &shaders)
     {
         Serialization::toBinary(stream, shaders.VertexShaderSize);
         Serialization::toBinary(stream, shaders.FragShaderSize);
@@ -583,7 +583,7 @@ namespace IB
         Serialization::toBinary(stream, shaders.FragShader, shaders.FragShaderSize);
     }
 
-    void fromBinary(Serialization::MemoryStream *stream, ShaderAsset *shaders, uint32_t /*versionNumber*/)
+    void fromBinary(Serialization::ReadStream *stream, ShaderAsset *shaders, uint32_t /*versionNumber*/)
     {
         Serialization::fromBinary(stream, &shaders->VertexShaderSize);
         Serialization::fromBinary(stream, &shaders->FragShaderSize);
@@ -592,19 +592,19 @@ namespace IB
         shaders->FragShader = Serialization::fromBinary<uint8_t const *>(stream, shaders->FragShaderSize);
     }
 
-    void toBinary(Serialization::FileStream *stream, MaterialAsset const &material)
+    void toBinary(Serialization::WriteStream *stream, MaterialAsset const &material)
     {
         Serialization::toBinary(stream, material.AlbedoTint);
         Serialization::toBinary(stream, material.AlbedoPath);
     }
 
-    void fromBinary(Serialization::MemoryStream *stream, MaterialAsset *material, uint32_t /*versionNumber*/)
+    void fromBinary(Serialization::ReadStream *stream, MaterialAsset *material, uint32_t /*versionNumber*/)
     {
         Serialization::fromBinary(stream, &material->AlbedoTint);
         Serialization::fromBinary(stream, &material->AlbedoPath);
     }
 
-    void toBinary(Serialization::FileStream *stream, ImageAsset const &image)
+    void toBinary(Serialization::WriteStream *stream, ImageAsset const &image)
     {
         Serialization::toBinary(stream, image.Format);
         Serialization::toBinary(stream, image.Width);
@@ -613,7 +613,7 @@ namespace IB
         Serialization::toBinary(stream, image.Data, image.Width * image.Height * FormatStride[image.Format]);
     }
 
-    void fromBinary(Serialization::MemoryStream *stream, ImageAsset *image, uint32_t /*versionNumber*/)
+    void fromBinary(Serialization::ReadStream *stream, ImageAsset *image, uint32_t /*versionNumber*/)
     {
         Serialization::fromBinary(stream, &image->Format);
         Serialization::fromBinary(stream, &image->Width);
