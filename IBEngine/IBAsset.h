@@ -43,6 +43,7 @@ namespace IB
         struct LoadContext
         {
             Serialization::ReadStream Stream;
+            Asset::Handle LoadingAsset = InvalidAsset; // The asset to which we want to load
             Asset::Handle ParentAsset = InvalidAsset; // Our owning asset
             Asset::Handle BaseAsset = InvalidAsset; // The asset from which we might derive
             Job::Handle Handle = {};
@@ -88,6 +89,11 @@ namespace IB
         class IStreamer
         {
         public:
+            // Create an empty asset for use in future load calls.
+            // Allows us to facilitate cloning an asset in-place.
+            // If the asset does not support in-plane loading, simply create the asset
+            // in loadAsync.
+            virtual Asset::Handle create() { return InvalidAsset; }
             virtual LoadContinuation loadAsync(LoadContext *context) = 0;
             virtual void unloadThreadSafe(Asset::Handle handle) = 0;
             virtual void saveThreadSafe(SaveContext *context);

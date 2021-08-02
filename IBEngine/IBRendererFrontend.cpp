@@ -113,6 +113,11 @@ namespace
     class MaterialAssetStreamer : public IB::Asset::IStreamer
     {
     public:
+        IB::Asset::Handle create() override
+        {
+            RuntimeMaterial &materialData = MaterialPool.add();
+            return IB::Asset::toHandle(reinterpret_cast<uint64_t>(&materialData));
+        }
         IB::Asset::LoadContinuation loadAsync(IB::Asset::LoadContext *context) override
         {
             enum
@@ -123,7 +128,7 @@ namespace
 
             if (context->State == Load)
             {
-                RuntimeMaterial &materialData = MaterialPool.add();
+                RuntimeMaterial& materialData = *reinterpret_cast<RuntimeMaterial*>(IB::Asset::toValue(context->LoadingAsset));
                 fromBinary(&context->Stream, &materialData.Asset, context->SaveVersion);
 
                 IB::Job::Handle textureJob = IB::Asset::loadResourceAsync(materialData.Asset.AlbedoPath, { IB::Asset::toFourCC("IMAG") }, &materialData.AlbedoTexture);
@@ -202,6 +207,12 @@ namespace
     class RendererPropertyAssetStreamer : public IB::Asset::IStreamer
     {
     public:
+        IB::Asset::Handle create() override
+        {
+            RendererProperty &renderer = RendererProperties.add();
+            return IB::Asset::toHandle(reinterpret_cast<uint64_t>(&renderer));
+        }
+
         IB::Asset::LoadContinuation loadAsync(IB::Asset::LoadContext *context) override
         {
             enum
@@ -218,7 +229,7 @@ namespace
                     baseRenderer = toRendererProperty(context->BaseAsset);
                 }
 
-                RendererProperty &renderer = RendererProperties.add();
+                RendererProperty &renderer = *toRendererProperty(context->LoadingAsset);
                 context->Data = reinterpret_cast<uint64_t>(&renderer);
 
                 char const *baseMeshPath = IB::Asset::getResourcePath(baseRenderer->MeshResource);

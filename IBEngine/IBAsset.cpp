@@ -124,6 +124,8 @@ namespace
         IB_ASSERT(streamer != nullptr, "Failed to find streamer!");
 
         IB::Asset::LoadContext *loadContext = IB::allocate<IB::Asset::LoadContext>();
+        loadContext->LoadingAsset = streamer->create();
+
         IB::Job::Handle fileJob = IB::launchJob([resource, loadContext]() {
             char fullPath[IB::MaxFilePath] = {};
             sprintf(fullPath, "%s/%s", AssetPath, resource->Path);
@@ -226,6 +228,7 @@ namespace IB
             IB::Asset::IStreamer *streamer = getStreamer(deltaAssetDesc.Type);
             if (streamer != nullptr)
             {
+                context->LoadingAsset = streamer->create();
                 context->Handle = reserveJob([context, streamer, onSubAssetLoad, data]() {
                     LoadResult loadResult = load(streamer, context);
                     if (loadResult.Result == JobResult::Complete)

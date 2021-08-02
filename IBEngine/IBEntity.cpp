@@ -73,6 +73,12 @@ namespace IB
         class EntityAssetStreamer : public IB::Asset::IStreamer
         {
         public:
+            IB::Asset::Handle create() override
+            {
+                Entity::Data& entity = ActiveEntities.add();
+                return IB::Asset::toHandle(reinterpret_cast<uint64_t>(&entity));
+            }
+
             IB::Asset::LoadContinuation loadAsync(IB::Asset::LoadContext *context) override
             {
                 enum State
@@ -89,7 +95,7 @@ namespace IB
                         baseEntity = Entity::toData(context->BaseAsset);
                     }
 
-                    Entity::Data& entity = ActiveEntities.add();
+                    Entity::Data& entity = *Entity::toData(context->LoadingAsset);
 
                     if (context->SaveVersion > 1)
                     {
