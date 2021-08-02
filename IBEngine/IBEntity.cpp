@@ -158,7 +158,7 @@ namespace IB
                     uint32_t dummyWriteSize = 0;
                     toBinary(context->Stream, dummyWriteSize);
                     uint32_t writeStart = context->Stream->BufferCursor;
-                    IB::Asset::saveSubAssetThreadSafe(context->Stream, { entity->Properties[i].Type, toAssetHandle(baseProperty) }, toAssetHandle(entity->Properties[i].Handle));
+                    IB::Asset::saveAssetThreadSafe(context->Stream, { entity->Properties[i].Type, toAssetHandle(baseProperty) }, toAssetHandle(entity->Properties[i].Handle));
                     uint32_t writeEnd = context->Stream->BufferCursor;
 
                     // Write our written size right before our sub asset.
@@ -172,7 +172,7 @@ namespace IB
                 Entity::Data* entity = Entity::toData(assetHandle);
                 for (uint32_t i = 0; i < entity->Properties.count(); i++)
                 {
-                    IB::Asset::unloadSubAssetThreadSafe(toAssetHandle(entity->Properties[i].Handle), entity->Properties[i].Type);
+                    IB::Asset::unloadAssetThreadSafe(toAssetHandle(entity->Properties[i].Handle), entity->Properties[i].Type);
                 }
 
                 ActiveEntities.remove(*entity);
@@ -347,7 +347,7 @@ namespace IB
                     toBinary(context->Stream, dummyWriteSize);
                     uint32_t writeStart = context->Stream->BufferCursor;
 
-                    IB::Asset::saveSubAssetThreadSafe(context->Stream, { IB::Asset::toFourCC("ENTT"), baseEntityAsset }, toAssetHandle(cell.Entities[i]));
+                    IB::Asset::saveAssetThreadSafe(context->Stream, { IB::Asset::toFourCC("ENTT"), baseEntityAsset }, toAssetHandle(cell.Entities[i]));
 
                     uint32_t writeEnd = context->Stream->BufferCursor;
 
@@ -363,7 +363,7 @@ namespace IB
                 Asset::releaseResourceAsync(cell.BaseCell);
                 for (uint32_t i = 0; i < cell.Entities.count(); i++)
                 {
-                    IB::Asset::unloadSubAssetThreadSafe(toAssetHandle(cell.Entities[i]), IB::Asset::toFourCC("ENTT"));
+                    IB::Asset::unloadAssetThreadSafe(toAssetHandle(cell.Entities[i]), IB::Asset::toFourCC("ENTT"));
                 }
 
                 cell = {};

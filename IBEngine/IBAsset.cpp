@@ -26,134 +26,186 @@ namespace IB
     }
 }
 
-namespace
+namespace IB
 {
-    constexpr char AssetPath[] = "../Assets/Compiled";
-
-    char const *fileExtension(char const *filepath)
+    namespace
     {
-        uint32_t filepathLength = static_cast<uint32_t>(strlen(filepath));
-        int32_t extensionIndex;
-        for (extensionIndex = filepathLength - 1; extensionIndex >= 0; extensionIndex--)
+        constexpr char AssetPath[] = "../Assets/Compiled";
+
+        char const *fileExtension(char const *filepath)
         {
-            if (filepath[extensionIndex] == '.') // includes period
+            uint32_t filepathLength = static_cast<uint32_t>(strlen(filepath));
+            int32_t extensionIndex;
+            for (extensionIndex = filepathLength - 1; extensionIndex >= 0; extensionIndex--)
             {
-                break;
+                if (filepath[extensionIndex] == '.') // includes period
+                {
+                    break;
+                }
+            }
+
+            if (extensionIndex < 0)
+            {
+                return filepath + filepathLength; // Simply return the pointer to our null terminator
+            }
+
+            return filepath + extensionIndex;
+        }
+
+        // http://www.cse.yorku.ca/~oz/hash.html by Dan Bernstein
+        uint32_t hash(char const *path)
+        {
+            uint32_t hash = 5381;
+            for (; *path != 0; path++)
+            {
+                hash = hash * 33 + *path;
+            }
+
+            return hash;
+        }
+
+        struct StreamerData
+        {
+            IB::Asset::IStreamer *Streamer = nullptr;
+            IB::Asset::FourCC Type = IB::InvalidFourCC;
+        };
+
+        constexpr uint32_t MaxStreamerCount = 100;
+        StreamerData Streamers[MaxStreamerCount];
+
+        struct LoadResult
+        {
+            IB::JobResult Result;
+            IB::Asset::Handle Asset;
+        };
+
+        struct ResourceEntry
+        {
+            uint32_t RefCount;
+            IB::Resource::Data *Resource;
+        };
+
+        constexpr uint32_t MaxTableEntries = 1024 * 1024;
+        ResourceEntry ResourceHashTable[MaxTableEntries];
+
+        IB::Asset::IStreamer *getStreamer(IB::Asset::FourCC type)
+        {
+            for (uint32_t i = 0; i < MaxStreamerCount; i++)
+            {
+                if (Streamers[i].Type == type)
+                {
+                    return Streamers[i].Streamer;
+                }
+            }
+
+            return nullptr;
+        }
+
+        LoadResult load(IB::Asset::IStreamer *streamer, IB::Asset::LoadContext *context)
+        {
+            IB::Asset::LoadContinuation result = streamer->loadAsync(context);
+            if (result.Continuation == IB::Asset::LoadContinuation::Advance)
+            {
+                IB::volatileStore(&context->State, result.Data.Advance.NextState);
+                IB::threadStoreStoreFence(); // Make sure our state value write is visible before our job is written to the job pool.
+
+                IB_ASSERT(result.Data.Advance.DependencyCount > 0, "If we want to advance, we need dependencies.");
+                // Resignal our job once our dependencies are complete.
+                IB::continueJob(context->Handle, result.Data.Advance.Dependencies, result.Data.Advance.DependencyCount); // Job could be signaled before we return
+                return { IB::JobResult::Sleep };
+            }
+            else
+            {
+                return LoadResult{ IB::JobResult::Complete, result.Data.Complete.Handle };
             }
         }
 
-        if (extensionIndex < 0)
+        IB::Job::Handle loadBinaryAsync(IB::Resource::Data *resource, IB::Asset::FourCC type, IB::Asset::OnResourceLoad *onResourceLoad, void *data)
         {
-            return filepath + filepathLength; // Simply return the pointer to our null terminator
-        }
+            IB::Asset::IStreamer *streamer = getStreamer(type);
+            IB_ASSERT(streamer != nullptr, "Failed to find streamer!");
 
-        return filepath + extensionIndex;
-    }
+            IB::Asset::LoadContext *loadContext = IB::allocate<IB::Asset::LoadContext>();
+            loadContext->LoadingAsset = streamer->create();
 
-    // http://www.cse.yorku.ca/~oz/hash.html by Dan Bernstein
-    uint32_t hash(char const *path)
-    {
-        uint32_t hash = 5381;
-        for (; *path != 0; path++)
-        {
-            hash = hash * 33 + *path;
-        }
-
-        return hash;
-    }
-
-    struct StreamerData
-    {
-        IB::Asset::IStreamer *Streamer = nullptr;
-        IB::Asset::FourCC Type = IB::InvalidFourCC;
-    };
-
-    constexpr uint32_t MaxStreamerCount = 100;
-    StreamerData Streamers[MaxStreamerCount];
-
-    struct LoadResult
-    {
-        IB::JobResult Result;
-        IB::Asset::Handle Asset;
-    };
-
-    struct ResourceEntry
-    {
-        uint32_t RefCount;
-        IB::Resource::Data *Resource;
-    };
-
-    constexpr uint32_t MaxTableEntries = 1024 * 1024;
-    ResourceEntry ResourceHashTable[MaxTableEntries];
-
-    IB::Asset::IStreamer *getStreamer(IB::Asset::FourCC type)
-    {
-        for (uint32_t i = 0; i < MaxStreamerCount; i++)
-        {
-            if (Streamers[i].Type == type)
+            IB::Job::Handle fileJob = IB::launchJob([resource, loadContext]()
             {
-                return Streamers[i].Streamer;
-            }
-        }
+                char fullPath[IB::MaxFilePath] = {};
+                sprintf(fullPath, "%s/%s", AssetPath, resource->Path);
 
-        return nullptr;
-    }
+                resource->File = IB::openFile(fullPath, IB::OpenFileOptions::Read);
+                loadContext->Stream = { reinterpret_cast<uint8_t *>(IB::mapFile(resource->File)) };
+                IB_ASSERT(loadContext->Stream.Memory != nullptr, "Failed to map file!");
+                fromBinary(&loadContext->Stream, &loadContext->SaveVersion);
+                return IB::JobResult::Complete;
+            });
 
-    LoadResult load(IB::Asset::IStreamer *streamer, IB::Asset::LoadContext *context)
-    {
-        IB::Asset::LoadContinuation result = streamer->loadAsync(context);
-        if (result.Continuation == IB::Asset::LoadContinuation::Advance)
-        {
-            IB::volatileStore(&context->State, result.Data.Advance.NextState);
-            IB::threadStoreStoreFence(); // Make sure our state value write is visible before our job is written to the job pool.
-
-            IB_ASSERT(result.Data.Advance.DependencyCount > 0, "If we want to advance, we need dependencies.");
-            // Resignal our job once our dependencies are complete.
-            IB::continueJob(context->Handle, result.Data.Advance.Dependencies, result.Data.Advance.DependencyCount); // Job could be signaled before we return
-            return {IB::JobResult::Sleep};
-        }
-        else
-        {
-            return LoadResult{IB::JobResult::Complete, result.Data.Complete.Handle};
-        }
-    }
-
-    IB::Job::Handle loadBinaryAsync(IB::Resource::Data *resource, IB::Asset::FourCC type, IB::Asset::OnResourceLoad *onResourceLoad, void *data)
-    {
-        IB::Asset::IStreamer *streamer = getStreamer(type);
-        IB_ASSERT(streamer != nullptr, "Failed to find streamer!");
-
-        IB::Asset::LoadContext *loadContext = IB::allocate<IB::Asset::LoadContext>();
-        loadContext->LoadingAsset = streamer->create();
-
-        IB::Job::Handle fileJob = IB::launchJob([resource, loadContext]() {
-            char fullPath[IB::MaxFilePath] = {};
-            sprintf(fullPath, "%s/%s", AssetPath, resource->Path);
-
-            resource->File = IB::openFile(fullPath, IB::OpenFileOptions::Read);
-            loadContext->Stream = {reinterpret_cast<uint8_t *>(IB::mapFile(resource->File))};
-            IB_ASSERT(loadContext->Stream.Memory != nullptr, "Failed to map file!");
-            fromBinary(&loadContext->Stream, &loadContext->SaveVersion);
-            return IB::JobResult::Complete;
-        });
-
-        loadContext->Handle = IB::reserveJob([loadContext, streamer, onResourceLoad, data, resource]() {
-            LoadResult loadResult = load(streamer, loadContext);
-            if (loadResult.Result == IB::JobResult::Complete)
+            loadContext->Handle = IB::reserveJob([loadContext, streamer, onResourceLoad, data, resource]()
             {
-                resource->Asset = loadResult.Asset;
+                LoadResult loadResult = load(streamer, loadContext);
+                if (loadResult.Result == IB::JobResult::Complete)
+                {
+                    resource->Asset = loadResult.Asset;
 
-                onResourceLoad(data, IB::Resource::toHandle(resource->PathHash), IB::Asset::ResourceLoad::Available);
-                IB::deallocate(loadContext);
+                    onResourceLoad(data, IB::Resource::toHandle(resource->PathHash), IB::Asset::ResourceLoad::Available);
+                    IB::deallocate(loadContext);
+                }
+                return loadResult.Result;
+            });
+            IB::continueJob(loadContext->Handle, &fileJob, 1);
+
+            return loadContext->Handle;
+        }
+
+        struct LoadAssetDesc
+        {
+            Serialization::ReadStream Stream;
+            uint32_t SaveVersion;
+            Asset::Handle LoadingAsset;
+            Asset::DeltaAssetDesc DeltaAssetDesc;
+            Asset::OnSubAssetLoad *OnSubAssetLoad;
+            void *OnSubAssetLoadData;
+        };
+
+        Job::Handle loadAssetAsync(LoadAssetDesc desc)
+        {
+            Asset::LoadContext *context = allocate<Asset::LoadContext>(desc.Stream);
+            context->SaveVersion = desc.SaveVersion;
+            context->BaseAsset = desc.DeltaAssetDesc.BaseAsset;
+            IB::Asset::IStreamer *streamer = getStreamer(desc.DeltaAssetDesc.Type);
+            if (streamer != nullptr)
+            {
+                context->LoadingAsset = desc.LoadingAsset;
+                context->Handle = reserveJob([context, streamer, onSubAssetLoad = desc.OnSubAssetLoad, data = desc.OnSubAssetLoadData]()
+                {
+                    LoadResult loadResult = load(streamer, context);
+                    if (loadResult.Result == JobResult::Complete)
+                    {
+                        onSubAssetLoad(data, loadResult.Asset);
+                        deallocate(context);
+                    }
+                    return loadResult.Result;
+                });
+                launchJob(context->Handle);
             }
-            return loadResult.Result;
-        });
-        IB::continueJob(loadContext->Handle, &fileJob, 1);
+            return context->Handle;
+        }
 
-        return loadContext->Handle;
-    }
-
-} // namespace
+        Job::Handle loadAssetInPlaceAsync(Serialization::ReadStream stream, Asset::Handle loadingAsset, Asset::DeltaAssetDesc deltaAssetDesc, Asset::OnSubAssetLoad *onSubAssetLoad, void *data)
+        {
+            LoadAssetDesc desc =
+            {
+                stream,
+                Serialization::Version, // In-place loading does not have any versioning.
+                loadingAsset,
+                deltaAssetDesc,
+                onSubAssetLoad,
+                data
+            };
+            return loadAssetAsync(desc);
+        }
+    } // namespace
+} // IB
 
 namespace IB
 {
@@ -220,30 +272,6 @@ namespace IB
             return Resource::toHandle(pathHash);
         }
 
-        Job::Handle loadAssetAsync(LoadAssetDesc desc)
-        {
-            LoadContext *context = allocate<LoadContext>(desc.Stream);
-            context->SaveVersion = desc.SaveVersion;
-            context->BaseAsset = desc.DeltaAssetDesc.BaseAsset;
-            IB::Asset::IStreamer *streamer = getStreamer(desc.DeltaAssetDesc.Type);
-            if (streamer != nullptr)
-            {
-                context->LoadingAsset = desc.LoadingAsset;
-                context->Handle = reserveJob([context, streamer, onSubAssetLoad = desc.OnSubAssetLoad, data = desc.OnSubAssetLoadData]()
-                {
-                    LoadResult loadResult = load(streamer, context);
-                    if (loadResult.Result == JobResult::Complete)
-                    {
-                        onSubAssetLoad(data, loadResult.Asset);
-                        deallocate(context);
-                    }
-                    return loadResult.Result;
-                });
-                launchJob(context->Handle);
-            }
-            return context->Handle;
-        }
-
         Job::Handle loadSubAssetAsync(LoadContext const* parentContext, DeltaAssetDesc deltaAssetDesc, OnSubAssetLoad *onSubAssetLoad, void *data)
         {
             Asset::Handle loadingAsset = InvalidAsset;
@@ -257,20 +285,6 @@ namespace IB
             {
                 parentContext->Stream,
                 parentContext->SaveVersion,
-                loadingAsset,
-                deltaAssetDesc,
-                onSubAssetLoad,
-                data
-            };
-            return loadAssetAsync(desc);
-        }
-
-        Job::Handle loadAssetInPlaceAsync(Serialization::ReadStream stream, Asset::Handle loadingAsset, DeltaAssetDesc deltaAssetDesc, OnSubAssetLoad *onSubAssetLoad, void *data)
-        {
-            LoadAssetDesc desc =
-            {
-                stream,
-                Serialization::Version, // In-place loading does not have any versioning.
                 loadingAsset,
                 deltaAssetDesc,
                 onSubAssetLoad,
@@ -420,7 +434,7 @@ namespace IB
             return job;
         }
 
-        void unloadSubAssetThreadSafe(Asset::Handle asset, FourCC type)
+        void unloadAssetThreadSafe(Asset::Handle asset, FourCC type)
         {
             getStreamer(type)->unloadThreadSafe(asset);
         }
@@ -457,7 +471,7 @@ namespace IB
             });
         }
 
-        void saveSubAssetThreadSafe(Serialization::WriteStream *stream, DeltaAssetDesc deltaAssetDesc, Asset::Handle asset)
+        void saveAssetThreadSafe(Serialization::WriteStream *stream, DeltaAssetDesc deltaAssetDesc, Asset::Handle asset)
         {
             SaveContext saveContext = {stream, asset, deltaAssetDesc.BaseAsset};
             getStreamer(deltaAssetDesc.Type)->saveThreadSafe(&saveContext);
@@ -468,14 +482,14 @@ namespace IB
             Asset::IStreamer* streamer = getStreamer(type);
 
             IB::Serialization::WriteStream writeStream;
-            IB::Asset::saveSubAssetThreadSafe(&writeStream, { type }, asset);
+            IB::Asset::saveAssetThreadSafe(&writeStream, { type }, asset);
 
             IB::Asset::Handle newAsset = streamer->create();
             IB_ASSERT(newAsset != IB::InvalidAsset, "Cloning API expects to be able to create an asset.");
             IB::Serialization::ReadStream readStream = { writeStream.Buffer };
 
             IB::ThreadEvent threadEvent = IB::createThreadEvent();
-            IB::Asset::loadAssetInPlaceAsync(readStream, newAsset, { type },
+            IB::loadAssetInPlaceAsync(readStream, newAsset, { type },
                 [](void *data, IB::Asset::Handle)
                 {
                     IB::ThreadEvent* threadEvent = reinterpret_cast<IB::ThreadEvent*>(data);
