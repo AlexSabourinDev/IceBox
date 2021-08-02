@@ -231,6 +231,13 @@ namespace
                 }
 
                 RendererProperty &renderer = *toRendererProperty(context->LoadingAsset);
+
+                // Unload our current resources if we had existing data.
+                {
+                    IB::Asset::releaseResourceAsync(renderer.MeshResource);
+                    IB::Asset::releaseResourceAsync(renderer.MaterialResource);
+                }
+
                 context->Data = reinterpret_cast<uint64_t>(&renderer);
 
                 char const *baseMeshPath = IB::Asset::getResourcePath(baseRenderer->MeshResource);

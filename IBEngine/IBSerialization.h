@@ -31,6 +31,30 @@ namespace IB
             uint32_t BufferSize = 0;
         };
 
+        struct MemoryBuffer
+        {
+            MemoryBuffer() = default;
+            ~MemoryBuffer();
+            MemoryBuffer(MemoryBuffer&& other);
+            MemoryBuffer& operator=(MemoryBuffer&& other);
+
+            uint8_t* Data = nullptr;
+            uint32_t Size = 0;
+        };
+
+        inline MemoryBuffer steal(WriteStream* stream)
+        {
+            MemoryBuffer buffer;
+
+            buffer.Data = stream->Buffer;
+            buffer.Size = stream->BufferSize;
+            stream->Buffer = nullptr;
+            stream->BufferSize = 0;
+            stream->BufferCursor = 0;
+
+            return buffer;
+        };
+
         IB_API void toBinary(WriteStream *stream, void const *data, size_t size);
 
         template <typename T>

@@ -27,6 +27,28 @@ namespace IB
             memoryFree(Buffer);
         }
 
+        MemoryBuffer::~MemoryBuffer()
+        {
+            memoryFree(Data);
+        }
+
+        MemoryBuffer::MemoryBuffer(MemoryBuffer&& other)
+        {
+            operator=(std::move(other));
+        }
+
+        MemoryBuffer& MemoryBuffer::operator=(MemoryBuffer&& other)
+        {
+            uint8_t* oldData = Data;
+            uint32_t oldSize = Size;
+            Data = other.Data;
+            Size = other.Size;
+            other.Data = oldData;
+            other.Size = oldSize;
+
+            return *this;
+        }
+
         void toBinary(WriteStream *stream, void const *data, size_t size)
         {
             uint32_t constexpr bufferChunkSize = 4096;

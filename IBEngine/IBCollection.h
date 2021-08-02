@@ -85,6 +85,8 @@ namespace IB
         T* data() const { return reinterpret_cast<T*>(Buffer); }
         T& operator[](uint32_t i) const { return data()[i]; }
         uint32_t count() const { return ItemCount; }
+
+        T& back() { return data()[ItemCount - 1]; }
     private:
         void* Buffer = nullptr;
         uint32_t ItemCount = 0;

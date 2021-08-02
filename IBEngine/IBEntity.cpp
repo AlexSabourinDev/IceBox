@@ -20,7 +20,7 @@ namespace IB
         {
             struct Data
             {
-                Asset::FourCC Type;
+                Asset::FourCC Type = InvalidFourCC;
                 Handle Handle = InvalidProperty;
             };
         }
@@ -96,35 +96,74 @@ namespace IB
                     }
 
                     Entity::Data& entity = *Entity::toData(context->LoadingAsset);
-
-                    if (context->SaveVersion > 1)
-                    {
-                        Serialization::Delta::fromBinary(&context->Stream, &entity.Name, baseEntity->Name);
-                    }
+                    Serialization::Delta::fromBinary(&context->Stream, &entity.Name, baseEntity->Name);
 
                     uint32_t propertyCount;
                     fromBinary(&context->Stream, &propertyCount);
                     entity.Properties.reserve(propertyCount);
+                    for (uint32_t i = 0; i < propertyCount; i++)
+                    {
+                        if (i >= entity.Properties.count())
+                        {
+                            entity.Properties.add();
+                        }
+                    }
 
                     IB_ASSERT(propertyCount <= IB::Asset::MaxDependencyCount, "Too many properties!");
                     IB::Job::Handle loadHandles[IB::Asset::MaxDependencyCount];
                     uint32_t handleCount = 0;
                     for (uint32_t i = 0; i < propertyCount; i++)
                     {
-                        Property::Data& entityProperty = entity.Properties.add();
+                        Asset::FourCC propertyType;
+                        fromBinary(&context->Stream, &propertyType);
 
-                        fromBinary(&context->Stream, &entityProperty.Type);
-                        Property::Handle baseProperty = findProperty(baseEntity, entityProperty.Type);
+                        Property::Data* entityProperty = nullptr;
+
+                        // Find or populate a new property entry. If we already had an entry
+                        // Then we want to use it for our in-place deserialization.
+                        {
+                            for (uint32_t propertyIndex = 0; propertyIndex < entity.Properties.count(); propertyIndex++)
+                            {
+                                if (entity.Properties[propertyIndex].Type == propertyType)
+                                {
+                                    entityProperty = &entity.Properties[propertyIndex];
+                                    break;
+                                }
+
+                                if (entity.Properties[propertyIndex].Type == InvalidFourCC)
+                                {
+                                    entityProperty = &entity.Properties[propertyIndex];
+                                }
+                            }
+
+                            IB_ASSERT(entityProperty != nullptr, "Failed to find empty slot!");
+
+                            entityProperty->Type = propertyType;
+                            if (entityProperty->Handle == InvalidProperty)
+                            {
+                                entityProperty->Handle = toPropertyHandle(Asset::createAsset(entityProperty->Type));
+                            }
+                        }
+
+                        Property::Handle baseProperty = findProperty(baseEntity, entityProperty->Type);
 
                         uint32_t offset;
                         fromBinary(&context->Stream, &offset);
 
                         // Passing pointer to dynamic array item is OK here. We've reserved the memory and will not resize until the load is complete.
-                        loadHandles[handleCount++] = IB::Asset::loadSubAssetAsync(context, { entityProperty.Type, toAssetHandle(baseProperty) },
+                        Asset::LoadSubAssetDesc loadSubAssetDesc =
+                        {
+                            context,
+                            entityProperty->Type,
+                            toAssetHandle(entityProperty->Handle), // Create a new property asset
+                            toAssetHandle(baseProperty),
+                        };
+                        
+                        loadHandles[handleCount++] = IB::Asset::loadSubAssetAsync(loadSubAssetDesc,
                             [](void *data, IB::Asset::Handle asset)
                             {
                                 *reinterpret_cast<IB::Property::Handle *>(data) = toPropertyHandle(asset);
-                            }, &entityProperty.Handle);
+                            }, &entityProperty->Handle);
                         advance(&context->Stream, offset);
                     }
 
@@ -158,7 +197,7 @@ namespace IB
                     uint32_t dummyWriteSize = 0;
                     toBinary(context->Stream, dummyWriteSize);
                     uint32_t writeStart = context->Stream->BufferCursor;
-                    IB::Asset::saveAssetThreadSafe(context->Stream, { entity->Properties[i].Type, toAssetHandle(baseProperty) }, toAssetHandle(entity->Properties[i].Handle));
+                    IB::Asset::saveAssetThreadSafe(context->Stream, entity->Properties[i].Type, toAssetHandle(entity->Properties[i].Handle), toAssetHandle(baseProperty) );
                     uint32_t writeEnd = context->Stream->BufferCursor;
 
                     // Write our written size right before our sub asset.
@@ -172,7 +211,7 @@ namespace IB
                 Entity::Data* entity = Entity::toData(assetHandle);
                 for (uint32_t i = 0; i < entity->Properties.count(); i++)
                 {
-                    IB::Asset::unloadAssetThreadSafe(toAssetHandle(entity->Properties[i].Handle), entity->Properties[i].Type);
+                    IB::Asset::unloadAssetThreadSafe(entity->Properties[i].Type, toAssetHandle(entity->Properties[i].Handle));
                 }
 
                 ActiveEntities.remove(*entity);
@@ -295,7 +334,15 @@ namespace IB
                         fromBinary(&context->Stream, &offset);
 
                         // Passing pointer to dynamic array item is OK here. We've reserved the memory and will not resize until the load is complete.
-                        loadHandles[handleCount++] = IB::Asset::loadSubAssetAsync(context, { IB::Asset::toFourCC("ENTT"), baseAsset },
+                        Asset::LoadSubAssetDesc loadSubAssetDesc =
+                        {
+                            context,
+                            Asset::toFourCC("ENTT"),
+                            Asset::createAsset(IB::Asset::toFourCC("ENTT")),
+                            baseAsset
+                        };
+                        
+                        loadHandles[handleCount++] = IB::Asset::loadSubAssetAsync(loadSubAssetDesc,
                             [](void *data, IB::Asset::Handle asset)
                             {
                                 *reinterpret_cast<IB::Entity::Handle *>(data) = toEntityHandle(asset);
@@ -347,7 +394,7 @@ namespace IB
                     toBinary(context->Stream, dummyWriteSize);
                     uint32_t writeStart = context->Stream->BufferCursor;
 
-                    IB::Asset::saveAssetThreadSafe(context->Stream, { IB::Asset::toFourCC("ENTT"), baseEntityAsset }, toAssetHandle(cell.Entities[i]));
+                    IB::Asset::saveAssetThreadSafe(context->Stream, IB::Asset::toFourCC("ENTT"), toAssetHandle(cell.Entities[i]), baseEntityAsset);
 
                     uint32_t writeEnd = context->Stream->BufferCursor;
 
@@ -363,7 +410,7 @@ namespace IB
                 Asset::releaseResourceAsync(cell.BaseCell);
                 for (uint32_t i = 0; i < cell.Entities.count(); i++)
                 {
-                    IB::Asset::unloadAssetThreadSafe(toAssetHandle(cell.Entities[i]), IB::Asset::toFourCC("ENTT"));
+                    IB::Asset::unloadAssetThreadSafe(IB::Asset::toFourCC("ENTT"), toAssetHandle(cell.Entities[i]));
                 }
 
                 cell = {};
@@ -376,9 +423,35 @@ namespace IB
 
     namespace Editor
     {
+        DynamicArray<Serialization::MemoryBuffer> UndoStack;
+
         void entityEditor(Asset::Handle asset)
         {
+            // TODO: Temp
+            Serialization::WriteStream writeStream;
+            saveAssetThreadSafe(&writeStream, Asset::toFourCC("ENTT"), asset);
+            Serialization::MemoryBuffer undoBuffer = Serialization::steal(&writeStream);
+
             Entity::Data* entity = Entity::toData(asset);
+            if (UndoStack.count() > 0)
+            {
+                if (ImGui::Button("Undo"))
+                {
+                   Serialization::MemoryBuffer const& buffer = UndoStack.back();
+
+                    Serialization::ReadStream readStream = { buffer.Data };
+                    // Currently deadlocks editor.
+                    // If were in a job, we get stuck waiting forever since our job thread will never consume our job.
+                    // I don't love the idea of waiting on a thread event either. I'm not sure if there's maybe an easier way to pause this job to work on the other jobs in the queue.
+                    // Maybe I'll just implement some job stealing - that should allow us to block on another thread.
+                    loadAssetInPlaceSync(readStream, Asset::toFourCC("ENTT"), asset);
+
+                    UndoStack.remove();
+                }
+            }
+
+            bool changed = false;
+
             ImGui::Text("Entity");
             ImGui::Separator();
             if (ImGui::BeginTable("Inspector Table", 2))
@@ -391,7 +464,7 @@ namespace IB
 
                 ImGui::TableNextColumn();
                 ImGui::SetNextItemWidth(-FLT_MIN);
-                ImGui::InputText("", entity->Name.String, Entity::MaxNameLength);
+                changed |= ImGui::InputText("", entity->Name.String, Entity::MaxNameLength);
 
                 ImGui::EndTable();
             }
@@ -402,6 +475,26 @@ namespace IB
             for (uint32_t i = 0; i < entity->Properties.count(); i++)
             {
                 Editor::drawAssetEditor(entity->Properties[i].Type, toAssetHandle(entity->Properties[i].Handle));
+            }
+
+            if (changed)
+            {
+                if (UndoStack.count() > 0)
+                {
+                    Serialization::MemoryBuffer const& lastBuffer = UndoStack.back();
+                    if (lastBuffer.Size != undoBuffer.Size)
+                    {
+                        UndoStack.add(std::move(undoBuffer));
+                    }
+                    else if (memcmp(lastBuffer.Data, undoBuffer.Data, lastBuffer.Size) != 0)
+                    {
+                        UndoStack.add(std::move(undoBuffer));
+                    }
+                }
+                else
+                {
+                    UndoStack.add(std::move(undoBuffer));
+                }
             }
         }
 

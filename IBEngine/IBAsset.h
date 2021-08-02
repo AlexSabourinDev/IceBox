@@ -116,32 +116,36 @@ namespace IB
         struct DeltaAssetDesc
         {
             FourCC Type = InvalidFourCC;
-            Asset::Handle BaseAsset = InvalidAsset;
         };
 
         // Streamer API
         IB_API void addStreamer(FourCC type, IStreamer *streamer);
-        IB_API Job::Handle loadSubAssetAsync(LoadContext const* parentContext, DeltaAssetDesc deltaAssetDesc, OnSubAssetLoad *onSubAssetLoad, void *data);
-        IB_API void unloadAssetThreadSafe(Asset::Handle asset, FourCC type);
-        IB_API void saveAssetThreadSafe(Serialization::WriteStream *stream, DeltaAssetDesc deltaAssetDesc, Asset::Handle asset);
 
-        template <typename StreamType>
-        inline Job::Handle loadSubAssetAsync(StreamType stream, DeltaAssetDesc deltaAssetDesc, Asset::Handle *outputAsset)
+        struct LoadSubAssetDesc
         {
-            return loadSubAssetAsync(stream, deltaAssetDesc, [](void *data, Asset::Handle asset, ResourceLoad::State loadState)
+            LoadContext const* ParentContext;
+            FourCC Type = InvalidFourCC;
+            Asset::Handle LoadingAsset = InvalidAsset;
+            Asset::Handle BaseAsset = InvalidAsset;
+        };
+        IB_API Asset::Handle createAsset(FourCC type);
+        IB_API Job::Handle loadSubAssetAsync(LoadSubAssetDesc desc, OnSubAssetLoad *onSubAssetLoad, void *data);
+        IB_API void unloadAssetThreadSafe(FourCC type, Asset::Handle asset);
+        IB_API void saveAssetThreadSafe(Serialization::WriteStream *stream, FourCC type, Asset::Handle asset, Asset::Handle baseAsset = InvalidAsset);
+        IB_API void loadAssetInPlaceSync(Serialization::ReadStream readStream, FourCC type, Asset::Handle asset);
+
+        inline Job::Handle loadSubAssetAsync(LoadSubAssetDesc desc, Asset::Handle *outputAsset)
+        {
+            return loadSubAssetAsync(desc, [](void *data, Asset::Handle asset)
             {
-                if (loadState == ResourceLoad::Available)
-                {
-                    *reinterpret_cast<Asset::Handle *>(data) = asset;
-                }
+                *reinterpret_cast<Asset::Handle *>(data) = asset;
             },
                 outputAsset);
         }
 
-        template <typename StreamType>
-        inline Job::Handle loadSubAssetAsync(StreamType stream, DeltaAssetDesc deltaAssetDesc)
+        inline Job::Handle loadSubAssetAsync(LoadSubAssetDesc desc)
         {
-            return loadSubAssetAsync(stream, deltaAssetDesc, [](void *, Asset::Handle, ResourceLoad::State) {}, nullptr);
+            return loadSubAssetAsync(desc, [](void *, Asset::Handle) {}, nullptr);
         }
 
 
