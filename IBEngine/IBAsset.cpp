@@ -220,16 +220,17 @@ namespace IB
             return Resource::toHandle(pathHash);
         }
 
-        Job::Handle loadSubAssetAsync(LoadContext const* parentContext, DeltaAssetDesc deltaAssetDesc, Asset::Handle parentAsset, OnSubAssetLoad *onSubAssetLoad, void *data)
+        Job::Handle loadAssetAsync(LoadAssetDesc desc)
         {
-            LoadContext *context = allocate<LoadContext>(parentContext->Stream, parentAsset);
-            context->SaveVersion = parentContext->SaveVersion;
-            context->BaseAsset = deltaAssetDesc.BaseAsset;
-            IB::Asset::IStreamer *streamer = getStreamer(deltaAssetDesc.Type);
+            LoadContext *context = allocate<LoadContext>(desc.Stream);
+            context->SaveVersion = desc.SaveVersion;
+            context->BaseAsset = desc.DeltaAssetDesc.BaseAsset;
+            IB::Asset::IStreamer *streamer = getStreamer(desc.DeltaAssetDesc.Type);
             if (streamer != nullptr)
             {
-                context->LoadingAsset = streamer->create();
-                context->Handle = reserveJob([context, streamer, onSubAssetLoad, data]() {
+                context->LoadingAsset = desc.LoadingAsset;
+                context->Handle = reserveJob([context, streamer, onSubAssetLoad = desc.OnSubAssetLoad, data = desc.OnSubAssetLoadData]()
+                {
                     LoadResult loadResult = load(streamer, context);
                     if (loadResult.Result == JobResult::Complete)
                     {
@@ -241,6 +242,41 @@ namespace IB
                 launchJob(context->Handle);
             }
             return context->Handle;
+        }
+
+        Job::Handle loadSubAssetAsync(LoadContext const* parentContext, DeltaAssetDesc deltaAssetDesc, OnSubAssetLoad *onSubAssetLoad, void *data)
+        {
+            Asset::Handle loadingAsset = InvalidAsset;
+            IB::Asset::IStreamer *streamer = getStreamer(deltaAssetDesc.Type);
+            if (streamer != nullptr)
+            {
+                loadingAsset = streamer->create();
+            }
+
+            LoadAssetDesc desc =
+            {
+                parentContext->Stream,
+                parentContext->SaveVersion,
+                loadingAsset,
+                deltaAssetDesc,
+                onSubAssetLoad,
+                data
+            };
+            return loadAssetAsync(desc);
+        }
+
+        Job::Handle loadAssetInPlaceAsync(Serialization::ReadStream stream, Asset::Handle loadingAsset, DeltaAssetDesc deltaAssetDesc, OnSubAssetLoad *onSubAssetLoad, void *data)
+        {
+            LoadAssetDesc desc =
+            {
+                stream,
+                Serialization::Version, // In-place loading does not have any versioning.
+                loadingAsset,
+                deltaAssetDesc,
+                onSubAssetLoad,
+                data
+            };
+            return loadAssetAsync(desc);
         }
 
         Job::Handle loadResourceAsync(char const *assetPath, FourCC type, OnResourceLoad *onResourceLoad, void *data)
@@ -429,7 +465,26 @@ namespace IB
 
         Asset::Handle cloneAssetThreadSafe(Asset::Handle asset, FourCC type)
         {
-            return getStreamer(type)->cloneThreadSafe(asset);
+            Asset::IStreamer* streamer = getStreamer(type);
+
+            IB::Serialization::WriteStream writeStream;
+            IB::Asset::saveSubAssetThreadSafe(&writeStream, { type }, asset);
+
+            IB::Asset::Handle newAsset = streamer->create();
+            IB_ASSERT(newAsset != IB::InvalidAsset, "Cloning API expects to be able to create an asset.");
+            IB::Serialization::ReadStream readStream = { writeStream.Buffer };
+
+            IB::ThreadEvent threadEvent = IB::createThreadEvent();
+            IB::Asset::loadAssetInPlaceAsync(readStream, newAsset, { type },
+                [](void *data, IB::Asset::Handle)
+                {
+                    IB::ThreadEvent* threadEvent = reinterpret_cast<IB::ThreadEvent*>(data);
+                    IB::signalThreadEvent(*threadEvent);
+                }, &threadEvent);
+            IB::waitOnThreadEvent(threadEvent);
+            IB::destroyThreadEvent(threadEvent);
+
+            return newAsset;
         }
 
         Asset::Handle getAssetFromResource(Resource::Handle resourceHandle)

@@ -44,7 +44,6 @@ namespace IB
         {
             Serialization::ReadStream Stream;
             Asset::Handle LoadingAsset = InvalidAsset; // The asset to which we want to load
-            Asset::Handle ParentAsset = InvalidAsset; // Our owning asset
             Asset::Handle BaseAsset = InvalidAsset; // The asset from which we might derive
             Job::Handle Handle = {};
             uint64_t Data = 0;
@@ -97,7 +96,6 @@ namespace IB
             virtual LoadContinuation loadAsync(LoadContext *context) = 0;
             virtual void unloadThreadSafe(Asset::Handle handle) = 0;
             virtual void saveThreadSafe(SaveContext *context);
-            virtual Asset::Handle cloneThreadSafe(Asset::Handle /*sourceHandle*/) { return InvalidAsset; }
         };
         // NOTE: You might get a load state of available before you
         // receive a load state of Loading
@@ -123,7 +121,20 @@ namespace IB
 
         // Streamer API
         IB_API void addStreamer(FourCC type, IStreamer *streamer);
-        IB_API Job::Handle loadSubAssetAsync(LoadContext const* parentContext, DeltaAssetDesc deltaAssetDesc, Asset::Handle parentAsset, OnSubAssetLoad *onSubAssetLoad, void *data);
+
+        struct LoadAssetDesc
+        {
+            Serialization::ReadStream Stream;
+            uint32_t SaveVersion;
+            Asset::Handle LoadingAsset;
+            DeltaAssetDesc DeltaAssetDesc;
+            OnSubAssetLoad *OnSubAssetLoad;
+            void *OnSubAssetLoadData;
+        };
+        IB_API Job::Handle loadAssetAsync(LoadAssetDesc desc);
+        IB_API Job::Handle loadSubAssetAsync(LoadContext const* parentContext, DeltaAssetDesc deltaAssetDesc, OnSubAssetLoad *onSubAssetLoad, void *data);
+        IB_API Job::Handle loadAssetInPlaceAsync(Serialization::ReadStream stream, Asset::Handle loadingAsset, DeltaAssetDesc deltaAssetDesc, OnSubAssetLoad *onSubAssetLoad, void *data);
+
         IB_API void unloadSubAssetThreadSafe(Asset::Handle asset, FourCC type);
         IB_API void saveSubAssetThreadSafe(Serialization::WriteStream *stream, DeltaAssetDesc deltaAssetDesc, Asset::Handle asset);
         IB_API Asset::Handle cloneAssetThreadSafe(Asset::Handle asset, FourCC type);
@@ -151,9 +162,9 @@ namespace IB
         }
 
         template <typename StreamType>
-        inline Job::Handle loadSubAssetAsync(StreamType stream, DeltaAssetDesc deltaAssetDesc, Asset::Handle parentAsset, Asset::Handle *outputAsset)
+        inline Job::Handle loadSubAssetAsync(StreamType stream, DeltaAssetDesc deltaAssetDesc, Asset::Handle *outputAsset)
         {
-            return loadSubAssetAsync(stream, deltaAssetDesc, parentAsset, [](void *data, Asset::Handle asset, ResourceLoad::State loadState) {
+            return loadSubAssetAsync(stream, deltaAssetDesc, [](void *data, Asset::Handle asset, ResourceLoad::State loadState) {
                 if (loadState == ResourceLoad::Available)
                 {
                     *reinterpret_cast<Asset::Handle *>(data) = asset;
@@ -163,9 +174,9 @@ namespace IB
         }
 
         template <typename StreamType>
-        inline Job::Handle loadSubAssetAsync(StreamType stream, DeltaAssetDesc deltaAssetDesc, Asset::Handle parentAsset)
+        inline Job::Handle loadSubAssetAsync(StreamType stream, DeltaAssetDesc deltaAssetDesc)
         {
-            return loadSubAssetAsync(stream, deltaAssetDesc, parentAsset, [](void *, Asset::Handle, ResourceLoad::State) {}, nullptr);
+            return loadSubAssetAsync(stream, deltaAssetDesc, [](void *, Asset::Handle, ResourceLoad::State) {}, nullptr);
         }
     } // namespace Asset
 } // namespace IB

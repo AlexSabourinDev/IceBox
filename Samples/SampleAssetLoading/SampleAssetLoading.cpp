@@ -26,12 +26,13 @@ class TransformPropertyAssetStreamer : public IB::Asset::IStreamer
 public:
     IB::Asset::LoadContinuation loadAsync(IB::Asset::LoadContext *context) override
     {
+        // TODO: entity activation step
+
         IB::Mat3x4 localTransform;
         fromBinary(&context->Stream, &localTransform);
 
         LocalTransforms[ActiveTransforms] = localTransform;
         WorldTransforms[ActiveTransforms] = localTransform;
-        EntityMap[ActiveTransforms] = { static_cast<uint32_t>(IB::Asset::toValue(context->ParentAsset)) };
         return IB::Asset::complete(IB::Asset::toHandle(ActiveTransforms++));
     }
 

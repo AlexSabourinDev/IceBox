@@ -7,6 +7,7 @@
 #include "IBEntity.h"
 #include "IBJobs.h"
 #include "IBEditor.h"
+#include "IBPlatform.h"
 
 #include <imgui/imgui.h>
 
@@ -304,19 +305,6 @@ namespace
             IB::Asset::releaseResourceAsync(renderer->MeshResource);
             IB::Asset::releaseResourceAsync(renderer->MaterialResource);
             RendererProperties.remove(*renderer);
-        }
-
-        IB::Asset::Handle cloneThreadSafe(IB::Asset::Handle asset) override
-        {
-            RendererProperty const *sourceRenderer = toRendererProperty(asset);
-            IB::Asset::acquireResource(sourceRenderer->MeshResource);
-            IB::Asset::acquireResource(sourceRenderer->MaterialResource);
-
-            RendererProperty &clonedRenderer = RendererProperties.add();
-            clonedRenderer.MeshResource = sourceRenderer->MeshResource;
-            clonedRenderer.MaterialResource = sourceRenderer->MaterialResource;
-
-            return IB::Asset::toHandle(reinterpret_cast<uint64_t>(&clonedRenderer));
         }
     };
 

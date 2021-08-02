@@ -120,7 +120,7 @@ namespace IB
                         fromBinary(&context->Stream, &offset);
 
                         // Passing pointer to dynamic array item is OK here. We've reserved the memory and will not resize until the load is complete.
-                        loadHandles[handleCount++] = IB::Asset::loadSubAssetAsync(context, { entityProperty.Type, toAssetHandle(baseProperty) }, InvalidAsset,
+                        loadHandles[handleCount++] = IB::Asset::loadSubAssetAsync(context, { entityProperty.Type, toAssetHandle(baseProperty) },
                             [](void *data, IB::Asset::Handle asset)
                             {
                                 *reinterpret_cast<IB::Property::Handle *>(data) = toPropertyHandle(asset);
@@ -176,26 +176,6 @@ namespace IB
                 }
 
                 ActiveEntities.remove(*entity);
-            }
-
-            Asset::Handle cloneThreadSafe(IB::Asset::Handle assetHandle) override
-            {
-                Entity::Data* sourceEntity = Entity::toData(assetHandle);
-
-                Entity::Data& clonedEntity = ActiveEntities.add();
-                clonedEntity.Name = sourceEntity->Name;
-
-                clonedEntity.Properties.reserve(sourceEntity->Properties.count());
-                for (uint32_t i = 0; i < sourceEntity->Properties.count(); i++)
-                {
-                    Property::Data& propertyData = clonedEntity.Properties.add();
-                    propertyData.Type = sourceEntity->Properties[i].Type;
-                    Asset::Handle propertyAsset = toAssetHandle(sourceEntity->Properties[i].Handle);
-                    Asset::Handle clonedPropertyAsset = Asset::cloneAssetThreadSafe(propertyAsset, propertyData.Type);
-                    propertyData.Handle = toPropertyHandle(clonedPropertyAsset);
-                }
-
-                return Asset::toHandle(reinterpret_cast<uint64_t>(&clonedEntity));
             }
         };
 
@@ -315,7 +295,7 @@ namespace IB
                         fromBinary(&context->Stream, &offset);
 
                         // Passing pointer to dynamic array item is OK here. We've reserved the memory and will not resize until the load is complete.
-                        loadHandles[handleCount++] = IB::Asset::loadSubAssetAsync(context, { IB::Asset::toFourCC("ENTT"), baseAsset }, InvalidAsset,
+                        loadHandles[handleCount++] = IB::Asset::loadSubAssetAsync(context, { IB::Asset::toFourCC("ENTT"), baseAsset },
                             [](void *data, IB::Asset::Handle asset)
                             {
                                 *reinterpret_cast<IB::Entity::Handle *>(data) = toEntityHandle(asset);
