@@ -423,8 +423,6 @@ namespace IB
 
     namespace Editor
     {
-        DynamicArray<Serialization::MemoryBuffer> UndoStack;
-
         void entityEditor(Asset::Handle asset)
         {
             // TODO: Temp
@@ -433,24 +431,6 @@ namespace IB
             Serialization::MemoryBuffer undoBuffer = Serialization::steal(&writeStream);
 
             Entity::Data* entity = Entity::toData(asset);
-            if (UndoStack.count() > 0)
-            {
-                if (ImGui::Button("Undo"))
-                {
-                   Serialization::MemoryBuffer const& buffer = UndoStack.back();
-
-                    Serialization::ReadStream readStream = { buffer.Data };
-                    // Currently deadlocks editor.
-                    // If were in a job, we get stuck waiting forever since our job thread will never consume our job.
-                    // I don't love the idea of waiting on a thread event either. I'm not sure if there's maybe an easier way to pause this job to work on the other jobs in the queue.
-                    // Maybe I'll just implement some job stealing - that should allow us to block on another thread.
-                    loadAssetInPlaceSync(readStream, Asset::toFourCC("ENTT"), asset);
-
-                    UndoStack.remove();
-                }
-            }
-
-            bool changed = false;
 
             ImGui::Text("Entity");
             ImGui::Separator();
@@ -464,7 +444,7 @@ namespace IB
 
                 ImGui::TableNextColumn();
                 ImGui::SetNextItemWidth(-FLT_MIN);
-                changed |= ImGui::InputText("", entity->Name.String, Entity::MaxNameLength);
+                ImGui::InputText("", entity->Name.String, Entity::MaxNameLength);
 
                 ImGui::EndTable();
             }
@@ -475,26 +455,6 @@ namespace IB
             for (uint32_t i = 0; i < entity->Properties.count(); i++)
             {
                 Editor::drawAssetEditor(entity->Properties[i].Type, toAssetHandle(entity->Properties[i].Handle));
-            }
-
-            if (changed)
-            {
-                if (UndoStack.count() > 0)
-                {
-                    Serialization::MemoryBuffer const& lastBuffer = UndoStack.back();
-                    if (lastBuffer.Size != undoBuffer.Size)
-                    {
-                        UndoStack.add(std::move(undoBuffer));
-                    }
-                    else if (memcmp(lastBuffer.Data, undoBuffer.Data, lastBuffer.Size) != 0)
-                    {
-                        UndoStack.add(std::move(undoBuffer));
-                    }
-                }
-                else
-                {
-                    UndoStack.add(std::move(undoBuffer));
-                }
             }
         }
 

@@ -442,6 +442,11 @@ namespace IB
         return InterlockedCompareExchangePointerNoFence(atomic, exchange, compare);
     }
 
+    void *atomicExchange(void *volatile *atomic, void *exchange)
+    {
+        return InterlockedExchangePointerNoFence(atomic, exchange);
+    }
+
     uint64_t atomicOr(uint64_t volatile *atomic, uint64_t orValue)
     {
         return InterlockedOr64NoFence(reinterpret_cast<int64_t volatile*>(atomic), orValue);
@@ -514,9 +519,9 @@ namespace IB
         IB_ASSERT(result, "Failed to set our event!");
     }
 
-    void waitOnThreadEvent(ThreadEvent threadEvent)
+    void waitOnThreadEvent(ThreadEvent threadEvent, uint32_t waitInMilliseconds)
     {
-        DWORD result = WaitForSingleObject(reinterpret_cast<HANDLE>(threadEvent.Value), INFINITE);
+        DWORD result = WaitForSingleObject(reinterpret_cast<HANDLE>(threadEvent.Value), waitInMilliseconds);
         IB_ASSERT(result != WAIT_FAILED, "Failed to wait on our event!");
     }
 

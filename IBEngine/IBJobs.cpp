@@ -3,6 +3,8 @@
 #include "IBLogging.h"
 
 #include <string.h>
+#include <math.h>
+#include <stdio.h>
 
 /*
 ## Multi-threading
@@ -129,7 +131,7 @@ namespace IB
             struct alignas(64) Data
             {
                 alignas(16) uint8_t Data[IB::MaxJobDataSize];
-                void* Func = nullptr;
+                IB::JobFunc* Func = nullptr;
                 uint32_t Generation = 0;
                 uint32_t QueueIndex = IB::AllJobQueues;
             };
@@ -156,6 +158,7 @@ namespace
         JobQueue Queue;
         IB::ThreadHandle Thread;
         IB::ThreadEvent SleepEvent;
+        uint32_t Index;
         bool Alive = false;
     };
     constexpr uint32_t MaxWorkerCount = 64;
@@ -163,6 +166,7 @@ namespace
 
     constexpr uint32_t MaxJobPoolCount = MaxJobCount * MaxWorkerCount;
     IB::Job::Data JobPool[MaxJobPoolCount] = {};
+    IB::Job::Data EmptyJob = { {}, +[](void*) { return IB::JobResult::Complete; } };
 
     constexpr uint32_t MaxWaitCount = 1 << 16;
     constexpr uint32_t MaxJobWaiters = 10;
@@ -183,7 +187,7 @@ namespace
         for (; jobIndex < MaxJobPoolCount; jobIndex++)
         {
             // Everyone is trying to get a job from the pool, make sure that we've taken it with a compare exchange.
-            if (atomicCompareExchange(&JobPool[jobIndex].Func, nullptr, desc.Func) == nullptr)
+            if (IB::atomicCompareExchange<IB::JobFunc>(&JobPool[jobIndex].Func, nullptr, desc.Func) == nullptr)
             {
                 IB::threadAcquire(); // Assure that generation loads aren't run speculatively
                 job = &JobPool[jobIndex];
@@ -198,6 +202,39 @@ namespace
         job->QueueIndex = desc.QueueIndex;
 
         return job;
+    }
+
+    IB::Job::Data* stealJob(uint32_t workerIndex)
+    {
+        // Steal jump is an attempt at making stealing fair by trying to steal from the same level of each queue before moving on to the next job.
+        JobQueue *queue = &Workers[workerIndex].Queue;
+
+        int32_t currentProducerIndex = static_cast<int32_t>(IB::volatileLoad(&queue->Producer));
+
+        // Loop for our queue size estimate. It's okay if we go behind our consumer here
+        // we'll simply read null and move on
+        int32_t jobCount = abs(currentProducerIndex - static_cast<int32_t>(IB::volatileLoad(&queue->Consumer)));
+        for (int32_t i = 1; i <= jobCount; i++)
+        {
+            int32_t stealProducerIndex = currentProducerIndex - i;
+            if (stealProducerIndex < 0)
+            {
+                stealProducerIndex = MaxJobCount + stealProducerIndex;
+            }
+
+            IB::Job::Data* jobCandidate = queue->Jobs[stealProducerIndex];
+            if (jobCandidate != nullptr && jobCandidate != &EmptyJob && jobCandidate->QueueIndex == IB::AllJobQueues)
+            {
+                // Simply replace the last job with our current job.
+                // If it was a valid job, our worker will simply work on the empty job.
+                //   If it was a valid job, our worker will not have consumed it. If our worker consumed it,
+                //   The job would have been exchanged with a nullptr and that's what we would receive here.
+                // If it was a nullptr, we will simply continue trying to steal
+                return IB::atomicExchange(&queue->Jobs[stealProducerIndex], &EmptyJob);
+            }
+        }
+
+        return nullptr;
     }
 
     thread_local uint32_t NextWorker = 0;
@@ -237,22 +274,39 @@ namespace
             }
         }
 
-        // If our thread is preempted before we set out job,
+        // If our thread is preempted before we set our job,
         // then our worker thread will simply sleep until the job has actually been written to the variable.
         // We will then wake it up after we're done writting it out.
-        IB_ASSERT(Workers[commitedWorkerIndex].Queue.Jobs[commitedJobIndex] == nullptr, "We're expecting our job to be null here! Did someone write to it before us?!?");        
-        IB::volatileStore(&Workers[commitedWorkerIndex].Queue.Jobs[commitedJobIndex], job);
+        IB::Job::Data* previousJobValue = IB::atomicExchange(&Workers[commitedWorkerIndex].Queue.Jobs[commitedJobIndex], job);
+        // An empty job here is fine, it's possible a worker tried to steal from a consumed index
+        IB_ASSERT(previousJobValue == nullptr || previousJobValue == &EmptyJob, "We're expecting our job to be null here! Did someone write to it before us?!?");
+
         IB::threadRelease(); // Assure our writes are globally visible before this event
         IB::signalThreadEvent(Workers[commitedWorkerIndex].SleepEvent); // Signal our sleeping worker
     }
 
     void waitJob(IB::Job::Data* job, IB::Job::Handle* dependencies, uint32_t dependencyCount)
     {
+        uint32_t validDependencyCount = dependencyCount;
+        for (uint32_t dep = 0; dep < dependencyCount; dep++)
+        {
+            if (IB::Job::toValue(dependencies[dep]) == IB::InvalidJob)
+            {
+                validDependencyCount--;
+            }
+        }
+
+        if (validDependencyCount == 0)
+        {
+            commitJob(job);
+            return;
+        }
+
         // Try to commit a wait counter for our dependency count.
         uint32_t waitIndex = 0;
         for (; waitIndex < MaxWaitCount; waitIndex++)
         {
-            if (IB::atomicCompareExchange(&WaitList.WaitCounts[waitIndex], 0, dependencyCount + 1) == 0)
+            if (IB::atomicCompareExchange(&WaitList.WaitCounts[waitIndex], 0, validDependencyCount + 1) == 0)
             {
                 break;
             }
@@ -262,6 +316,11 @@ namespace
         // Add our job to the wait list of all our dependencies
         for (uint32_t dep = 0; dep < dependencyCount; dep++)
         {
+            if (IB::Job::toValue(dependencies[dep]) == IB::InvalidJob)
+            {
+                continue;
+            }
+
             uint32_t sourceJobIndex = IB::Job::toValue(dependencies[dep]) & 0xFFFFFFFF;
             uint32_t sourceJobGeneration = IB::Job::toValue(dependencies[dep]) >> 32;
 
@@ -298,7 +357,7 @@ namespace
             // - We add to the list
             // - Generation check fails
             // - Job completes and removes from the list
-            if (JobPool[sourceJobIndex].Generation > sourceJobGeneration)
+            if (IB::volatileLoad(&JobPool[sourceJobIndex].Generation) > sourceJobGeneration)
             {
                 // At this point, there's 3 possibilities.
                 // 1. No one is contending with us, we simply clear our wait index and commit our job
@@ -309,7 +368,7 @@ namespace
                 // index from the job pool.
                 if (IB::atomicCompareExchange(&WaitList.Waiters[sourceJobIndex][listIndex], waitHandle, 0) == waitHandle)
                 {
-                    IB_ASSERT(WaitList.WaitCounts[waitIndex] != 1, "Value should be above 1. 1 is our final value.");
+                    IB_ASSERT(WaitList.WaitCounts[waitIndex] > 1, "Value should be above 1. 1 is our final value.");
                     if (IB::atomicDecrement(&WaitList.WaitCounts[waitIndex]) == 1)
                     {
                         commitJob(job);
@@ -328,13 +387,21 @@ namespace
 
         while (true)
         {
-            while (IB::volatileLoad(&queue->Jobs[queue->Consumer]) == nullptr && IB::volatileLoad(&worker->Alive))
+            IB::Job::Data* stolenJob = nullptr;
+            // Keep looping while:
+            // We're alive and waiting for a job or our producer hasn't moved forward
+            while (
+                (IB::volatileLoad(&queue->Jobs[queue->Consumer]) == nullptr
+                || IB::volatileLoad(&queue->Producer) == queue->Consumer)
+                && IB::volatileLoad(&worker->Alive))
             {
                 // Give it a few iterations, we might just be writting the value to this index.
                 bool breakEarly = false;
                 for (uint32_t i = 0; i < 32; i++)
                 {
-                    if (IB::volatileLoad(&queue->Jobs[queue->Consumer]) != nullptr || !IB::volatileLoad(&worker->Alive))
+                    if ((IB::volatileLoad(&queue->Jobs[queue->Consumer]) != nullptr
+                        && IB::volatileLoad(&queue->Producer) != queue->Consumer)
+                        || !IB::volatileLoad(&worker->Alive))
                     {
                         breakEarly = true;
                         break;
@@ -346,19 +413,38 @@ namespace
                     break;
                 }
 
-                // Should go to sleep here after a few iterations.
-                // Possible behaviour for this wait:
-                // - No work is available, next signal will wake us when we add work
-                // - Work is available but not visible to us yet, signal will wake us when it's visible
-                // - Signal has been sent for a previous chunk of work
-                //     Say we signaled for Consumer - 1,
-                //     If we signaled for that index and it wasn't consumed
-                //     then we'll simply reset the event
-                //     and return to the iteration to wait for the next signal
-                // There are no states (that I can think of) that will leave us waiting for a signal
-                // even if there is work available.
-                waitOnThreadEvent(worker->SleepEvent);
-                IB::threadAcquire(); // Assure our loads aren't run before this event
+                // Try to take from each of our workers
+                for (uint32_t i = 1; i < WorkerCount; i++)
+                {
+                    uint32_t stealingWorkerIndex = (worker->Index + i) % WorkerCount;
+                    stolenJob = stealJob(stealingWorkerIndex);
+                    if (stolenJob != nullptr)
+                    {
+                        break;
+                    }
+                }
+
+                if (stolenJob != nullptr)
+                {
+                    break;
+                }
+                else
+                {
+                    // Should go to sleep here after a few iterations.
+                    // Possible behaviour for this wait:
+                    // - No work is available, next signal will wake us when we add work
+                    // - Work is available but not visible to us yet, signal will wake us when it's visible
+                    // - Signal has been sent for a previous chunk of work
+                    //     Say we signaled for Consumer - 1,
+                    //     If we signaled for that index and it wasn't consumed
+                    //     then we'll simply reset the event
+                    //     and return to the iteration to wait for the next signal
+                    // There are no states (that I can think of) that will leave us waiting for a signal
+                    // even if there is work available.
+                    constexpr uint32_t wait = 1; // Wait for 1 millisecond
+                    waitOnThreadEvent(worker->SleepEvent, wait);
+                    IB::threadAcquire(); // Assure our loads aren't run before this event
+                }
             }
 
             if (!IB::volatileLoad(&worker->Alive))
@@ -366,37 +452,36 @@ namespace
                 break;
             }
 
-            IB::Job::Data *job = IB::volatileLoad(&queue->Jobs[queue->Consumer]);
+            IB::Job::Data *job;
+            if (stolenJob == nullptr)
+            {
+                job = IB::atomicExchange<IB::Job::Data>(&queue->Jobs[queue->Consumer], nullptr);
+            }
+            else
+            {
+                job = stolenJob;
+            }
+
             // Note that our job might have marked itself for continuation while it's also active in another thread.
             // If it was put to sleep in this result, it will simply be removed from the queue
             // As a result, it should behave correctly if the job completes before it is even put to sleep.
             // If putting to sleep has side effects in the future, the API might have to be re-thought
-            IB::JobResult result = reinterpret_cast<IB::JobFunc *>(job->Func)(job->Data);
+            IB::JobResult result = job->Func(job->Data);
 
             // Queue management
+            if(stolenJob == nullptr)
             {
-                IB::volatileStore<IB::Job::Data *volatile>(&queue->Jobs[queue->Consumer], nullptr);
-                // Make sure other threads see our writes to the job queue before we move our consumer index forward.
-                // This fence is not necessary, but having it allows us to have some extra
-                // asserts on the producer side to make sure producers aren't stomping on each other.
-                IB::threadRelease();
                 IB::volatileStore(&queue->Consumer, (queue->Consumer + 1) % MaxJobCount);
             }
 
             // A sleeping job will not be returned to the job pool and waiting
             // jobs will not be signaled.
-            if (result == IB::JobResult::Complete)
+            // Don't do any threadpool management and sleeping job signaling for an empty job.
+            if (result == IB::JobResult::Complete && job != &EmptyJob)
             {
                 // Thread pool management
                 uint32_t generation = IB::volatileLoad(&job->Generation);
-                {
-                    IB::volatileStore(&job->Generation, generation + 1);
-                    // Assure that our generation increment is visible before we return our job to the pool
-                    // If it wasn't, our job could be pulled from the pool,
-                    // and a handle created with the wrong generation index.
-                    IB::threadRelease();
-                    IB::volatileStore<void *volatile>(&job->Func, nullptr); // Returns our job to the pool
-                }
+                IB::volatileStore(&job->Generation, generation + 1);
 
                 // Attempt to signal all our waiting jobs
                 uint32_t jobIndex = static_cast<uint32_t>(job - JobPool);
@@ -420,7 +505,7 @@ namespace
                             // it means the job was committed by the "continueJob" call.
                             if (IB::atomicCompareExchange(&WaitList.Waiters[jobIndex][i], waitHandle, 0) == waitHandle)
                             {
-                                IB_ASSERT(WaitList.WaitCounts[waitIndex] != 1, "Value should be above 1. 1 is our final value.");
+                                IB_ASSERT(WaitList.WaitCounts[waitIndex] > 1, "Value should be above 1. 1 is our final value.");
                                 if (IB::atomicDecrement(&WaitList.WaitCounts[waitIndex]) == 1)
                                 {
                                     commitJob(&JobPool[theirIndex]);
@@ -429,6 +514,15 @@ namespace
                             }
                         }
                     }
+                }
+
+                // Only return our job to the pool once we've signaled our waiters
+                {
+                    // Assure that our generation increment is visible before we return our job to the pool
+                    // If it wasn't, our job could be pulled from the pool,
+                    // and a handle created with the wrong generation index.
+                    IB::threadRelease();
+                    IB::volatileStore<IB::JobFunc *volatile>(&job->Func, nullptr); // Returns our job to the pool
                 }
             }
         }
@@ -445,6 +539,7 @@ namespace IB
             Workers[i].Alive = true;
             Workers[i].SleepEvent = createThreadEvent();
             Workers[i].Thread = createThread(&workerFunc, &Workers[i]);
+            Workers[i].Index = i;
         }
     }
 

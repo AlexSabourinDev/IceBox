@@ -162,13 +162,17 @@ namespace IB
     IB_API uint32_t atomicCompareExchange(uint32_t volatile *atomic, uint32_t compare, uint32_t exchange);
     IB_API uint64_t atomicCompareExchange(uint64_t volatile *atomic, uint64_t compare, uint64_t exchange);
     IB_API void *atomicCompareExchange(void *volatile *atomic, void *compare, void *exchange);
+    IB_API void *atomicExchange(void *volatile *atomic, void *exchange);
     IB_API uint64_t atomicOr(uint64_t volatile *atomic, uint64_t orValue);
     IB_API uint64_t atomicAnd(uint64_t volatile *atomic, uint64_t andValue);
     inline uint32_t atomicIncrement(uint32_t *atomic) { return atomicIncrement(static_cast<uint32_t volatile *>(atomic)); }
     inline uint32_t atomicDecrement(uint32_t *atomic) { return atomicDecrement(static_cast<uint32_t volatile *>(atomic)); }
     inline uint32_t atomicCompareExchange(uint32_t *atomic, uint32_t compare, uint32_t exchange) { return atomicCompareExchange(static_cast<uint32_t volatile *>(atomic), compare, exchange); }
     inline uint64_t atomicCompareExchange(uint64_t *atomic, uint64_t compare, uint64_t exchange) { return atomicCompareExchange(static_cast<uint64_t volatile *>(atomic), compare, exchange); }
-    inline void *atomicCompareExchange(void **atomic, void *compare, void *exchange) { return atomicCompareExchange(static_cast<void *volatile *>(atomic), compare, exchange); }
+    template< typename T >
+    T *atomicCompareExchange(T **atomic, T *compare, T *exchange) { return reinterpret_cast<T*>(atomicCompareExchange(reinterpret_cast<void *volatile *>(atomic), compare, exchange)); }
+    template< typename T >
+    T *atomicExchange(T **atomic, T *exchange) { return reinterpret_cast<T*>(atomicExchange(reinterpret_cast<void *volatile *>(atomic), exchange)); }
     inline uint64_t atomicOr(uint64_t *atomic, uint64_t orValue) { return atomicOr(static_cast<uint64_t volatile*>(atomic), orValue); }
     inline uint64_t atomicAnd(uint64_t *atomic, uint64_t andValue) { return atomicAnd(static_cast<uint64_t volatile*>(atomic), andValue); }
 
@@ -192,7 +196,8 @@ namespace IB
     IB_API ThreadEvent createThreadEvent();
     IB_API void destroyThreadEvent(ThreadEvent threadEvent);
     IB_API void signalThreadEvent(ThreadEvent threadEvent);
-    IB_API void waitOnThreadEvent(ThreadEvent threadEvent);
+    const uint32_t InfiniteWait = UINT32_MAX;
+    IB_API void waitOnThreadEvent(ThreadEvent threadEvent, uint32_t waitInMilliseconds = InfiniteWait);
     IB_API void resetThreadEvent(ThreadEvent threadEvent);
 
     // Not the ideal place for these, but good enough for now

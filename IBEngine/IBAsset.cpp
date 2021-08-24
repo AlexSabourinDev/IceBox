@@ -299,7 +299,7 @@ namespace IB
             if (assetPath[0] == '\0')
             {
                 onResourceLoad(data, InvalidResource, ResourceLoad::NotExisting);
-                return {};
+                return InvalidJob;
             }
 
             uint32_t pathHash = hash(assetPath);
@@ -309,7 +309,7 @@ namespace IB
             // Assure that we don't load our asset pointer before we've guaranteed our ref count
             threadAcquire();
 
-            Job::Handle requestHandle = {};
+            Job::Handle requestHandle = InvalidJob;
             if (!newAssetEntry)
             {
                 // We could be asking for our asset to be loaded twice before our first load is complete.
@@ -380,7 +380,7 @@ namespace IB
         {
             if (resourceHandle == InvalidResource)
             {
-                return {};
+                return InvalidJob;
             }
 
             uint32_t mappingIndex = Resource::toValue(resourceHandle) % MaxTableEntries;
@@ -410,7 +410,7 @@ namespace IB
             // Thread 2: Allocate data and add to table
             threadLoadStoreFence();
 
-            Job::Handle job = {};
+            Job::Handle job = InvalidJob;
             if (atomicDecrement(&ResourceHashTable[mappingIndex].RefCount) == 0)
             {
                 auto onUnload = [resource]() {
