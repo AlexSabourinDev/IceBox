@@ -463,6 +463,7 @@ namespace IB
         uint32_t rendererCount = 0;
         MeshHandle meshes[32];
         MaterialHandle materials[32];
+        Transform transforms[32];
         for (uint32_t i = 0; i < entityCount; i++)
         {
             Property::Handle handle = getPropertyFromEntity(entities[i], Asset::toFourCC("RNDR"));
@@ -479,6 +480,13 @@ namespace IB
                     {
                         meshes[rendererCount] = { static_cast<uint32_t>(Asset::toValue(Asset::getAssetFromResource(renderer->MeshResource))) };
                         materials[rendererCount] = material->Material;
+
+                        Property::Handle transformHandle = getPropertyFromEntity(entities[i], Asset::toFourCC("TFRM"));
+                        if (transformHandle != InvalidProperty)
+                        {
+                            transforms[rendererCount] = getLocalTransform(transformHandle);
+                        }
+
                         rendererCount++;
                     }
                 }
@@ -487,7 +495,7 @@ namespace IB
 
         ViewDesc viewDesc = {};
         {
-            Float3 viewPos = Float3{ 0.0f, 1.0f, 0.0f };
+            Float3 viewPos = Float3{ 0.0f, -5.0f, 0.0f };
             Mat4x4 view =
             {
                 {{1.0f, 0.0f, 0.0f, -viewPos.x},
@@ -515,13 +523,7 @@ namespace IB
             for (uint32_t i = 0; i < rendererCount; i++)
             {
                 meshInstances[i].Mesh = meshes[i];
-                Mat3x4 meshTransform =
-                {
-                    {{1.0f, 0.0f, 0.0f, 2.0f * i},
-                     {0.0f, 1.0f, 0.0f, 5.0f},
-                     {0.0f, 0.0f, 1.0f, 0.0f}},
-                };
-
+                Mat3x4 meshTransform = toMatrix(transforms[i]);
                 meshInstances[i].Transforms = allocateArray<Mat3x4>(allocator, 1, meshTransform);
                 meshInstances[i].Count = 1;
             }

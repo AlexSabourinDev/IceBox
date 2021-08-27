@@ -5,6 +5,8 @@
 
 namespace IB
 {
+    struct Transform;
+
     namespace Asset
     {
         enum FourCC : uint32_t;
@@ -27,6 +29,10 @@ namespace IB
     };
     constexpr Property::Handle InvalidProperty = Property::toHandle(UINT64_MAX);
 
+    inline Property::Handle toPropertyHandle(Asset::Handle asset) { return Property::toHandle(Asset::toValue(asset)); }
+    inline Asset::Handle toAssetHandle(Property::Handle property) { return Asset::toHandle(Property::toValue(property)); }
+
+    // Entity API
     namespace Entity
     {
         enum Handle : uint64_t {};
@@ -35,6 +41,19 @@ namespace IB
     };
     constexpr Entity::Handle InvalidEntity = Entity::toHandle(0);
 
+    inline Entity::Handle toEntityHandle(Asset::Handle asset) { return Entity::toHandle(Asset::toValue(asset)); }
+    inline Asset::Handle toAssetHandle(Entity::Handle entity) { return Asset::toHandle(Entity::toValue(entity)); }
+
+    IB_API void initEntitySystem();
+    IB_API void killEntitySystem();
+
+    IB_API Entity::Handle createEntity();
+    IB_API void addPropertyToEntity(Entity::Handle entity, Asset::FourCC type, Property::Handle propertyHandle);
+    IB_API Property::Handle getPropertyFromEntity(Entity::Handle entity, Asset::FourCC type);
+    IB_API char const* getEntityName(Entity::Handle entity);
+    IB_API void setEntityName(Entity::Handle entityHandle, char const* name);
+
+    // Cell API
     namespace Cell
     {
         enum Handle : uint64_t {};
@@ -43,26 +62,15 @@ namespace IB
     };
     constexpr Cell::Handle InvalidCell = Cell::toHandle(UINT64_MAX);
 
-    inline Property::Handle toPropertyHandle(Asset::Handle asset) { return Property::toHandle(Asset::toValue(asset)); }
-    inline Asset::Handle toAssetHandle(Property::Handle property) { return Asset::toHandle(Property::toValue(property)); }
-    inline Entity::Handle toEntityHandle(Asset::Handle asset) { return Entity::toHandle(Asset::toValue(asset)); }
     inline Cell::Handle toCellHandle(Asset::Handle asset) { return Cell::toHandle(Asset::toValue(asset)); }
-    inline Asset::Handle toAssetHandle(Entity::Handle entity) { return Asset::toHandle(Entity::toValue(entity)); }
     inline Asset::Handle toAssetHandle(Cell::Handle cell) { return Asset::toHandle(Cell::toValue(cell)); }
 
-    IB_API void initEntitySystem();
-    IB_API void killEntitySystem();
-
-    // Entity API
-    IB_API Entity::Handle createEntity();
-    IB_API void addPropertyToEntity(Entity::Handle entity, Asset::FourCC type, Property::Handle propertyHandle);
-    IB_API Property::Handle getPropertyFromEntity(Entity::Handle entity, Asset::FourCC type);
-    IB_API char const* getEntityName(Entity::Handle entity);
-    IB_API void setEntityName(Entity::Handle entityHandle, char const* name);
-
-    // Cell API
     IB_API Cell::Handle createCell(Resource::Handle baseCell = Resource::toHandle(0));
     IB_API void addEntityToCell(Cell::Handle cell, Entity::Handle entity);
     IB_API void getEntityList(Cell::Handle cell, Entity::Handle** entities, uint32_t* entityCount);
+
+    // Transform API
+    IB_API Property::Handle createTransformProperty();
+    IB_API const Transform& getLocalTransform(Property::Handle handle);
 }
 

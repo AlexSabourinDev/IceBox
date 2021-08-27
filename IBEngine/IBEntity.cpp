@@ -7,11 +7,13 @@
 #include "IBPlatform.h"
 #include "IBLogging.h"
 #include "IBEditor.h"
+#include "IBMath.h"
 
 #include <imgui/imgui.h>
 
 #include <string.h>
 
+// Property
 namespace IB
 {
     namespace Property
@@ -25,7 +27,70 @@ namespace IB
             };
         }
     }
+}
 
+namespace IB
+{
+    ThreadSafePool<Transform> LocalTransforms;
+
+    Property::Handle createTransformProperty()
+    {
+        return Property::toHandle(reinterpret_cast<uint64_t>(&LocalTransforms.add()));
+    }
+
+    const Transform& getLocalTransform(Property::Handle handle)
+    {
+        return *reinterpret_cast<Transform*>(Property::toValue(handle));
+    }
+
+    namespace Editor
+    {
+        void transformEditor(Asset::Handle asset)
+        {
+            if (ImGui::TreeNode("Transform"))
+            {
+                if (ImGui::BeginTable("Inspector Table", 2))
+                {
+                    ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed);
+                    ImGui::TableSetupColumn("Data", ImGuiTableColumnFlags_None);
+
+                    Transform* transform = reinterpret_cast<Transform*>(Asset::toValue(asset));
+
+                    ImGui::TableNextColumn();
+                    ImGui::Text("Position");
+
+                    ImGui::TableNextColumn();
+                    ImGui::SetNextItemWidth(-FLT_MIN);
+                    ImGui::InputFloat3("#Position", toArray(&transform->Position));
+
+                    static Float3 euler = { 0.0f, 0.0f, 0.0f };
+                    ImGui::TableNextColumn();
+                    ImGui::Text("Rotation");
+
+                    ImGui::TableNextColumn();
+                    ImGui::SetNextItemWidth(-FLT_MIN);
+                    ImGui::InputFloat3("#Rotation", toArray(&euler));
+                    transform->Rotation = fromEulerAngles(euler * DegToRad);
+
+                    ImGui::TableNextColumn();
+                    ImGui::Text("Scale");
+
+                    ImGui::TableNextColumn();
+                    ImGui::SetNextItemWidth(-FLT_MIN);
+                    ImGui::InputFloat("#Scale", &transform->Scale);
+
+                    ImGui::EndTable();
+                }
+                ImGui::TreePop();
+
+            }
+        }
+    }
+}
+
+// Entity
+namespace IB
+{
     namespace Entity
     {
         namespace
@@ -49,7 +114,7 @@ namespace IB
 
             Entity::Data* toData(Asset::Handle assetHandle) { return reinterpret_cast<Entity::Data*>(Asset::toValue(assetHandle)); }
             Entity::Data* toData(Entity::Handle entityHandle) { return reinterpret_cast<Entity::Data*>(Entity::toValue(entityHandle)); }
-        
+
             Property::Handle findProperty(Entity::Data const* entityData, Asset::FourCC type)
             {
                 for (uint32_t i = 0; i < entityData->Properties.count(); i++)
@@ -158,12 +223,12 @@ namespace IB
                             toAssetHandle(entityProperty->Handle), // Create a new property asset
                             toAssetHandle(baseProperty),
                         };
-                        
+
                         loadHandles[handleCount++] = IB::Asset::loadSubAssetAsync(loadSubAssetDesc,
                             [](void *data, IB::Asset::Handle asset)
-                            {
-                                *reinterpret_cast<IB::Property::Handle *>(data) = toPropertyHandle(asset);
-                            }, &entityProperty->Handle);
+                        {
+                            *reinterpret_cast<IB::Property::Handle *>(data) = toPropertyHandle(asset);
+                        }, &entityProperty->Handle);
                         advance(&context->Stream, offset);
                     }
 
@@ -197,7 +262,7 @@ namespace IB
                     uint32_t dummyWriteSize = 0;
                     toBinary(context->Stream, dummyWriteSize);
                     uint32_t writeStart = context->Stream->BufferCursor;
-                    IB::Asset::saveAssetThreadSafe(context->Stream, entity->Properties[i].Type, toAssetHandle(entity->Properties[i].Handle), toAssetHandle(baseProperty) );
+                    IB::Asset::saveAssetThreadSafe(context->Stream, entity->Properties[i].Type, toAssetHandle(entity->Properties[i].Handle), toAssetHandle(baseProperty));
                     uint32_t writeEnd = context->Stream->BufferCursor;
 
                     // Write our written size right before our sub asset.
@@ -219,6 +284,96 @@ namespace IB
         };
 
         EntityAssetStreamer EntityStreamer;
+    }
+
+    // Entity API
+    Entity::Handle createEntity()
+    {
+        Entity::Data& entity = ActiveEntities.add();
+        return Entity::toHandle(reinterpret_cast<uint64_t>(&entity));
+    }
+
+    void addPropertyToEntity(Entity::Handle entityHandle, Asset::FourCC type, Property::Handle propertyHandle)
+    {
+        Entity::Data* entity = Entity::toData(entityHandle);
+        IB_ASSERT(findProperty(entity, type) == InvalidProperty, "Assuming that we can't have multiple of a particular property.");
+        entity->Properties.add(type, propertyHandle);
+    }
+
+    Property::Handle getPropertyFromEntity(Entity::Handle entityHandle, Asset::FourCC type)
+    {
+        return findProperty(Entity::toData(entityHandle), type);
+    }
+
+    char const* getEntityName(Entity::Handle entityHandle)
+    {
+        Entity::Data* entity = Entity::toData(entityHandle);
+        if (entity == nullptr)
+        {
+            return "";
+        }
+        else if (entity->Name.String[0] == '\0')
+        {
+            return "Entity";
+        }
+        else
+        {
+            return entity->Name.String;
+        }
+    }
+
+    void setEntityName(Entity::Handle entityHandle, char const* name)
+    {
+        Entity::Data* entity = Entity::toData(entityHandle);
+        IB_ASSERT(strlen(name) < Entity::MaxNameLength, "Entity name is too long! Stomping on memory.");
+        strcpy(entity->Name.String, name);
+    }
+
+    namespace Editor
+    {
+        void entityEditor(Asset::Handle asset)
+        {
+            Entity::Data* entity = Entity::toData(asset);
+
+            ImGui::Text("Entity");
+            ImGui::Separator();
+            if (ImGui::BeginTable("Inspector Table", 2))
+            {
+                ImGui::TableSetupColumn("Property", ImGuiTableColumnFlags_WidthFixed);
+                ImGui::TableSetupColumn("Data", ImGuiTableColumnFlags_None);
+
+                ImGui::TableNextColumn();
+                ImGui::Text("Name");
+
+                ImGui::TableNextColumn();
+                ImGui::SetNextItemWidth(-FLT_MIN);
+                ImGui::InputText("", entity->Name.String, Entity::MaxNameLength);
+
+                ImGui::EndTable();
+            }
+
+            ImGui::Text("Properties");
+            ImGui::Separator();
+
+            if (ImGui::Button("Add Transform"))
+            {
+                addPropertyToEntity(toEntityHandle(asset), Asset::toFourCC("TFRM"), createTransformProperty());
+            }
+
+            for (uint32_t i = 0; i < entity->Properties.count(); i++)
+            {
+                Editor::drawAssetEditor(entity->Properties[i].Type, toAssetHandle(entity->Properties[i].Handle));
+            }
+        }
+    }
+}
+
+// Cell
+namespace IB
+{
+    namespace
+    {
+        // Entity API
 
         struct EntityID
         {
@@ -423,41 +578,6 @@ namespace IB
 
     namespace Editor
     {
-        void entityEditor(Asset::Handle asset)
-        {
-            // TODO: Temp
-            Serialization::WriteStream writeStream;
-            saveAssetThreadSafe(&writeStream, Asset::toFourCC("ENTT"), asset);
-            Serialization::MemoryBuffer undoBuffer = Serialization::steal(&writeStream);
-
-            Entity::Data* entity = Entity::toData(asset);
-
-            ImGui::Text("Entity");
-            ImGui::Separator();
-            if (ImGui::BeginTable("Inspector Table", 2))
-            {
-                ImGui::TableSetupColumn("Property", ImGuiTableColumnFlags_WidthFixed);
-                ImGui::TableSetupColumn("Data", ImGuiTableColumnFlags_None);
-
-                ImGui::TableNextColumn();
-                ImGui::Text("Name");
-
-                ImGui::TableNextColumn();
-                ImGui::SetNextItemWidth(-FLT_MIN);
-                ImGui::InputText("", entity->Name.String, Entity::MaxNameLength);
-
-                ImGui::EndTable();
-            }
-
-            ImGui::Text("Properties");
-            ImGui::Separator();
-
-            for (uint32_t i = 0; i < entity->Properties.count(); i++)
-            {
-                Editor::drawAssetEditor(entity->Properties[i].Type, toAssetHandle(entity->Properties[i].Handle));
-            }
-        }
-
         void cellEditor(Asset::Handle asset)
         {
             Cell::Handle cellHandle = toCellHandle(asset);
@@ -482,62 +602,7 @@ namespace IB
         }
     }
 
-    void initEntitySystem()
-    {
-        Asset::addStreamer(Asset::toFourCC("ENTT"), &EntityStreamer);
-        Asset::addStreamer(Asset::toFourCC("CELL"), &CellStreamer);
-
-        Editor::addAssetEditor(Asset::toFourCC("CELL"), &Editor::cellEditor);
-        Editor::addAssetEditor(Asset::toFourCC("ENTT"), &Editor::entityEditor);
-    }
-
-    void killEntitySystem()
-    {
-
-    }
-
-    Entity::Handle createEntity()
-    {
-        Entity::Data& entity = ActiveEntities.add();
-        return Entity::toHandle(reinterpret_cast<uint64_t>(&entity));
-    }
-
-    void addPropertyToEntity(Entity::Handle entityHandle, Asset::FourCC type, Property::Handle propertyHandle)
-    {
-        Entity::Data* entity = Entity::toData(entityHandle);
-        IB_ASSERT(findProperty(entity, type) == InvalidProperty, "Assuming that we can't have multiple of a particular property.");
-        entity->Properties.add(type, propertyHandle);
-    }
-
-    Property::Handle getPropertyFromEntity(Entity::Handle entityHandle, Asset::FourCC type)
-    {
-        return findProperty(Entity::toData(entityHandle), type);
-    }
-
-    char const* getEntityName(Entity::Handle entityHandle)
-    {
-        Entity::Data* entity = Entity::toData(entityHandle);
-        if (entity == nullptr)
-        {
-            return "";
-        }
-        else if (entity->Name.String[0] == '\0')
-        {
-            return "Entity";
-        }
-        else
-        {
-            return entity->Name.String;
-        }
-    }
-
-    void setEntityName(Entity::Handle entityHandle, char const* name)
-    {
-        Entity::Data* entity = Entity::toData(entityHandle);
-        IB_ASSERT(strlen(name) < Entity::MaxNameLength, "Entity name is too long! Stomping on memory.");
-        strcpy(entity->Name.String, name);
-    }
-
+    // Cell API
     Cell::Handle createCell(Resource::Handle baseCell)
     {
         uint32_t createdCellIndex = MaxCellCount;
@@ -599,6 +664,21 @@ namespace IB
         {
             *entityCount = 0;
         }
+    }
+
+    void initEntitySystem()
+    {
+        Asset::addStreamer(Asset::toFourCC("ENTT"), &EntityStreamer);
+        Asset::addStreamer(Asset::toFourCC("CELL"), &CellStreamer);
+
+        Editor::addAssetEditor(Asset::toFourCC("CELL"), &Editor::cellEditor);
+        Editor::addAssetEditor(Asset::toFourCC("ENTT"), &Editor::entityEditor);
+        Editor::addAssetEditor(Asset::toFourCC("TFRM"), &Editor::transformEditor);
+    }
+
+    void killEntitySystem()
+    {
+
     }
 }
 

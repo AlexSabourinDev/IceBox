@@ -7,6 +7,8 @@ namespace IB
 {
     constexpr float Pi = 3.1415926535f;
     constexpr float Tao = 2.0f * Pi;
+    constexpr float DegToRad = Pi / 180.0f;
+    constexpr float RadToDeg = 180.0f / Pi;
 
     struct Float3
     {
@@ -25,6 +27,15 @@ namespace IB
         float &operator[](uint32_t i) { return (&x)[i]; }
         float operator[](uint32_t i) const { return (&x)[i]; }
         float x, y, z, w;
+    };
+
+    struct Quaternion
+    {
+        float &operator[](uint32_t i) { return (&x)[i]; }
+        float operator[](uint32_t i) const { return (&x)[i]; }
+        float x, y, z, w;
+
+        static constexpr Quaternion identity() { return Quaternion{ 0.0f, 0.0f, 0.0f, 1.0f }; }
     };
 
     struct Mat4x4
@@ -64,6 +75,13 @@ namespace IB
         }
     };
 
+    struct Transform
+    {
+        Float3 Position = {};
+        Quaternion Rotation = Quaternion::identity();
+        float Scale = 1.0f;
+    };
+
     // Left will be applied first, right will be applied second
     // When multiplying a vector by this new matrix
     inline Mat4x4 mul(const Mat4x4 &left, const Mat4x4 &right);
@@ -82,11 +100,20 @@ namespace IB
     inline Float3 max(Float3 left, Float3 right);
     inline float length(Float3 value);
     inline float dot(Float3 left, Float3 right);
+    inline float* toArray(Float3* value) { return &value->x; };
+
+    inline Float3 rotate(Quaternion rotator, Float3 point);
+    inline Quaternion operator*(Quaternion left, Quaternion right);
+    inline Quaternion conjugate(Quaternion q);
+    inline Quaternion fromAxisAngle(Float3 axis, float angle);
+    inline Quaternion fromEulerAngles(Float3 angles);
 
     inline bool doesLineAABBIntersect(Float3 lineStart, Float3 lineEnd, AABB aabb);
     inline bool doesLineCylinderIntersect(Float3 lineStart, Float3 lineEnd, Float3 cylinderStart, Float3 cylinderEnd, float radius);
     inline Float3 intersectRayPlane(IB::Float3 planeNormal, float planeDistance, IB::Float3 rayDir, IB::Float3 rayOrigin);
     inline AABB consume(AABB aabb, Float3 p);
+
+    inline Mat3x4 toMatrix(const Transform& transform);
 
     // Implementation
     inline Mat4x4 mul(const Mat4x4 &left, const Mat4x4 &right)
@@ -127,7 +154,7 @@ namespace IB
                 left[row][0] * right[0],
                 left[row][1] * right[1],
                 left[row][2] * right[2],
-                left[row][3] * right[3]};
+                left[row][3] * right[3] };
             out[row] = r[0] + r[1] + r[2] + r[3];
         }
         return out;
@@ -135,7 +162,7 @@ namespace IB
 
     inline Float4 operator/(Float4 left, float right)
     {
-        return Float4{left.x / right, left.y / right, left.z / right, left.w / right};
+        return Float4{ left.x / right, left.y / right, left.z / right, left.w / right };
     }
 
     inline Float3 operator+(Float3 left, Float3 right)
@@ -145,17 +172,17 @@ namespace IB
 
     inline Float3 operator-(Float3 left, Float3 right)
     {
-        return Float3{left.x - right.x, left.y - right.y, left.z - right.z};
+        return Float3{ left.x - right.x, left.y - right.y, left.z - right.z };
     }
 
     inline Float3 operator/(Float3 left, float right)
     {
-        return Float3{left.x / right, left.y / right, left.z / right};
+        return Float3{ left.x / right, left.y / right, left.z / right };
     }
 
     inline Float3 operator*(Float3 left, float right)
     {
-        return Float3{left.x * right, left.y * right, left.z * right};
+        return Float3{ left.x * right, left.y * right, left.z * right };
     }
 
     inline Float3 operator*(float left, Float3 right)
@@ -165,22 +192,22 @@ namespace IB
 
     inline Float3 rcp(Float3 value)
     {
-        return Float3{1.0f / value.x, 1.0f / value.y, 1.0f / value.z};
+        return Float3{ 1.0f / value.x, 1.0f / value.y, 1.0f / value.z };
     }
 
     inline Float3 mul(Float3 left, Float3 right)
     {
-        return Float3{left.x * right.x, left.y * right.y, left.z * right.z};
+        return Float3{ left.x * right.x, left.y * right.y, left.z * right.z };
     }
 
     inline Float3 min(Float3 left, Float3 right)
     {
-        return Float3{fminf(left.x, right.x), fminf(left.y, right.y), fminf(left.z, right.z)};
+        return Float3{ fminf(left.x, right.x), fminf(left.y, right.y), fminf(left.z, right.z) };
     }
 
     inline Float3 max(Float3 left, Float3 right)
     {
-        return Float3{fmaxf(left.x, right.x), fmaxf(left.y, right.y), fmaxf(left.z, right.z)};
+        return Float3{ fmaxf(left.x, right.x), fmaxf(left.y, right.y), fmaxf(left.z, right.z) };
     }
 
     inline float length(Float3 value)
@@ -191,6 +218,41 @@ namespace IB
     inline float dot(Float3 left, Float3 right)
     {
         return left.x * right.x + left.y * right.y + left.z * right.z;
+    }
+
+    inline Float3 rotate(Quaternion rotator, Float3 point)
+    {
+        Quaternion rotatedPoint = rotator * Quaternion{ point.x, point.y, point.z, 0.0f } * conjugate(rotator);
+        return Float3{ rotatedPoint.x, rotatedPoint.y, rotatedPoint.z };
+    }
+
+    inline Quaternion operator*(Quaternion left, Quaternion right)
+    {
+        return Quaternion
+        {
+            left.w * right.x + left.x * right.w + left.y * right.z - left.z * right.y,
+            left.w * right.y - left.x * right.z + left.y * right.w + left.z * right.x,
+            left.w * right.z + left.x * right.y - left.y * right.x + left.z * right.w,
+            left.w * right.w - left.x * right.x - left.y * right.y - left.z * right.z
+        };
+    }
+
+    inline Quaternion conjugate(Quaternion q)
+    {
+        return Quaternion{-q.x, -q.y, -q.z, q.w};
+    }
+
+    inline Quaternion fromAxisAngle(Float3 axis, float angle)
+    {
+        Float3 real = axis * sinf(angle * 0.5f);
+        return Quaternion{ real.x, real.y, real.z, cosf(angle * 0.5f) };
+    }
+
+    inline Quaternion fromEulerAngles(Float3 angles)
+    {
+        return fromAxisAngle(Float3{ 1.0f, 0.0f, 0.0f }, angles.x)
+                * fromAxisAngle(Float3{ 0.0f, 1.0f, 0.0f }, angles.y)
+                * fromAxisAngle(Float3{ 0.0f, 0.0f, 1.0f }, angles.z);
     }
 
     inline bool doesLineAABBIntersect(Float3 lineStart, Float3 lineEnd, AABB aabb)
@@ -314,4 +376,17 @@ namespace IB
         float t = -(planeDistance + dot(rayOrigin, planeNormal)) / dot(rayDir, planeNormal);
         return rayDir * t + rayOrigin;
     };
+
+    inline Mat3x4 toMatrix(const Transform& transform)
+    {
+        Float3 right   = rotate(transform.Rotation, Float3{ transform.Scale, 0.0f, 0.0f });
+        Float3 forward = rotate(transform.Rotation, Float3{ 0.0f, transform.Scale, 0.0f });
+        Float3 up      = rotate(transform.Rotation, Float3{ 0.0f, 0.0f, transform.Scale });
+        return Mat3x4
+        {
+            right.x, forward.x, up.x, transform.Position.x,
+            right.y, forward.y, up.y, transform.Position.y,
+            right.z, forward.z, up.z, transform.Position.z,
+        };
+    }
 } // namespace IB
