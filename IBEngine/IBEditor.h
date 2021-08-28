@@ -28,6 +28,13 @@ namespace IB
         enum Handle : uint32_t;
     }
 
+    namespace Entity
+    {
+        enum Handle : uint64_t;
+    }
+
+    struct WindowMessage;
+
     namespace Editor
     {
         using AssetEditorCallback = void(Asset::Handle asset);
@@ -38,7 +45,10 @@ namespace IB
         {
             Resource::Handle* CellResource;
         };
+        IB_API void init();
+        IB_API void kill();
         IB_API void frame(FrameState* state);
+        IB_API Entity::Handle getCamera();
     }
 
     namespace ImGizmo
@@ -57,9 +67,15 @@ namespace IB
 
         IB_API void init();
         IB_API void kill();
-        IB_API void newFrame();
         IB_API DrawData const* getDrawData();
-        IB_API void translation(Float3* position, Quaternion rotation);
+
+        struct TranslationState
+        {
+            uint32_t ActiveAxis = 3;
+        };
+
+        IB_API void translation(Float3* position, Quaternion rotation, TranslationState* state);
+        IB_API bool onWindowMessage(IB::WindowMessage message);
     }
 }
 

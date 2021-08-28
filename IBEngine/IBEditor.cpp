@@ -33,8 +33,16 @@ namespace
 
 namespace IB
 {
+    namespace ImGizmo
+    {
+        void newFrame(Entity::Handle camera);
+        void endFrame();
+    }
+
     namespace Editor
     {
+        Entity::Handle Camera;
+
         struct AssetBrowserState
         {
             FileInfo LoadResourceInfo;
@@ -113,10 +121,25 @@ namespace IB
             }
         };
 
+        Entity::Handle getCamera() { return Camera; }
+
+        void init()
+        {
+            Camera = createEntity();
+            Property::Handle transformProperty = createTransformProperty();
+            addPropertyToEntity(Camera, Asset::toFourCC("TFRM"), transformProperty);
+            setLocalTransform(transformProperty, { {0.0f, -5.0f, 0.0f}, Quaternion::identity(), 1.0f });
+        }
+
+        void kill()
+        {
+
+        }
+
         void frame(Editor::FrameState* state)
         {
             newImGuiFrame();
-            ImGizmo::newFrame();
+            ImGizmo::newFrame(Camera);
 
             if (ImGui::BeginMainMenuBar())
             {
@@ -234,6 +257,7 @@ namespace IB
             }
             ImGui::End();
 
+            ImGizmo::endFrame();
             ImGui::Render();
         }
     } // namespace Editor
@@ -247,6 +271,28 @@ namespace IB
             Material::Handle GizmoMaterial = InvalidMaterial;
 
             DrawData FrameDrawData;
+
+            uint32_t PreviousMouseX = 0;
+            uint32_t PreviousMouseY = 0;
+            uint32_t MouseX = 0;
+            uint32_t MouseY = 0;
+            bool MouseButtonStates[WindowMessage::Mouse::Button::Count];
+            uint32_t MouseButtonFrameCounts[WindowMessage::Mouse::Button::Count];
+
+            uint32_t WindowWidth = 0;
+            uint32_t WindowHeight = 0;
+
+            Entity::Handle FrameCamera;
+
+            bool isButtonClicked(WindowMessage::Mouse::Button button)
+            {
+                return MouseButtonStates[button] && MouseButtonFrameCounts[button] == 1;
+            }
+
+            bool isButtonPressed(WindowMessage::Mouse::Button button)
+            {
+                return MouseButtonStates[button];
+            }
         }
 
         void init()
@@ -396,9 +442,54 @@ namespace IB
 
         }
 
-        void newFrame()
+        bool onWindowMessage(IB::WindowMessage message)
+        {
+            switch (message.Type)
+            {
+            case IB::WindowMessage::MouseClick:
+                MouseX = message.Data.MouseClick.X;
+                MouseY = message.Data.MouseClick.Y;
+                MouseButtonStates[message.Data.MouseClick.Button] = message.Data.MouseClick.State == WindowMessage::Mouse::Pressed;
+                return true;
+            case IB::WindowMessage::MouseMove:
+                MouseX = message.Data.MouseMove.X;
+                MouseY = message.Data.MouseMove.Y;
+                return true;
+            case WindowMessage::Resize:
+                WindowWidth = message.Data.Resize.Width;
+                WindowHeight = message.Data.Resize.Height;
+                return true;
+            case WindowMessage::Create:
+                WindowWidth = message.Data.Create.Width;
+                WindowHeight = message.Data.Create.Height;
+                return true;
+            }
+
+            return false;
+        }
+
+        void newFrame(Entity::Handle camera)
         {
             FrameDrawData.Instances.clear();
+            FrameCamera = camera;
+
+            for (uint32_t i = 0; i < WindowMessage::Mouse::Button::Count; i++)
+            {
+                if (MouseButtonStates[i])
+                {
+                    MouseButtonFrameCounts[i]++;
+                }
+                else
+                {
+                    MouseButtonFrameCounts[i] = 0;
+                }
+            }
+        }
+
+        void endFrame()
+        {
+            PreviousMouseX = MouseX;
+            PreviousMouseY = MouseY;
         }
 
         DrawData const* getDrawData()
@@ -406,8 +497,111 @@ namespace IB
             return &FrameDrawData;
         }
 
-        void translation(Float3* position, Quaternion rotation)
+        void translation(Float3* position, Quaternion rotation, TranslationState* state)
         {
+            // TODO: store camera state
+            float fov = 1.0f / tanf(3.1415f * 0.25);
+            const float f = 45.0f;
+            const float n = 1.0f;
+            const float a = 1.0f;
+            Mat4x4 invProjection =
+            {
+                {{a / fov, 0.0f, 0.0f, 0.0f},
+                 {0.0f, -1.0f / fov, 0.0f, 0.0f},
+                 {0.0f, 0.0f, 0.0f, 1.0f},
+                 {0.0f, 0.0f, (f - n) / (-n * f), f / (n*f)}},
+            };
+
+            Transform cameraTransform = {};
+            Property::Handle transformProperty = getPropertyFromEntity(FrameCamera, Asset::toFourCC("TFRM"));
+            if (transformProperty != InvalidProperty)
+            {
+                cameraTransform = getLocalTransform(transformProperty);
+            }
+
+            Mat4x4 invView =
+            {
+                {{1.0f, 0.0f, 0.0f, cameraTransform.Position.x},
+                 {0.0f, 0.0f, 1.0f, cameraTransform.Position.y},
+                 {0.0f, 1.0f, 0.0f, cameraTransform.Position.z},
+                 {0.0f, 0.0f, 0.0f, 1.0f}},
+            };
+            Mat4x4 invViewProj = IB::mul(invView, invProjection);
+
+            Float3 axies[3] =
+            {
+                rotate(rotation, Float3{1.0f, 0.0f, 0.0f}),
+                rotate(rotation, Float3{0.0f, 1.0f, 0.0f}),
+                rotate(rotation, Float3{0.0f, 0.0f, 1.0f}),
+            };
+
+            if (!isButtonPressed(WindowMessage::Mouse::Left))
+            {
+                state->ActiveAxis = 3;
+            }
+            else
+            {
+                if (isButtonClicked(WindowMessage::Mouse::Left))
+                {
+                    float u = static_cast<float>(MouseX) / static_cast<float>(WindowWidth)*2.0f - 1.0f;
+                    float v = static_cast<float>(MouseY) / static_cast<float>(WindowHeight)*2.0f - 1.0f;
+
+                    Float4 ndcRayStart = Float4{ u, v, 0.0f, 1.0f };
+                    Float4 rayStart4 = mul(invViewProj, ndcRayStart);
+                    Float3 rayStart = Float3{ rayStart4.x, rayStart4.y, rayStart4.z } / rayStart4.w;
+
+                    Float4 ndcRayEnd = Float4{ u, v, 1.0f, 1.0f };
+                    Float4 rayEnd4 = mul(invViewProj, ndcRayEnd);
+                    Float3 rayEnd = Float3{ rayEnd4.x, rayEnd4.y, rayEnd4.z } / rayEnd4.w;
+
+                    for (uint32_t i = 0; i < 3; i++)
+                    {
+                        if (doesLineCylinderIntersect(rayStart, rayEnd, *position, *position + axies[i], 0.1f))
+                        {
+                            state->ActiveAxis = i;
+                            break;
+                        }
+                    }
+                }
+                else if (state->ActiveAxis < 3)
+                {
+                    auto mouseToWorldPos = [invViewProj](uint32_t x, uint32_t y)
+                    {
+                        float u = static_cast<float>(x) / static_cast<float>(WindowWidth)*2.0f - 1.0f;
+                        float v = static_cast<float>(y) / static_cast<float>(WindowHeight)*2.0f - 1.0f;
+
+                        Float4 ndcRayStart = Float4{ u, v, 0.0f, 1.0f };
+                        Float4 rayStart4 = mul(invViewProj, ndcRayStart);
+                        return Float3{ rayStart4.x, rayStart4.y, rayStart4.z } / rayStart4.w;
+                    };
+
+                    Float3 previousPos = mouseToWorldPos(PreviousMouseX, PreviousMouseY) - cameraTransform.Position;
+                    Float3 nextPos = mouseToWorldPos(MouseX, MouseY) - cameraTransform.Position;
+
+                    // Intersect our ray with the plane defined by our axies
+
+                    // Given our current ray direction, pick our axis normal that is most parallel
+                    // This will give us the most perpendicular plane
+                    float angles[] =
+                    {
+                        fabsf(dot(nextPos, axies[(state->ActiveAxis + 1) % 3])),
+                        fabsf(dot(nextPos, axies[(state->ActiveAxis + 2) % 3]))
+                    };
+
+                    uint32_t largest = angles[0] > angles[1] ? 0 : 1;
+                    uint32_t planeNormal = (state->ActiveAxis + largest + 1) % 3;
+
+                    float planeDistance = dot(*position - cameraTransform.Position, axies[planeNormal]);
+
+                    // Cast a ray from our camera origin to our axis plane
+                    previousPos = intersectRayPlane(axies[planeNormal], planeDistance, previousPos, Float3{});
+                    nextPos = intersectRayPlane(axies[planeNormal], planeDistance, nextPos, Float3{});
+
+                    // Project our offset along our active axis for our delta
+                    *position += axies[state->ActiveAxis] * dot(nextPos - previousPos, axies[state->ActiveAxis]);
+                }
+            }
+
             FrameDrawData.Instances.add(DrawData::Instance{ GizmoMesh, GizmoMaterial, Transform{*position, rotation, 1.0f} });
         }
     }

@@ -2252,6 +2252,11 @@ namespace IB
 
     bool imGuiPlatformMessage(WindowMessagePlatformData const *platformData)
     {
+        if (platformData == nullptr)
+        {
+            return false;
+        }
+
         HWND hwnd;
         UINT msg;
         WPARAM wparam;

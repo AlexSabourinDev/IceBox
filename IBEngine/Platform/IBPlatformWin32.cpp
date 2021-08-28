@@ -252,6 +252,16 @@ namespace
                 break;
             }
         }
+
+        if (desc.OnWindowMessage != nullptr)
+        {
+            IB::WindowMessage message;
+            message.Type = IB::WindowMessage::Create;
+            message.Data.Create.Width = desc.Width;
+            message.Data.Create.Height = desc.Height;
+            desc.OnWindowMessage(desc.CallbackState, message, nullptr);
+        }
+
         IB_ASSERT(i < MaxActiveWindows, "Failed to add our window to our list of windows.");
 
         return IB::Window::toHandle(i);

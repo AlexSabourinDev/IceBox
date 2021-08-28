@@ -14,6 +14,8 @@ namespace IB
     {
         float &operator[](uint32_t i) { return (&x)[i]; }
         float operator[](uint32_t i) const { return (&x)[i]; }
+        Float3& operator+=(Float3 rhs);
+
         float x, y, z;
     };
 
@@ -125,6 +127,7 @@ namespace IB
     inline Float3 rotate(Quaternion rotator, Float3 point);
     inline Quaternion operator*(Quaternion left, Quaternion right);
     inline Quaternion conjugate(Quaternion q);
+    inline Quaternion inverse(Quaternion q) { return conjugate(q); }
     inline Quaternion fromAxisAngle(Float3 axis, float angle);
     inline Quaternion fromEulerAngles(Float3 angles);
 
@@ -183,6 +186,12 @@ namespace IB
     inline Float4 operator/(Float4 left, float right)
     {
         return Float4{ left.x / right, left.y / right, left.z / right, left.w / right };
+    }
+
+    inline Float3& Float3::operator+=(Float3 rhs)
+    {
+        *this = *this + rhs;
+        return *this;
     }
 
     inline Float3 operator+(Float3 left, Float3 right)
@@ -383,17 +392,17 @@ namespace IB
     inline Float3 intersectRayPlane(IB::Float3 planeNormal, float planeDistance, IB::Float3 rayDir, IB::Float3 rayOrigin)
     {
         // Equation for plane:
-        // 0=(p.n)+d
+        // 0=(p.n)-d
         // Equation for ray
         // p=f*t+o
         // Plug ray into plane
-        // 0=((f*t+o).n)+d
-        // -d=(f*t+o).n
-        // -d=f.n*t+o.n
-        // -d-o.n=f.n*t
-        // -(d+o.n)/(f.n)=t
+        // 0=((f*t+o).n)-d
+        // d=(f*t+o).n
+        // d=f.n*t+o.n
+        // d-o.n=f.n*t
+        // (d-o.n)/(f.n)=t
 
-        float t = -(planeDistance + dot(rayOrigin, planeNormal)) / dot(rayDir, planeNormal);
+        float t = (planeDistance - dot(rayOrigin, planeNormal)) / dot(rayDir, planeNormal);
         return rayDir * t + rayOrigin;
     };
 

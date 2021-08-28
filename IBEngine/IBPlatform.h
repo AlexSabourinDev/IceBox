@@ -56,7 +56,8 @@ namespace IB
             {
                 Left,
                 Right,
-                Middle
+                Middle,
+                Count
             };
 
             enum State
@@ -69,6 +70,7 @@ namespace IB
         enum
         {
             Unknown,
+            Create,
             Resize,
             Close,
             Key,
@@ -77,6 +79,12 @@ namespace IB
         } Type;
 
         union {
+            struct
+            {
+                uint32_t Width;
+                uint32_t Height;
+            } Create;
+
             struct
             {
                 uint32_t Width;

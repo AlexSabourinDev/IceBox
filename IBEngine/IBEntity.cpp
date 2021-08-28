@@ -100,7 +100,8 @@ namespace IB
         {
             Transform* transform = reinterpret_cast<Transform*>(Asset::toValue(asset));
 
-            ImGizmo::translation(&transform->Position, transform->Rotation);
+            static ImGizmo::TranslationState translationState;
+            ImGizmo::translation(&transform->Position, transform->Rotation, &translationState);
 
             if (ImGui::TreeNode("Transform"))
             {

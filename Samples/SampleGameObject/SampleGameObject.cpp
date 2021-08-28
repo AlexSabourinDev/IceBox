@@ -120,7 +120,16 @@ int main()
 
         uint8_t tempMemory[1024];
         IB::StackAllocator allocator = IB::createStackAllocator(tempMemory, 1024);
-        IB::drawCellView(IB::gatherCellView(cellHandle, nullptr, &allocator));
+
+        IB::GatherCellViewDesc gatherDesc
+        {
+            allocator,
+            InvalidEntity,
+            cellHandle,
+            nullptr,
+            nullptr
+        };
+        IB::drawCellView(IB::gatherCellView(gatherDesc));
     }
 
     IB::Asset::releaseResourceAsync(cellResource);

@@ -15,9 +15,20 @@
 using namespace IB;
 namespace
 {
+    // Global until we figure out state storage.
+    Resource::Handle CellResource = {};
+    bool EditorAlive = true;
+    constexpr uint32_t PlatformJobQueue = 2;
+    Window::Handle WindowHandle;
+
     bool primaryWindowHandler(void *data, WindowMessage message, WindowMessagePlatformData const *platformData)
     {
         if (imGuiPlatformMessage(platformData))
+        {
+            return true;
+        }
+
+        if (ImGizmo::onWindowMessage(message))
         {
             return true;
         }
@@ -31,14 +42,6 @@ namespace
 
         return false;
     }
-
-    // Global until we figure out state storage.
-    Resource::Handle CellResource = {};
-    bool EditorAlive = true;
-    constexpr uint32_t PlatformJobQueue = 2;
-    Window::Handle WindowHandle;
-
-    Entity::Handle CameraHandle = {};
 } // namespace
 
 namespace IB
@@ -150,7 +153,7 @@ namespace IB
                 GatherCellViewDesc gatherDesc
                 {
                     renderFrameAllocator,
-                    CameraHandle,
+                    Editor::getCamera(),
                     currentCell,
                     ImGui::GetDrawData(),
                     ImGizmo::getDrawData()
@@ -213,15 +216,11 @@ int main()
         initRendererFrontend({ WindowHandle });
         initEntitySystem();
         JobGraph::init();
+        Editor::init();
         ImGizmo::init();
 
         ImGuiIO& io = ImGui::GetIO();
         io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
-
-        CameraHandle = createEntity();
-        Property::Handle transformProperty = createTransformProperty();
-        addPropertyToEntity(CameraHandle, Asset::toFourCC("TFRM"), transformProperty);
-        setLocalTransform(transformProperty, { {0.0f, -5.0f, 0.0f}, Quaternion::identity(), 1.0f });
     }
 
     {
@@ -237,6 +236,7 @@ int main()
         Asset::releaseResourceAsync(CellResource);
 
         ImGizmo::kill();
+        Editor::kill();
         JobGraph::kill();
         killEntitySystem();
         killRendererFrontend();
