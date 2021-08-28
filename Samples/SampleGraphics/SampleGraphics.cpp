@@ -189,13 +189,13 @@ int main()
     imageDesc.Width = 2;
     imageDesc.Height = 2;
     imageDesc.Data = imageTexels;
-    IB::ImageHandle albedoImage = IB::createImage(imageDesc);
+    IB::Image::Handle albedoImage = IB::createImage(imageDesc);
 
     uint32_t tint = IB::toRGBA(1.0f, 1.0f, 1.0f, 1.0f);
     IB::ForwardDesc matDesc = {};
     matDesc.AlbedoTint = tint;
     matDesc.AlbedoImage = albedoImage;
-    IB::MaterialHandle someMaterial = IB::createMaterial(matDesc);
+    IB::Material::Handle someMaterial = IB::createMaterial(matDesc);
 
     uint8_t whiteImageTexels[] = {255, 255, 255, 255};
 
@@ -204,12 +204,12 @@ int main()
     whiteImageDesc.Width = 1;
     whiteImageDesc.Height = 1;
     whiteImageDesc.Data = whiteImageTexels;
-    IB::ImageHandle whiteImage = IB::createImage(whiteImageDesc);
+    IB::Image::Handle whiteImage = IB::createImage(whiteImageDesc);
 
     IB::ForwardDesc gizmoMatDesc = {};
     gizmoMatDesc.AlbedoTint = tint;
     gizmoMatDesc.AlbedoImage = whiteImage;
-    IB::MaterialHandle gizmoMaterial = IB::createMaterial(gizmoMatDesc);
+    IB::Material::Handle gizmoMaterial = IB::createMaterial(gizmoMatDesc);
 
     IB::File::Handle meshFile = IB::openFile("../Assets/Compiled/Box.msh", IB::OpenFileOptions::Read);
     void *meshData = IB::mapFile(meshFile);
@@ -233,14 +233,14 @@ int main()
     meshDesc.Indices.Data = mesh.Indices;
     meshDesc.Indices.Count = mesh.IndexCount;
 
-    IB::MeshHandle someMesh = IB::createMesh(meshDesc);
+    IB::Mesh::Handle someMesh = IB::createMesh(meshDesc);
 
     // Don't need mesh memory anymore, it's fed to the GPU
     IB::unmapFile(meshFile);
     IB::closeFile(meshFile);
 
     // Create our gizmo
-    IB::MeshHandle gizmoMesh;
+    IB::Mesh::Handle gizmoMesh;
     {
         constexpr uint32_t cylinderSegments = 8;
         constexpr float cylinderLength = 0.75f;

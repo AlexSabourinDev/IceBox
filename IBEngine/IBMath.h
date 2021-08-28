@@ -17,6 +17,13 @@ namespace IB
         float x, y, z;
     };
 
+    inline bool operator!=(Float3 const& lhs, Float3 const& rhs)
+    {
+        return lhs.x != rhs.x
+            || lhs.y != rhs.y
+            || lhs.z != rhs.z;
+    }
+
     struct AABB
     {
         Float3 Min, Max;
@@ -37,6 +44,14 @@ namespace IB
 
         static constexpr Quaternion identity() { return Quaternion{ 0.0f, 0.0f, 0.0f, 1.0f }; }
     };
+
+    inline bool operator!=(Quaternion const& lhs, Quaternion const& rhs)
+    {
+        return lhs.x != rhs.x
+            || lhs.y != rhs.y
+            || lhs.z != rhs.z
+            || lhs.w != rhs.w;
+    }
 
     struct Mat4x4
     {
@@ -81,6 +96,11 @@ namespace IB
         Quaternion Rotation = Quaternion::identity();
         float Scale = 1.0f;
     };
+
+    inline bool operator!=(Transform const& lhs, Transform const& rhs)
+    {
+        return lhs.Position != rhs.Position || lhs.Rotation != rhs.Rotation || lhs.Scale != rhs.Scale;
+    }
 
     // Left will be applied first, right will be applied second
     // When multiplying a vector by this new matrix

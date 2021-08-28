@@ -15,7 +15,8 @@ namespace
 {
     constexpr uint32_t InitPassesJobQueueIndex = 1;
 
-    IB::ImageHandle toImageHandle(IB::Asset::Handle asset) { return {static_cast<uint32_t>(IB::Asset::toValue(asset))}; }
+    IB::Image::Handle toImageHandle(IB::Asset::Handle asset) { return IB::Image::toHandle(static_cast<uint32_t>(IB::Asset::toValue(asset))); }
+    IB::Mesh::Handle toMeshHandle(IB::Asset::Handle asset) { return IB::Mesh::toHandle(static_cast<uint32_t>(IB::Asset::toValue(asset))); }
 
     class ImageAssetStreamer : public IB::Asset::IStreamer
     {
@@ -39,7 +40,7 @@ namespace
                     imageDesc.Width = image.Width;
                     imageDesc.Height = image.Height;
                     imageDesc.Data = image.Data;
-                    *imageHandle = IB::createImage(imageDesc).Value;
+                    *imageHandle = IB::createImage(imageDesc);
 
                     return IB::JobResult::Complete;
                 },
@@ -82,7 +83,7 @@ namespace
                     meshDesc.Vertices.Count = mesh.VertexCount;
                     meshDesc.Indices.Data = mesh.Indices;
                     meshDesc.Indices.Count = mesh.IndexCount;
-                    *meshHandle = createMesh(meshDesc).Value;
+                    *meshHandle = createMesh(meshDesc);
 
                     return IB::JobResult::Complete;
                 },
@@ -105,8 +106,8 @@ namespace
 
     struct RuntimeMaterial
     {
-        IB::MaterialHandle Material;
-        IB::MaterialAsset Asset;
+        IB::Material::Handle Material;
+        IB::MaterialAsset::Desc Asset;
         IB::Resource::Handle AlbedoTexture;
     };
 
@@ -190,6 +191,8 @@ namespace
         {
             IB::deallocate(toShaderAsset(asset));
         }
+
+        bool memoryMapped() const { return true; }
     };
     ShaderAssetStreamer ShaderStreamer;
 
@@ -424,7 +427,7 @@ namespace IB
         return Property::toHandle(reinterpret_cast<uint64_t>(&renderer));
     }
 
-    MaterialAssetHandle createMaterialAsset(MaterialAsset asset)
+    MaterialAsset::Handle createMaterialAsset(MaterialAsset::Desc asset)
     {
         RuntimeMaterial &materialData = MaterialPool.add();
         materialData.Asset = asset;
@@ -439,30 +442,30 @@ namespace IB
         },
                     &textureJob, 1, RendererJobQueueIndex);
 
-        return {reinterpret_cast<uint64_t>(&materialData)};
+        return MaterialAsset::toHandle(reinterpret_cast<uint64_t>(&materialData));
     }
 
-    ViewDesc gatherCellView(Cell::Handle cell, ImDrawData* sourceImguiDrawCommands, StackAllocator* allocator)
+    ViewDesc gatherCellView(GatherCellViewDesc const& gatherDesc)
     {
         // Clone our imgui draw data
         ImDrawData* imguiDrawData = nullptr;
-        if (sourceImguiDrawCommands != nullptr && sourceImguiDrawCommands->CmdListsCount > 0)
+        if (gatherDesc.ImGuiDrawData != nullptr && gatherDesc.ImGuiDrawData->CmdListsCount > 0)
         {
-            imguiDrawData = allocate<ImDrawData>(*sourceImguiDrawCommands);
+            imguiDrawData = allocate<ImDrawData>(*gatherDesc.ImGuiDrawData);
             imguiDrawData->CmdLists = allocateArray<ImDrawList*>(imguiDrawData->CmdListsCount);
             for (int32_t i = 0; i < imguiDrawData->CmdListsCount; i++)
             {
-                imguiDrawData->CmdLists[i] = sourceImguiDrawCommands->CmdLists[i]->CloneOutput();
+                imguiDrawData->CmdLists[i] = gatherDesc.ImGuiDrawData->CmdLists[i]->CloneOutput();
             }
         }
 
         Entity::Handle *entities;
         uint32_t entityCount;
-        getEntityList(cell, &entities, &entityCount);
+        getEntityList(gatherDesc.Cell, &entities, &entityCount);
 
         uint32_t rendererCount = 0;
-        MeshHandle meshes[32];
-        MaterialHandle materials[32];
+        Mesh::Handle meshes[32];
+        Material::Handle materials[32];
         Transform transforms[32];
         for (uint32_t i = 0; i < entityCount; i++)
         {
@@ -478,7 +481,7 @@ namespace IB
                     // It's possible our loading thread hasn't finished creating it for us
                     if (material->Material != InvalidMaterial)
                     {
-                        meshes[rendererCount] = { static_cast<uint32_t>(Asset::toValue(Asset::getAssetFromResource(renderer->MeshResource))) };
+                        meshes[rendererCount] = toMeshHandle(Asset::getAssetFromResource(renderer->MeshResource));
                         materials[rendererCount] = material->Material;
 
                         Property::Handle transformHandle = getPropertyFromEntity(entities[i], Asset::toFourCC("TFRM"));
@@ -518,17 +521,17 @@ namespace IB
 
             Mat4x4 viewProj = mul(projection, view);
 
-            ViewDesc::MeshInstances* meshInstances = allocateArray<ViewDesc::MeshInstances>(allocator, rendererCount);
+            ViewDesc::MeshInstances* meshInstances = allocateArray<ViewDesc::MeshInstances>(gatherDesc.Allocator, rendererCount);
 
             for (uint32_t i = 0; i < rendererCount; i++)
             {
                 meshInstances[i].Mesh = meshes[i];
                 Mat3x4 meshTransform = toMatrix(transforms[i]);
-                meshInstances[i].Transforms = allocateArray<Mat3x4>(allocator, 1, meshTransform);
+                meshInstances[i].Transforms = allocateArray<Mat3x4>(gatherDesc.Allocator, 1, meshTransform);
                 meshInstances[i].Count = 1;
             }
 
-            ViewDesc::Batch* meshBatch = allocateArray<ViewDesc::Batch>(allocator, 1);
+            ViewDesc::Batch* meshBatch = allocateArray<ViewDesc::Batch>(gatherDesc.Allocator, 1);
             meshBatch->Material = materials[0]; // TODO
             meshBatch->Meshes = meshInstances;
             meshBatch->MeshCount = rendererCount;
@@ -539,6 +542,42 @@ namespace IB
                 worldPass.Batches = meshBatch;
                 worldPass.BatchCount = 1;
                 viewDesc.Forward.Passes[ViewDesc::ForwardPass::Default] = worldPass;
+            }
+
+            // Restart our collection for gizmos
+            rendererCount = 0;
+            for (uint32_t i = 0; i < gatherDesc.ImGizmoDrawData->Instances.count(); i++)
+            {
+                if (gatherDesc.ImGizmoDrawData->Instances[i].Mesh != InvalidMesh
+                    && gatherDesc.ImGizmoDrawData->Instances[i].Material != InvalidMaterial)
+                {
+                    meshes[rendererCount] = gatherDesc.ImGizmoDrawData->Instances[i].Mesh;
+                    materials[rendererCount] = gatherDesc.ImGizmoDrawData->Instances[i].Material;
+                    transforms[rendererCount] = gatherDesc.ImGizmoDrawData->Instances[i].Transform;
+                    rendererCount++;
+                }
+            }
+
+            ViewDesc::MeshInstances* gizmoMeshInstances = allocateArray<ViewDesc::MeshInstances>(gatherDesc.Allocator, rendererCount);
+            for (uint32_t i = 0; i < rendererCount; i++)
+            {
+                gizmoMeshInstances[i].Mesh = meshes[i];
+                Mat3x4 meshTransform = toMatrix(transforms[i]);
+                gizmoMeshInstances[i].Transforms = allocateArray<Mat3x4>(gatherDesc.Allocator, 1, meshTransform);
+                gizmoMeshInstances[i].Count = 1;
+            }
+
+            ViewDesc::Batch* gizmoMeshBatch = allocateArray<ViewDesc::Batch>(gatherDesc.Allocator, 1);
+            gizmoMeshBatch->Material = materials[0]; // TODO
+            gizmoMeshBatch->Meshes = gizmoMeshInstances;
+            gizmoMeshBatch->MeshCount = rendererCount;
+
+            if (rendererCount > 0)
+            {
+                IB::ViewDesc::ForwardPass gizmoPass;
+                gizmoPass.Batches = gizmoMeshBatch;
+                gizmoPass.BatchCount = 1;
+                viewDesc.Forward.Passes[ViewDesc::ForwardPass::DebugOverlay] = gizmoPass;
             }
 
             viewDesc.ViewProj = viewProj;
@@ -564,68 +603,71 @@ namespace IB
         }
     }
 
-    void toBinary(Serialization::WriteStream *stream, MeshAsset const &mesh)
+    namespace Serialization
     {
-        Serialization::toBinary(stream, mesh.VertexCount);
-        Serialization::toBinary(stream, mesh.IndexCount);
+        void toBinary(Serialization::WriteStream *stream, MeshAsset const &mesh)
+        {
+            Serialization::toBinary(stream, mesh.VertexCount);
+            Serialization::toBinary(stream, mesh.IndexCount);
 
-        Serialization::toBinary(stream, mesh.Vertices, mesh.VertexCount * sizeof(Vertex));
-        Serialization::toBinary(stream, mesh.Indices, mesh.IndexCount * sizeof(uint16_t));
-    }
+            Serialization::toBinary(stream, mesh.Vertices, mesh.VertexCount * sizeof(Vertex));
+            Serialization::toBinary(stream, mesh.Indices, mesh.IndexCount * sizeof(uint16_t));
+        }
 
-    void fromBinary(Serialization::ReadStream *stream, MeshAsset *mesh, uint32_t /*versionNumber*/)
-    {
-        Serialization::fromBinary(stream, &mesh->VertexCount);
-        Serialization::fromBinary(stream, &mesh->IndexCount);
+        void fromBinary(Serialization::ReadStream *stream, MeshAsset *mesh, uint32_t /*versionNumber*/)
+        {
+            Serialization::fromBinary(stream, &mesh->VertexCount);
+            Serialization::fromBinary(stream, &mesh->IndexCount);
 
-        mesh->Vertices = Serialization::fromBinary<Vertex const *>(stream, mesh->VertexCount * sizeof(Vertex));
-        mesh->Indices = Serialization::fromBinary<uint16_t const *>(stream, mesh->IndexCount * sizeof(uint16_t));
-    }
+            mesh->Vertices = Serialization::fromBinary<Vertex const *>(stream, mesh->VertexCount * sizeof(Vertex));
+            mesh->Indices = Serialization::fromBinary<uint16_t const *>(stream, mesh->IndexCount * sizeof(uint16_t));
+        }
 
-    void toBinary(Serialization::WriteStream *stream, ShaderAsset const &shaders)
-    {
-        Serialization::toBinary(stream, shaders.VertexShaderSize);
-        Serialization::toBinary(stream, shaders.FragShaderSize);
+        void toBinary(Serialization::WriteStream *stream, ShaderAsset const &shaders)
+        {
+            Serialization::toBinary(stream, shaders.VertexShaderSize);
+            Serialization::toBinary(stream, shaders.FragShaderSize);
 
-        Serialization::toBinary(stream, shaders.VertexShader, shaders.VertexShaderSize);
-        Serialization::toBinary(stream, shaders.FragShader, shaders.FragShaderSize);
-    }
+            Serialization::toBinary(stream, shaders.VertexShader, shaders.VertexShaderSize);
+            Serialization::toBinary(stream, shaders.FragShader, shaders.FragShaderSize);
+        }
 
-    void fromBinary(Serialization::ReadStream *stream, ShaderAsset *shaders, uint32_t /*versionNumber*/)
-    {
-        Serialization::fromBinary(stream, &shaders->VertexShaderSize);
-        Serialization::fromBinary(stream, &shaders->FragShaderSize);
+        void fromBinary(Serialization::ReadStream *stream, ShaderAsset *shaders, uint32_t /*versionNumber*/)
+        {
+            Serialization::fromBinary(stream, &shaders->VertexShaderSize);
+            Serialization::fromBinary(stream, &shaders->FragShaderSize);
 
-        shaders->VertexShader = Serialization::fromBinary<uint8_t const *>(stream, shaders->VertexShaderSize);
-        shaders->FragShader = Serialization::fromBinary<uint8_t const *>(stream, shaders->FragShaderSize);
-    }
+            shaders->VertexShader = Serialization::fromBinary<uint8_t const *>(stream, shaders->VertexShaderSize);
+            shaders->FragShader = Serialization::fromBinary<uint8_t const *>(stream, shaders->FragShaderSize);
+        }
 
-    void toBinary(Serialization::WriteStream *stream, MaterialAsset const &material)
-    {
-        Serialization::toBinary(stream, material.AlbedoTint);
-        Serialization::toBinary(stream, material.AlbedoPath);
-    }
+        void toBinary(Serialization::WriteStream *stream, MaterialAsset::Desc const &material)
+        {
+            Serialization::toBinary(stream, material.AlbedoTint);
+            Serialization::toBinary(stream, material.AlbedoPath);
+        }
 
-    void fromBinary(Serialization::ReadStream *stream, MaterialAsset *material, uint32_t /*versionNumber*/)
-    {
-        Serialization::fromBinary(stream, &material->AlbedoTint);
-        Serialization::fromBinary(stream, &material->AlbedoPath);
-    }
+        void fromBinary(Serialization::ReadStream *stream, MaterialAsset::Desc *material, uint32_t /*versionNumber*/)
+        {
+            Serialization::fromBinary(stream, &material->AlbedoTint);
+            Serialization::fromBinary(stream, &material->AlbedoPath);
+        }
 
-    void toBinary(Serialization::WriteStream *stream, ImageAsset const &image)
-    {
-        Serialization::toBinary(stream, image.Format);
-        Serialization::toBinary(stream, image.Width);
-        Serialization::toBinary(stream, image.Height);
+        void toBinary(Serialization::WriteStream *stream, ImageAsset const &image)
+        {
+            Serialization::toBinary(stream, image.Format);
+            Serialization::toBinary(stream, image.Width);
+            Serialization::toBinary(stream, image.Height);
 
-        Serialization::toBinary(stream, image.Data, image.Width * image.Height * FormatStride[image.Format]);
-    }
+            Serialization::toBinary(stream, image.Data, image.Width * image.Height * FormatStride[image.Format]);
+        }
 
-    void fromBinary(Serialization::ReadStream *stream, ImageAsset *image, uint32_t /*versionNumber*/)
-    {
-        Serialization::fromBinary(stream, &image->Format);
-        Serialization::fromBinary(stream, &image->Width);
-        Serialization::fromBinary(stream, &image->Height);
-        image->Data = Serialization::fromBinary<uint8_t const *>(stream, image->Width * image->Height * FormatStride[image->Format]);
+        void fromBinary(Serialization::ReadStream *stream, ImageAsset *image, uint32_t /*versionNumber*/)
+        {
+            Serialization::fromBinary(stream, &image->Format);
+            Serialization::fromBinary(stream, &image->Width);
+            Serialization::fromBinary(stream, &image->Height);
+            image->Data = Serialization::fromBinary<uint8_t const *>(stream, image->Width * image->Height * FormatStride[image->Format]);
+        }
     }
 } // namespace IB

@@ -606,4 +606,17 @@ namespace IB
         commitJob(job);
         return Job::toHandle((static_cast<uint64_t>(jobGeneration) << 32) | static_cast<uint32_t>(job - JobPool));
     }
+
+    void wait(Job::Handle handle)
+    {
+        // TODO: Consider avoiding creating a new event every time.
+        ThreadEvent threadEvent = IB::createThreadEvent();
+        continueJob([threadEvent]()
+        {
+            IB::signalThreadEvent(threadEvent);
+            return JobResult::Complete;
+        }, &handle, 1);
+        waitOnThreadEvent(threadEvent);
+        destroyThreadEvent(threadEvent);
+    }
 } // namespace IB

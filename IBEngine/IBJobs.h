@@ -98,6 +98,8 @@ namespace IB
     IB_API void launchJob(Job::Handle handle);
     IB_API void continueJob(Job::Handle handle, Job::Handle* dependencies, uint32_t dependencyCount);
 
+    IB_API void wait(Job::Handle handle);
+
     // Utility API
 
     template <typename T>

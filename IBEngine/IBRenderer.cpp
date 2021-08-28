@@ -412,16 +412,14 @@ namespace
         return allocation;
     }
 
-    void freeDeviceMemory(VulkanAllocator *allocator, Allocation allocation)
+    void freeMemoryBlock(VulkanAllocator *allocator, MemoryPool *memoryPool, uint32_t blockId)
     {
-        MemoryPool *memoryPool = &allocator->MemoryPools[allocation.PoolIndex];
-
-        uint32_t prevIters[2] = {UINT32_MAX, UINT32_MAX};
+        uint32_t prevIters[2] = { UINT32_MAX, UINT32_MAX };
 
         for (uint32_t iter = memoryPool->HeadIndex; iter != UINT32_MAX; iter = allocator->BlockPool[iter].NextIndex)
         {
             MemoryBlock *currentBlock = &allocator->BlockPool[iter];
-            if (currentBlock->Id == allocation.Id)
+            if (currentBlock->Id == blockId)
             {
                 currentBlock->Allocated = false;
 
@@ -431,15 +429,19 @@ namespace
                 {
                     MemoryBlock *previousBlock = &allocator->BlockPool[prevIters[0]];
                     // Previous iterator is my size, it's my sibling. If it's not allocated, merge it
-                    if (previousBlock->Size == currentBlock->Size && !previousBlock->Allocated)
+                    if (previousBlock->Size == currentBlock->Size)
                     {
-                        MemoryBlock *parentBlock = &allocator->BlockPool[prevIters[1]];
-                        parentBlock->Allocated = false;
-                        parentBlock->NextIndex = currentBlock->NextIndex;
+                        if (!previousBlock->Allocated)
+                        {
+                            allocator->FreeBlocks[allocator->FreeBlockCount] = iter;
+                            allocator->FreeBlocks[allocator->FreeBlockCount + 1] = prevIters[0];
+                            allocator->FreeBlockCount += 2;
 
-                        allocator->FreeBlocks[allocator->FreeBlockCount] = iter;
-                        allocator->FreeBlocks[allocator->FreeBlockCount + 1] = prevIters[0];
-                        allocator->FreeBlockCount += 2;
+                            MemoryBlock *parentBlock = &allocator->BlockPool[prevIters[1]];
+                            parentBlock->NextIndex = currentBlock->NextIndex;
+                            // Make sure to merge upwards
+                            freeMemoryBlock(allocator, memoryPool, parentBlock->Id);
+                        }
                     }
                     // Since we just checked to see if the previous iterator was our sibling and it wasnt
                     // we know that if we have a next iterator, it's our sibling
@@ -448,14 +450,14 @@ namespace
                         MemoryBlock *nextBlock = &allocator->BlockPool[currentBlock->NextIndex];
                         if (!nextBlock->Allocated)
                         {
-                            MemoryBlock *parentBlock = &allocator->BlockPool[prevIters[0]];
-
-                            parentBlock->Allocated = false;
-                            parentBlock->NextIndex = nextBlock->NextIndex;
-
                             allocator->FreeBlocks[allocator->FreeBlockCount] = currentBlock->NextIndex;
                             allocator->FreeBlocks[allocator->FreeBlockCount + 1] = iter;
                             allocator->FreeBlockCount += 2;
+
+                            MemoryBlock *parentBlock = &allocator->BlockPool[prevIters[0]];
+                            parentBlock->NextIndex = nextBlock->NextIndex;
+                            // Make sure to merge upwards
+                            freeMemoryBlock(allocator, memoryPool, parentBlock->Id);
                         }
                     }
                 }
@@ -465,6 +467,12 @@ namespace
             prevIters[1] = prevIters[0];
             prevIters[0] = iter;
         }
+    }
+
+    void freeDeviceMemory(VulkanAllocator *allocator, Allocation allocation)
+    {
+        MemoryPool *memoryPool = &allocator->MemoryPools[allocation.PoolIndex];
+        freeMemoryBlock(allocator, memoryPool, allocation.Id);
     }
 
     // Main Renderer
@@ -1807,7 +1815,7 @@ namespace IB
         vkDestroyShaderModule(RendererContext.LogicalDevice, fragShader, NoAllocator);
     }
 
-    MeshHandle createMesh(MeshDesc const &desc)
+    Mesh::Handle createMesh(MeshDesc const &desc)
     {
         uint32_t meshIndex = RendererContext.Geometry.MeshCount++;
 
@@ -1897,10 +1905,10 @@ namespace IB
             freeDeviceMemory(&Allocator, allocation);
         }
 
-        return MeshHandle{meshIndex + 1};
+        return Mesh::toHandle(meshIndex + 1);
     }
 
-    ImageHandle createImage(ImageDesc const &desc)
+    Image::Handle createImage(ImageDesc const &desc)
     {
         VkFormat formats[ImageFormat::Count] = {};
         formats[ImageFormat::RGBA8] = VK_FORMAT_R8G8B8A8_UNORM;
@@ -2090,10 +2098,10 @@ namespace IB
             vkUpdateDescriptorSets(RendererContext.LogicalDevice, arrayCount(writeDescriptorSets), writeDescriptorSets, 0, NULL);
         }
 
-        return ImageHandle{imageIndex + 1};
+        return Image::toHandle(imageIndex + 1);
     }
 
-    MaterialHandle createMaterial(ForwardDesc const &desc)
+    Material::Handle createMaterial(ForwardDesc const &desc)
     {
         struct
         {
@@ -2101,7 +2109,7 @@ namespace IB
             uint32_t albedoIndex;
         } matData;
         matData.albedoTint = desc.AlbedoTint;
-        matData.albedoIndex = desc.AlbedoImage.Value - 1;
+        matData.albedoIndex = desc.AlbedoImage - 1;
 
         uint32_t instanceIndex = ForwardPass.InstanceCount++;
         VkBuffer dataBuffer;
@@ -2232,7 +2240,7 @@ namespace IB
         VkWriteDescriptorSet writeDescriptorSets[] = {writeMaterial};
         vkUpdateDescriptorSets(RendererContext.LogicalDevice, arrayCount(writeDescriptorSets), writeDescriptorSets, 0, NULL);
 
-        return MaterialHandle{instanceIndex + 1};
+        return Material::toHandle(instanceIndex + 1);
     }
 
     void newImGuiFrame()
@@ -2349,7 +2357,7 @@ namespace IB
                     for (uint32_t i = 0; i < pass->BatchCount; i++)
                     {
                         ViewDesc::Batch *batch = &pass->Batches[i];
-                        uint32_t materialIndex = batch->Material.Value - 1;
+                        uint32_t materialIndex = batch->Material - 1;
 
                         if (ForwardPass.Pipelines[passIndex] != VK_NULL_HANDLE)
                         {
@@ -2360,9 +2368,9 @@ namespace IB
                                 currentCommands, VK_PIPELINE_BIND_POINT_GRAPHICS, ForwardPass.PipelineLayout,
                                 1, 1, &instanceSet, 0, VK_NULL_HANDLE);
 
-                            for (uint32_t mesh = 0; mesh < batch->MeshCount && batch->Meshes[mesh].Mesh.Value > 0; mesh++)
+                            for (uint32_t mesh = 0; mesh < batch->MeshCount && batch->Meshes[mesh].Mesh > 0; mesh++)
                             {
-                                uint32_t meshIndex = batch->Meshes[mesh].Mesh.Value - 1;
+                                uint32_t meshIndex = batch->Meshes[mesh].Mesh - 1;
 
                                 vkCmdBindIndexBuffer(currentCommands, RendererContext.Geometry.MeshDataBuffers, RendererContext.Geometry.Meshes[meshIndex].IndexOffset, VK_INDEX_TYPE_UINT16);
                                 for (uint32_t inst = 0; inst < batch->Meshes[mesh].Count; inst++)

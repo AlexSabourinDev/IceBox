@@ -1,10 +1,22 @@
 #pragma once
 #include "IBEngineAPI.h"
+#include "IBMath.h"
+#include "IBCollection.h"
 
 #include <stdint.h>
 
 namespace IB
 {
+    namespace Mesh
+    {
+        enum Handle : uint32_t;
+    }
+
+    namespace Material
+    {
+        enum Handle : uint32_t;
+    }
+
     namespace Asset
     {
         enum Handle : uint64_t;
@@ -27,6 +39,27 @@ namespace IB
             Resource::Handle* CellResource;
         };
         IB_API void frame(FrameState* state);
+    }
+
+    namespace ImGizmo
+    {
+        struct DrawData
+        {
+            struct Instance
+            {
+                Mesh::Handle Mesh;
+                Material::Handle Material;
+                Transform Transform;
+            };
+
+            DynamicArray<Instance> Instances;
+        };
+
+        IB_API void init();
+        IB_API void kill();
+        IB_API void newFrame();
+        IB_API DrawData const* getDrawData();
+        IB_API void translation(Float3* position, Quaternion rotation);
     }
 }
 

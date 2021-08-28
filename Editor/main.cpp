@@ -145,7 +145,14 @@ namespace IB
                     currentCell = toCellHandle(Asset::getAssetFromResource(CellResource));
                 }
 
-                *viewDescriptor = gatherCellView(currentCell, ImGui::GetDrawData(), renderFrameAllocator);
+                GatherCellViewDesc gatherDesc
+                {
+                    renderFrameAllocator,
+                    currentCell,
+                    ImGui::GetDrawData(),
+                    ImGizmo::getDrawData()
+                };
+                *viewDescriptor = gatherCellView(gatherDesc);
 
                 return JobResult::Complete;
             },
@@ -203,6 +210,7 @@ int main()
         initRendererFrontend({ WindowHandle });
         initEntitySystem();
         JobGraph::init();
+        ImGizmo::init();
 
         ImGuiIO& io = ImGui::GetIO();
         io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
@@ -220,6 +228,7 @@ int main()
     {
         Asset::releaseResourceAsync(CellResource);
 
+        ImGizmo::kill();
         JobGraph::kill();
         killEntitySystem();
         killRendererFrontend();

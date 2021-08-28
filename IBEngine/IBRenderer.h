@@ -76,10 +76,15 @@ namespace IB
         } Indices;
     };
 
-    struct MeshHandle
+    namespace Mesh
     {
-        uint32_t Value;
+        enum Handle : uint32_t;
+        constexpr Handle toHandle(uint32_t value) { return static_cast<Handle>(value); }
+        constexpr uint32_t toValue(Handle handle) { return static_cast<uint32_t>(handle); }
     };
+
+    constexpr Mesh::Handle InvalidMesh = Mesh::toHandle(0);
+
 
     namespace ImageFormat
     {
@@ -98,10 +103,14 @@ namespace IB
         uint8_t const*Data = nullptr;
     };
 
-    struct ImageHandle
+    namespace Image
     {
-        uint32_t Value;
+        enum Handle : uint32_t;
+        constexpr Handle toHandle(uint32_t value) { return static_cast<Handle>(value); }
+        constexpr uint32_t toValue(Handle handle) { return static_cast<uint32_t>(handle); }
     };
+
+    constexpr Image::Handle InvalidImage = Image::toHandle(0);
 
     constexpr uint32_t toRGBA(float r, float g, float b, float a)
     { 
@@ -114,30 +123,30 @@ namespace IB
     struct ForwardDesc
     {
         uint32_t AlbedoTint = 0;
-        ImageHandle AlbedoImage = {};
+        Image::Handle AlbedoImage = {};
     };
 
-    struct MaterialHandle
+    namespace Material
     {
-        uint32_t Value;
+        enum Handle : uint32_t;
+        constexpr Handle toHandle(uint32_t value) { return static_cast<Handle>(value); }
+        constexpr uint32_t toValue(Handle handle) { return static_cast<uint32_t>(handle); }
     };
-    inline bool operator==(MaterialHandle const& left, MaterialHandle const& right) { return left.Value == right.Value; }
-    inline bool operator!=(MaterialHandle const& left, MaterialHandle const& right) { return left.Value != right.Value; }
 
-    constexpr MaterialHandle InvalidMaterial = { 0 };
+    constexpr Material::Handle InvalidMaterial = Material::toHandle(0);
 
     struct ViewDesc
     {
         struct MeshInstances
         {
-            MeshHandle Mesh;
+            Mesh::Handle Mesh;
             Mat3x4 const *Transforms = nullptr;
             uint32_t Count = 0;
         };
 
         struct Batch
         {
-            MaterialHandle Material;
+            Material::Handle Material;
             MeshInstances *Meshes;
             uint32_t MeshCount = 0;
         };
@@ -173,9 +182,9 @@ namespace IB
     // Make sure to only call pass initialization functions from this thread and no other.
     IB_API void initForwardPass(ForwardPassDesc const &desc);
 
-    IB_API MeshHandle createMesh(MeshDesc const &desc);
-    IB_API ImageHandle createImage(ImageDesc const &desc);
-    IB_API MaterialHandle createMaterial(ForwardDesc const &desc);
+    IB_API Mesh::Handle createMesh(MeshDesc const &desc);
+    IB_API Image::Handle createImage(ImageDesc const &desc);
+    IB_API Material::Handle createMaterial(ForwardDesc const &desc);
 
     IB_API void newImGuiFrame();
     IB_API bool imGuiPlatformMessage(WindowMessagePlatformData const* platformData);

@@ -31,7 +31,51 @@ namespace IB
 
 namespace IB
 {
+    Transform* toTransform(Asset::Handle asset) { return reinterpret_cast<Transform*>(IB::Asset::toValue(asset)); }
+
     ThreadSafePool<Transform> LocalTransforms;
+    class TransformPropertyStreamer : public IB::Asset::IStreamer
+    {
+    public:
+        IB::Asset::Handle create() override
+        {
+            Transform& transform = LocalTransforms.add();
+            return IB::Asset::toHandle(reinterpret_cast<uint64_t>(&transform));
+        }
+
+        IB::Asset::LoadContinuation loadAsync(IB::Asset::LoadContext *context) override
+        {
+            Transform baseTransform = {};
+            if (context->BaseAsset != IB::InvalidAsset)
+            {
+                baseTransform = *toTransform(context->BaseAsset);
+            }
+
+            Transform& transform = *toTransform(context->LoadingAsset);
+            Serialization::Delta::fromBinary(&context->Stream, &transform, baseTransform);
+
+            return Asset::complete(Asset::toHandle(reinterpret_cast<uint64_t>(&transform)));
+        }
+
+        void saveThreadSafe(IB::Asset::SaveContext *context) override
+        {
+            Transform baseTransform = {};
+            if (context->BaseAsset != IB::InvalidAsset)
+            {
+                baseTransform = *toTransform(context->BaseAsset);
+            }
+
+            Transform& transform = *toTransform(context->Asset);
+            Serialization::Delta::toBinary(context->Stream, transform, baseTransform);
+        }
+
+        void unloadThreadSafe(IB::Asset::Handle assetHandle) override
+        {
+            LocalTransforms.remove(*toTransform(assetHandle));
+        }
+    };
+
+    TransformPropertyStreamer TransformStreamer;
 
     Property::Handle createTransformProperty()
     {
@@ -47,14 +91,16 @@ namespace IB
     {
         void transformEditor(Asset::Handle asset)
         {
+            Transform* transform = reinterpret_cast<Transform*>(Asset::toValue(asset));
+
+            ImGizmo::translation(&transform->Position, transform->Rotation);
+
             if (ImGui::TreeNode("Transform"))
             {
                 if (ImGui::BeginTable("Inspector Table", 2))
                 {
                     ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed);
                     ImGui::TableSetupColumn("Data", ImGuiTableColumnFlags_None);
-
-                    Transform* transform = reinterpret_cast<Transform*>(Asset::toValue(asset));
 
                     ImGui::TableNextColumn();
                     ImGui::Text("Position");
@@ -670,6 +716,7 @@ namespace IB
     {
         Asset::addStreamer(Asset::toFourCC("ENTT"), &EntityStreamer);
         Asset::addStreamer(Asset::toFourCC("CELL"), &CellStreamer);
+        Asset::addStreamer(Asset::toFourCC("TFRM"), &TransformStreamer);
 
         Editor::addAssetEditor(Asset::toFourCC("CELL"), &Editor::cellEditor);
         Editor::addAssetEditor(Asset::toFourCC("ENTT"), &Editor::entityEditor);

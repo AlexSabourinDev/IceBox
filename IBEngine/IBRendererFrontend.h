@@ -23,7 +23,13 @@ namespace IB
         enum Handle : uint64_t;
     }
 
+    namespace Job
+    {
+        enum Handle : uint64_t;
+    }
+
     struct ViewDesc;
+    struct MeshDesc;
 
     constexpr uint32_t RendererJobQueueIndex = 0;
 
@@ -52,18 +58,21 @@ namespace IB
         uint32_t FragShaderSize;
     };
 
-    struct MaterialAsset
+    namespace MaterialAsset
     {
-        char const* AlbedoPath;
-        uint32_t AlbedoTint;
+        enum Handle : uint64_t;
+
+        struct Desc
+        {
+            char const* AlbedoPath;
+            uint32_t AlbedoTint;
+        };
+
+        constexpr Handle toHandle(uint64_t value) { return static_cast<Handle>(value); }
+        constexpr uint64_t toValue(Handle handle) { return static_cast<uint64_t>(handle); }
     };
 
-    struct MaterialAssetHandle
-    {
-        uint64_t Value;
-    };
-
-    inline Asset::Handle toAssetHandle(MaterialAssetHandle handle) { return Asset::toHandle(handle.Value); };
+    inline Asset::Handle toAssetHandle(MaterialAsset::Handle handle) { return Asset::toHandle(static_cast<uint64_t>(handle)); };
 
     namespace ImageFormat
     {
@@ -89,27 +98,43 @@ namespace IB
 
     struct StackAllocator;
 
+    namespace ImGizmo
+    {
+        struct DrawData;
+    }
+
     IB_API void initRendererFrontend(RendererFrontendDesc const &frontendDesc);
     IB_API void killRendererFrontend();
 
     IB_API Property::Handle createRendererProperty(char const* meshPath, char const* materialPath);
-    IB_API MaterialAssetHandle createMaterialAsset(MaterialAsset asset);
+    IB_API MaterialAsset::Handle createMaterialAsset(MaterialAsset::Desc asset);
 
     // Can be called from any thread
-    IB_API ViewDesc gatherCellView(Cell::Handle cell, ImDrawData* imguiDrawCommands, StackAllocator* allocator);
+    struct GatherCellViewDesc
+    {
+        StackAllocator* Allocator;
+
+        Cell::Handle Cell;
+        ImDrawData const* ImGuiDrawData;
+        ImGizmo::DrawData const* ImGizmoDrawData;
+    };
+    IB_API ViewDesc gatherCellView(GatherCellViewDesc const& gatherDesc);
 
     // Must be called from our renderer queue
     IB_API void drawCellView(ViewDesc const& viewDesc);
 
-    IB_API void toBinary(Serialization::WriteStream *stream, MeshAsset const &mesh);
-    IB_API void fromBinary(Serialization::ReadStream *stream, MeshAsset *mesh, uint32_t versionNumber);
+    namespace Serialization
+    {
+        IB_API void toBinary(Serialization::WriteStream *stream, MeshAsset const &mesh);
+        IB_API void fromBinary(Serialization::ReadStream *stream, MeshAsset *mesh, uint32_t versionNumber);
 
-    IB_API void toBinary(Serialization::WriteStream *stream, ShaderAsset const &shaders);
-    IB_API void fromBinary(Serialization::ReadStream *stream, ShaderAsset *shaders, uint32_t versionNumber);
+        IB_API void toBinary(Serialization::WriteStream *stream, ShaderAsset const &shaders);
+        IB_API void fromBinary(Serialization::ReadStream *stream, ShaderAsset *shaders, uint32_t versionNumber);
 
-    IB_API void toBinary(Serialization::WriteStream *stream, MaterialAsset const &material);
-    IB_API void fromBinary(Serialization::ReadStream *stream, MaterialAsset *material, uint32_t versionNumber);
+        IB_API void toBinary(Serialization::WriteStream *stream, MaterialAsset::Desc const &material);
+        IB_API void fromBinary(Serialization::ReadStream *stream, MaterialAsset::Desc *material, uint32_t versionNumber);
 
-    IB_API void toBinary(Serialization::WriteStream *stream, ImageAsset const &image);
-    IB_API void fromBinary(Serialization::ReadStream *stream, ImageAsset *image, uint32_t versionNumber);
+        IB_API void toBinary(Serialization::WriteStream *stream, ImageAsset const &image);
+        IB_API void fromBinary(Serialization::ReadStream *stream, ImageAsset *image, uint32_t versionNumber);
+    }
 } // namespace IB

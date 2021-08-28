@@ -148,6 +148,15 @@ namespace IB
                     resource->Asset = loadResult.Asset;
 
                     onResourceLoad(data, IB::Resource::toHandle(resource->PathHash), IB::Asset::ResourceLoad::Available);
+
+                    // If our file doesn't need to be memory mapped, we can let go of our file handle.
+                    if (!streamer->memoryMapped())
+                    {
+                        unmapFile(resource->File);
+                        closeFile(resource->File);
+                        resource->File = InvalidFile;
+                    }
+
                     IB::deallocate(loadContext);
                 }
                 return loadResult.Result;
@@ -415,8 +424,11 @@ namespace IB
             {
                 auto onUnload = [resource]() {
                     getStreamer(resource->Type)->unloadThreadSafe(resource->Asset);
-                    unmapFile(resource->File);
-                    closeFile(resource->File);
+                    if (resource->File != InvalidFile)
+                    {
+                        unmapFile(resource->File);
+                        closeFile(resource->File);
+                    }
                     deallocate(resource);
                     return JobResult::Complete;
                 };
@@ -488,23 +500,13 @@ namespace IB
             Asset::Handle newAsset = streamer->create();
             IB_ASSERT(newAsset != IB::InvalidAsset, "Cloning API expects to be able to create an asset.");
             Serialization::ReadStream readStream = { writeStream.Buffer };
-            loadAssetInPlaceSync(readStream, type, newAsset);
+            Asset::Handle baseAsset = InvalidAsset;
+            IB::wait(loadAssetInPlaceAsync(readStream, type, newAsset, baseAsset,
+                [](void *, IB::Asset::Handle)
+                {
+                }, nullptr));
 
             return newAsset;
-        }
-
-        void loadAssetInPlaceSync(Serialization::ReadStream readStream, Asset::FourCC type, Asset::Handle asset)
-        {
-            ThreadEvent threadEvent = IB::createThreadEvent();
-            Asset::Handle baseAsset = InvalidAsset;
-            loadAssetInPlaceAsync(readStream, type, asset, baseAsset,
-                [](void *data, IB::Asset::Handle)
-            {
-                IB::ThreadEvent* threadEvent = reinterpret_cast<IB::ThreadEvent*>(data);
-                IB::signalThreadEvent(*threadEvent);
-            }, &threadEvent);
-            waitOnThreadEvent(threadEvent);
-            destroyThreadEvent(threadEvent);
         }
 
         Asset::Handle getAssetFromResource(Resource::Handle resourceHandle)

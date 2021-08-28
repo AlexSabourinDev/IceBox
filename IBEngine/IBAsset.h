@@ -96,6 +96,7 @@ namespace IB
             virtual LoadContinuation loadAsync(LoadContext *context) = 0;
             virtual void unloadThreadSafe(Asset::Handle handle) = 0;
             virtual void saveThreadSafe(SaveContext *context);
+            virtual bool memoryMapped() const { return false; }
         };
         // NOTE: You might get a load state of available before you
         // receive a load state of Loading
@@ -132,7 +133,6 @@ namespace IB
         IB_API Job::Handle loadSubAssetAsync(LoadSubAssetDesc desc, OnSubAssetLoad *onSubAssetLoad, void *data);
         IB_API void unloadAssetThreadSafe(FourCC type, Asset::Handle asset);
         IB_API void saveAssetThreadSafe(Serialization::WriteStream *stream, FourCC type, Asset::Handle asset, Asset::Handle baseAsset = InvalidAsset);
-        IB_API void loadAssetInPlaceSync(Serialization::ReadStream readStream, FourCC type, Asset::Handle asset);
 
         inline Job::Handle loadSubAssetAsync(LoadSubAssetDesc desc, Asset::Handle *outputAsset)
         {

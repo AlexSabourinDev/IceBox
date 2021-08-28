@@ -50,10 +50,10 @@ int main()
         IB::Cell::Handle cellHandle = IB::createCell();
         IB::Resource::Handle cellResource = IB::Asset::createResourceThreadSafe("TestCell.cell", IB::Asset::toFourCC("CELL"), IB::toAssetHandle(cellHandle));
 
-        IB::MaterialAsset materialAsset;
+        IB::MaterialAsset::Desc materialAsset;
         materialAsset.AlbedoPath = "bubbles.tex";
         materialAsset.AlbedoTint = IB::toRGBA(1.0f, 1.0f, 1.0f, 1.0f);
-        IB::MaterialAssetHandle materialHandle = IB::createMaterialAsset(materialAsset);
+        IB::MaterialAsset::Handle materialHandle = IB::createMaterialAsset(materialAsset);
         IB::Resource::Handle materialResource = IB::Asset::createResourceThreadSafe("Test.mat", IB::Asset::toFourCC("MATE"), IB::toAssetHandle(materialHandle));
 
         {
