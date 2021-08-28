@@ -71,6 +71,7 @@ namespace IB
 
     // Transform API
     IB_API Property::Handle createTransformProperty();
-    IB_API const Transform& getLocalTransform(Property::Handle handle);
+    IB_API Transform const& getLocalTransform(Property::Handle handle);
+    IB_API void setLocalTransform(Property::Handle handle, Transform const& transform);
 }
 

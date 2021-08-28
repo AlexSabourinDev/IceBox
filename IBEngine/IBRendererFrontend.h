@@ -23,6 +23,11 @@ namespace IB
         enum Handle : uint64_t;
     }
 
+    namespace Entity
+    {
+        enum Handle : uint64_t;
+    }
+
     namespace Job
     {
         enum Handle : uint64_t;
@@ -114,6 +119,7 @@ namespace IB
     {
         StackAllocator* Allocator;
 
+        Entity::Handle Camera;
         Cell::Handle Cell;
         ImDrawData const* ImGuiDrawData;
         ImGizmo::DrawData const* ImGizmoDrawData;

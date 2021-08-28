@@ -498,7 +498,15 @@ namespace IB
 
         ViewDesc viewDesc = {};
         {
-            Float3 viewPos = Float3{ 0.0f, -5.0f, 0.0f };
+            Transform cameraTransform = {};
+            Property::Handle transformProperty = getPropertyFromEntity(gatherDesc.Camera, Asset::toFourCC("TFRM"));
+            if (transformProperty != InvalidProperty)
+            {
+                cameraTransform = getLocalTransform(transformProperty);
+            }
+
+            Float3 viewPos = cameraTransform.Position;
+            // TODO: camera rotation
             Mat4x4 view =
             {
                 {{1.0f, 0.0f, 0.0f, -viewPos.x},
@@ -507,6 +515,7 @@ namespace IB
                  {0.0f, 0.0f, 0.0f, 1.0f}},
             };
 
+            // TODO: camera projection
             float fov = 1.0f / tanf(3.1415f * 0.25);
             const float f = 45.0f;
             const float n = 1.0f;

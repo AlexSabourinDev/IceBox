@@ -82,9 +82,16 @@ namespace IB
         return Property::toHandle(reinterpret_cast<uint64_t>(&LocalTransforms.add()));
     }
 
-    const Transform& getLocalTransform(Property::Handle handle)
+    Transform const& getLocalTransform(Property::Handle handle)
     {
+        IB_ASSERT(handle != InvalidProperty, "Trying to retrieve an invalid transform!");
         return *reinterpret_cast<Transform*>(Property::toValue(handle));
+    }
+
+    void setLocalTransform(Property::Handle handle, Transform const& transform)
+    {
+        IB_ASSERT(handle != InvalidProperty, "Trying to retrieve an invalid transform!");
+        *reinterpret_cast<Transform*>(Property::toValue(handle)) = transform;
     }
 
     namespace Editor

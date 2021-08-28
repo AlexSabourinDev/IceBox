@@ -37,6 +37,8 @@ namespace
     bool EditorAlive = true;
     constexpr uint32_t PlatformJobQueue = 2;
     Window::Handle WindowHandle;
+
+    Entity::Handle CameraHandle = {};
 } // namespace
 
 namespace IB
@@ -148,6 +150,7 @@ namespace IB
                 GatherCellViewDesc gatherDesc
                 {
                     renderFrameAllocator,
+                    CameraHandle,
                     currentCell,
                     ImGui::GetDrawData(),
                     ImGizmo::getDrawData()
@@ -214,6 +217,11 @@ int main()
 
         ImGuiIO& io = ImGui::GetIO();
         io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+
+        CameraHandle = createEntity();
+        Property::Handle transformProperty = createTransformProperty();
+        addPropertyToEntity(CameraHandle, Asset::toFourCC("TFRM"), transformProperty);
+        setLocalTransform(transformProperty, { {0.0f, -5.0f, 0.0f}, Quaternion::identity(), 1.0f });
     }
 
     {
