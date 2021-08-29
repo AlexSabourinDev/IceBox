@@ -14,10 +14,36 @@
 #include <wrl.h>
 #include <dxc/dxcapi.h>
 
+#define STB_IMAGE_IMPLEMENTATION
+#include <stb/stb_image.h>
+
+void processTexture(char const *rawPath, char const *compiledPath)
+{
+    int x, y, channelsInFile;
+    int const desiredChannels = 4;
+    uint8_t* imageData = stbi_load(rawPath, &x, &y, &channelsInFile, desiredChannels);
+
+    IB::ImageAsset imageAsset;
+    imageAsset.Format = IB::ImageFormat::RGBA8;
+    imageAsset.Width = static_cast<uint32_t>(x);
+    imageAsset.Height = static_cast<uint32_t>(y);
+    imageAsset.Data = imageData;
+
+    IB::Serialization::WriteStream writeStream;
+    toBinary(&writeStream, IB::Serialization::Version);
+    toBinary(&writeStream, imageAsset);
+
+    IB::File::Handle file = IB::openFile(compiledPath, IB::OpenFileOptions::Overwrite | IB::OpenFileOptions::Write);
+    IB::writeToFile(file, writeStream.Buffer, writeStream.BufferCursor);
+    IB::closeFile(file);
+
+    stbi_image_free(imageData);
+}
+
 void processMesh(char const *rawPath, char const *compiledPath)
 {
     Assimp::Importer importer;
-    const aiScene *scene = importer.ReadFile(rawPath, aiProcess_Triangulate);
+    aiScene const * scene = importer.ReadFile(rawPath, aiProcess_Triangulate);
 
     if (scene == nullptr || (scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE) != 0 || scene->mRootNode == nullptr)
     {
@@ -65,10 +91,13 @@ void processMesh(char const *rawPath, char const *compiledPath)
         asset.IndexCount = mesh->mNumFaces * 3;
     }
 
-    IB::File file = IB::openFile(compiledPath, IB::OpenFileOptions::Overwrite | IB::OpenFileOptions::Write);
-    IB::Serialization::FileStream fileStream{ file };
-    toBinary(&fileStream, asset);
-    flush(&fileStream);
+    IB::Serialization::WriteStream writeStream{};
+    toBinary(&writeStream, IB::Serialization::Version);
+    toBinary(&writeStream, asset);
+
+    IB::File::Handle file = IB::openFile(compiledPath, IB::OpenFileOptions::Overwrite | IB::OpenFileOptions::Write);
+    IB::writeToFile(file, writeStream.Buffer, writeStream.BufferCursor);
+    IB::closeFile(file);
 
     IB::deallocateArray(asset.Vertices, asset.VertexCount);
     IB::deallocateArray(asset.Indices, asset.IndexCount);
@@ -81,7 +110,7 @@ void processShader(char const *rawPath, char const *compiledPath)
     ComPtr<IDxcCompiler3> compiler;
     DxcCreateInstance(CLSID_DxcCompiler, IID_PPV_ARGS(&compiler));
 
-    IB::File shaderFile = IB::openFile(rawPath, IB::OpenFileOptions::Read);
+    IB::File::Handle shaderFile = IB::openFile(rawPath, IB::OpenFileOptions::Read);
     void *shaderData = IB::mapFile(shaderFile);
     DxcBuffer shaderBuffer;
     shaderBuffer.Ptr = shaderData;
@@ -151,10 +180,13 @@ void processShader(char const *rawPath, char const *compiledPath)
     shaderAsset.FragShader = reinterpret_cast<uint8_t*>(fragShader->GetBufferPointer());
     shaderAsset.FragShaderSize = static_cast<uint32_t>(fragShader->GetBufferSize());
 
-    IB::File writeFile = IB::openFile(compiledPath, IB::OpenFileOptions::Overwrite | IB::OpenFileOptions::Write);
-    IB::Serialization::FileStream fileStream{ writeFile };
-    toBinary(&fileStream, shaderAsset);
-    flush(&fileStream);
+    IB::Serialization::WriteStream writeStream{ };
+    toBinary(&writeStream, IB::Serialization::Version);
+    toBinary(&writeStream, shaderAsset);
+
+    IB::File::Handle file = IB::openFile(compiledPath, IB::OpenFileOptions::Overwrite | IB::OpenFileOptions::Write);
+    IB::writeToFile(file, writeStream.Buffer, writeStream.BufferCursor);
+    IB::closeFile(file);
 
     IB::unmapFile(shaderFile);
     IB::closeFile(shaderFile);
@@ -202,6 +234,12 @@ int main(int argc, char const *argv[])
             char compiledPath[255];
             sprintf(compiledPath, "%s/%.*s.shdr", compiledDirectory, extensionIndex, relativePath);
             processShader(rawPath, compiledPath);
+        }
+        else if (strcmp(".png", relativePath + extensionIndex) == 0 || strcmp(".jpg", relativePath + extensionIndex) == 0)
+        {
+            char compiledPath[255];
+            sprintf(compiledPath, "%s/%.*s.tex", compiledDirectory, extensionIndex, relativePath);
+            processTexture(rawPath, compiledPath);
         }
     }
 }

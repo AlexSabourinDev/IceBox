@@ -7,11 +7,12 @@ int main()
     winDesc.Name = "Ice Box";
     winDesc.Width = 500;
     winDesc.Height = 150;
-    winDesc.OnWindowMessage = [](void *, IB::WindowMessage message)
+    winDesc.OnWindowMessage = [](void *, IB::WindowMessage message, IB::WindowMessagePlatformData const* platformData)
     {
         if (message.Type == IB::WindowMessage::Close)
         {
             IB::sendQuitMessage();
+            return true;
         }
         else if (message.Type == IB::WindowMessage::Key)
         {
@@ -34,6 +35,7 @@ int main()
                     IB_LOG(IB::LogLevel::Log, "Sample", logMessage);
                 }
             }
+            return true;
         }
         else if (message.Type == IB::WindowMessage::MouseClick)
         {
@@ -58,14 +60,19 @@ int main()
                 IB_LOG(IB::LogLevel::Log, "Sample", "Mouse Middle");
                 break;
             }
+
+            return true;
         }
         else if (message.Type == IB::WindowMessage::MouseMove)
         {
             IB_LOG(IB::LogLevel::Log, "Sample", "Mouse Move");
+            return true;
         }
+
+        return false;
     };
 
-    IB::WindowHandle window = IB::createWindow(winDesc);
+    IB::Window::Handle window = IB::createWindow(winDesc);
     IB_LOG(IB::LogLevel::Log, "Sample", "Window created!");
 
     IB::PlatformMessage message = IB::PlatformMessage::None;

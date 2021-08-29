@@ -56,7 +56,8 @@ namespace IB
             {
                 Left,
                 Right,
-                Middle
+                Middle,
+                Count
             };
 
             enum State
@@ -68,6 +69,8 @@ namespace IB
 
         enum
         {
+            Unknown,
+            Create,
             Resize,
             Close,
             Key,
@@ -76,6 +79,12 @@ namespace IB
         } Type;
 
         union {
+            struct
+            {
+                uint32_t Width;
+                uint32_t Height;
+            } Create;
+
             struct
             {
                 uint32_t Width;
@@ -105,13 +114,16 @@ namespace IB
         } Data;
     };
 
-    struct WindowHandle
+    struct WindowMessagePlatformData;
+    namespace Window
     {
-        uintptr_t Value;
+        enum Handle : uintptr_t {};
+        constexpr Handle toHandle(uintptr_t value) { return static_cast<Handle>(value); }
+        constexpr uintptr_t toValue(Handle handle) { return static_cast<uintptr_t>(handle); }
     };
     struct WindowDesc
     {
-        void (*OnWindowMessage)(void *data, WindowMessage message) = nullptr;
+        bool (*OnWindowMessage)(void *data, WindowMessage message, WindowMessagePlatformData const *platformData) = nullptr;
         void *CallbackState = nullptr;
 
         char const *Name = nullptr;
@@ -119,8 +131,8 @@ namespace IB
         int32_t Height = 0;
     };
 
-    IB_API WindowHandle createWindow(WindowDesc desc);
-    IB_API void destroyWindow(WindowHandle window);
+    IB_API Window::Handle createWindow(WindowDesc desc);
+    IB_API void destroyWindow(Window::Handle window);
 
     // Messaging API
     // IceBox's platform abstraction is a message queue.
@@ -158,13 +170,17 @@ namespace IB
     IB_API uint32_t atomicCompareExchange(uint32_t volatile *atomic, uint32_t compare, uint32_t exchange);
     IB_API uint64_t atomicCompareExchange(uint64_t volatile *atomic, uint64_t compare, uint64_t exchange);
     IB_API void *atomicCompareExchange(void *volatile *atomic, void *compare, void *exchange);
+    IB_API void *atomicExchange(void *volatile *atomic, void *exchange);
     IB_API uint64_t atomicOr(uint64_t volatile *atomic, uint64_t orValue);
     IB_API uint64_t atomicAnd(uint64_t volatile *atomic, uint64_t andValue);
     inline uint32_t atomicIncrement(uint32_t *atomic) { return atomicIncrement(static_cast<uint32_t volatile *>(atomic)); }
     inline uint32_t atomicDecrement(uint32_t *atomic) { return atomicDecrement(static_cast<uint32_t volatile *>(atomic)); }
     inline uint32_t atomicCompareExchange(uint32_t *atomic, uint32_t compare, uint32_t exchange) { return atomicCompareExchange(static_cast<uint32_t volatile *>(atomic), compare, exchange); }
     inline uint64_t atomicCompareExchange(uint64_t *atomic, uint64_t compare, uint64_t exchange) { return atomicCompareExchange(static_cast<uint64_t volatile *>(atomic), compare, exchange); }
-    inline void *atomicCompareExchange(void **atomic, void *compare, void *exchange) { return atomicCompareExchange(static_cast<void *volatile *>(atomic), compare, exchange); }
+    template< typename T >
+    T *atomicCompareExchange(T **atomic, T *compare, T *exchange) { return reinterpret_cast<T*>(atomicCompareExchange(reinterpret_cast<void *volatile *>(atomic), compare, exchange)); }
+    template< typename T >
+    T *atomicExchange(T **atomic, T *exchange) { return reinterpret_cast<T*>(atomicExchange(reinterpret_cast<void *volatile *>(atomic), exchange)); }
     inline uint64_t atomicOr(uint64_t *atomic, uint64_t orValue) { return atomicOr(static_cast<uint64_t volatile*>(atomic), orValue); }
     inline uint64_t atomicAnd(uint64_t *atomic, uint64_t andValue) { return atomicAnd(static_cast<uint64_t volatile*>(atomic), andValue); }
 
@@ -188,7 +204,9 @@ namespace IB
     IB_API ThreadEvent createThreadEvent();
     IB_API void destroyThreadEvent(ThreadEvent threadEvent);
     IB_API void signalThreadEvent(ThreadEvent threadEvent);
-    IB_API void waitOnThreadEvent(ThreadEvent threadEvent);
+    const uint32_t InfiniteWait = UINT32_MAX;
+    IB_API void waitOnThreadEvent(ThreadEvent threadEvent, uint32_t waitInMilliseconds = InfiniteWait);
+    IB_API void resetThreadEvent(ThreadEvent threadEvent);
 
     // Not the ideal place for these, but good enough for now
     template <typename T>
@@ -213,11 +231,13 @@ namespace IB
     IB_API void debugBreak();
 
     // File API
-    struct File
+    namespace File
     {
-        uintptr_t Value;
+        enum Handle : uintptr_t {};
+        constexpr Handle toHandle(uintptr_t value) { return static_cast<Handle>(value); }
+        constexpr uintptr_t toValue(Handle handle) { return static_cast<uintptr_t>(handle); }
     };
-    constexpr File InvalidFile = File{0};
+    constexpr File::Handle InvalidFile = File::toHandle(0);
 
     struct OpenFileOptions
     {
@@ -230,16 +250,31 @@ namespace IB
         };
     };
 
-    IB_API File openFile(char const *filepath, uint32_t options); // Threadsafe
-    IB_API void closeFile(File file);                             // Threadsafe
-    IB_API void *mapFile(File file);                              // Threadsafe
-    IB_API void unmapFile(File file);                             // Threadsafe as long as you don't unmap the same file in another thread
-    IB_API void writeToFile(File file, void const *data, size_t size, uint32_t offset = 0);
-    IB_API void appendToFile(File file, void const *data, size_t size);
-    IB_API size_t fileSize(File file);
+    IB_API File::Handle openFile(char const *filepath, uint32_t options); // Threadsafe
+    IB_API void closeFile(File::Handle file);                             // Threadsafe
+    IB_API void *mapFile(File::Handle file);                              // Threadsafe
+    IB_API void unmapFile(File::Handle file);                             // Threadsafe as long as you don't unmap the same file in another thread
+    IB_API void writeToFile(File::Handle file, void const *data, size_t size, uint32_t offset = 0);
+    IB_API void appendToFile(File::Handle file, void const *data, size_t size);
+    IB_API size_t fileSize(File::Handle file);
     IB_API bool doesFileExist(char const *filepath);
 
     // File system
     IB_API bool isDirectory(char const *path);
     IB_API void setWorkingDirectory(char const *path);
+
+    struct DirectoryIterator
+    {
+        char const* Path;
+        uintptr_t State = 0;
+    };
+
+    constexpr uint32_t MaxFilePath = 260;
+    struct FileInfo
+    {
+        char Path[MaxFilePath];
+        bool IsDirectory;
+    };
+
+    IB_API bool iterateDirectory(DirectoryIterator* iterator, FileInfo* fileInfo);
 } // namespace IB

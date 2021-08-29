@@ -3,4 +3,7 @@
   <ItemGroup>
     <ClCompile Include="main.cpp" />
   </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\..\SDK\stb\include\stb\stb_image.h" />
+  </ItemGroup>
 </Project>

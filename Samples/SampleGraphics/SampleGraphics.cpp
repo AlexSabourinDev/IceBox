@@ -18,8 +18,8 @@ int main()
     {
         bool WindowVisible = true;
         bool CullGizmo = true;
-        uint32_t Width = 500;
-        uint32_t Height = 500;
+        uint32_t Width =1024;
+        uint32_t Height = 720;
         IB::Mat4x4 ViewProj;
         IB::Mat4x4 InvViewProj;
         IB::Float3 ViewPos;
@@ -39,7 +39,7 @@ int main()
     winDesc.Name = "Ice Box";
     winDesc.Width = sampleState.Width;
     winDesc.Height = sampleState.Height;
-    winDesc.OnWindowMessage = [](void *data, IB::WindowMessage message) {
+    winDesc.OnWindowMessage = [](void *data, IB::WindowMessage message, IB::WindowMessagePlatformData const*) {
         SampleState *sampleState = reinterpret_cast<SampleState *>(data);
         switch (message.Type)
         {
@@ -47,10 +47,10 @@ int main()
             sampleState->WindowVisible = message.Data.Resize.Width > 0;
             sampleState->Width = message.Data.Resize.Width;
             sampleState->Height = message.Data.Resize.Height;
-            break;
+            return true;
         case IB::WindowMessage::Close:
             IB::sendQuitMessage();
-            break;
+            return true;
         case IB::WindowMessage::MouseClick:
             if (message.Data.MouseClick.State == IB::WindowMessage::Mouse::Pressed &&
                 message.Data.MouseClick.Button == IB::WindowMessage::Mouse::Left)
@@ -97,7 +97,7 @@ int main()
             {
                 sampleState->ActiveAxis = 3;
             }
-            break;
+            return true;
         case IB::WindowMessage::MouseMove:
             {
                 if (!sampleState->CullGizmo && sampleState->ActiveAxis < 3)
@@ -149,26 +149,34 @@ int main()
                     sampleState->PreviousMouseY = message.Data.MouseMove.Y;
                 }
             }
-            break;
+            return true;
         }
+
+        return false;
     };
     winDesc.CallbackState = &sampleState;
-    IB::WindowHandle window = IB::createWindow(winDesc);
+    IB::Window::Handle window = IB::createWindow(winDesc);
 
-    IB::File forwardSampleFile = IB::openFile("../Assets/Compiled/SampleForward.c.shdr", IB::OpenFileOptions::Read);
+    IB::File::Handle forwardSampleFile = IB::openFile("../Assets/Compiled/SampleForward.shdr", IB::OpenFileOptions::Read);
     void *forwardSample = IB::mapFile(forwardSampleFile);
 
     IB::ShaderAsset shaders;
-    IB::Serialization::MemoryStream shaderReadStream{reinterpret_cast<uint8_t *>(forwardSample)};
-    fromBinary(&shaderReadStream, &shaders);
+    IB::Serialization::ReadStream shaderReadStream{reinterpret_cast<uint8_t *>(forwardSample)};
+
+    uint32_t versionNumber;
+    fromBinary(&shaderReadStream, &versionNumber);
+    fromBinary(&shaderReadStream, &shaders, versionNumber);
 
     IB::RendererDesc rendererDesc = {};
-    rendererDesc.Window = &window;
-    rendererDesc.Materials.Forward.VShader = shaders.VertexShader;
-    rendererDesc.Materials.Forward.VShaderSize = shaders.VertexShaderSize;
-    rendererDesc.Materials.Forward.FShader = shaders.FragShader;
-    rendererDesc.Materials.Forward.FShaderSize = shaders.FragShaderSize;
+    rendererDesc.Window = window;
     IB::initRenderer(rendererDesc);
+
+    IB::ForwardPassDesc forwardDesc = {};
+    forwardDesc.VShader = shaders.VertexShader;
+    forwardDesc.VShaderSize = shaders.VertexShaderSize;
+    forwardDesc.FShader = shaders.FragShader;
+    forwardDesc.FShaderSize = shaders.FragShaderSize;
+    IB::initForwardPass(forwardDesc);
 
     // Can unmap shaders now
     IB::unmapFile(forwardSampleFile);
@@ -181,13 +189,13 @@ int main()
     imageDesc.Width = 2;
     imageDesc.Height = 2;
     imageDesc.Data = imageTexels;
-    IB::ImageHandle albedoImage = IB::createImage(imageDesc);
+    IB::Image::Handle albedoImage = IB::createImage(imageDesc);
 
-    float tint[4] = {1.0f, 1.0f, 1.0f, 1.0f};
+    uint32_t tint = IB::toRGBA(1.0f, 1.0f, 1.0f, 1.0f);
     IB::ForwardDesc matDesc = {};
-    memcpy(matDesc.AlbedoTint, tint, sizeof(float) * 4);
+    matDesc.AlbedoTint = tint;
     matDesc.AlbedoImage = albedoImage;
-    IB::MaterialHandle someMaterial = IB::createMaterial(matDesc);
+    IB::Material::Handle someMaterial = IB::createMaterial(matDesc);
 
     uint8_t whiteImageTexels[] = {255, 255, 255, 255};
 
@@ -196,19 +204,20 @@ int main()
     whiteImageDesc.Width = 1;
     whiteImageDesc.Height = 1;
     whiteImageDesc.Data = whiteImageTexels;
-    IB::ImageHandle whiteImage = IB::createImage(whiteImageDesc);
+    IB::Image::Handle whiteImage = IB::createImage(whiteImageDesc);
 
     IB::ForwardDesc gizmoMatDesc = {};
-    memcpy(gizmoMatDesc.AlbedoTint, tint, sizeof(float) * 4);
+    gizmoMatDesc.AlbedoTint = tint;
     gizmoMatDesc.AlbedoImage = whiteImage;
-    IB::MaterialHandle gizmoMaterial = IB::createMaterial(gizmoMatDesc);
+    IB::Material::Handle gizmoMaterial = IB::createMaterial(gizmoMatDesc);
 
-    IB::File meshFile = IB::openFile("../Assets/Compiled/Box.c.msh", IB::OpenFileOptions::Read);
+    IB::File::Handle meshFile = IB::openFile("../Assets/Compiled/Box.msh", IB::OpenFileOptions::Read);
     void *meshData = IB::mapFile(meshFile);
 
     IB::MeshAsset mesh = {};
-    IB::Serialization::MemoryStream readStream{reinterpret_cast<uint8_t *>(meshData)};
-    fromBinary(&readStream, &mesh);
+    IB::Serialization::ReadStream readStream{reinterpret_cast<uint8_t *>(meshData)};
+    fromBinary(&readStream, &versionNumber);
+    fromBinary(&readStream, &mesh, versionNumber);
 
     IB::AABB meshAABB = { {1000.0f, 1000.0f, 1000.0f }, { -1000.0f, -1000.0f, -1000.0f } };
     for (uint32_t i = 0; i < mesh.VertexCount; i++)
@@ -224,14 +233,14 @@ int main()
     meshDesc.Indices.Data = mesh.Indices;
     meshDesc.Indices.Count = mesh.IndexCount;
 
-    IB::MeshHandle someMesh = IB::createMesh(meshDesc);
+    IB::Mesh::Handle someMesh = IB::createMesh(meshDesc);
 
     // Don't need mesh memory anymore, it's fed to the GPU
     IB::unmapFile(meshFile);
     IB::closeFile(meshFile);
 
     // Create our gizmo
-    IB::MeshHandle gizmoMesh;
+    IB::Mesh::Handle gizmoMesh;
     {
         constexpr uint32_t cylinderSegments = 8;
         constexpr float cylinderLength = 0.75f;
@@ -417,17 +426,17 @@ int main()
             meshBatch.Meshes = &meshInstance;
             meshBatch.MeshCount = 1;
 
-            IB::ViewDesc::Pass worldPass;
+            IB::ViewDesc::ForwardPass worldPass;
             worldPass.Batches = &meshBatch;
             worldPass.BatchCount = 1;
 
             IB::ViewDesc viewDesc = {};
             viewDesc.ViewProj = sampleState.ViewProj;
-            viewDesc.Forward.Passes[IB::ViewDesc::Pass::Default] = worldPass;
+            viewDesc.Forward.Passes[IB::ViewDesc::ForwardPass::Default] = worldPass;
 
             IB::ViewDesc::MeshInstances gizmoInstance = {};
             IB::ViewDesc::Batch gizmoBatch = {};
-            IB::ViewDesc::Pass gizmoPass;
+            IB::ViewDesc::ForwardPass gizmoPass;
             IB::Mat3x4 gizmoTransform;
             if (!sampleState.CullGizmo)
             {
@@ -458,7 +467,7 @@ int main()
                 gizmoPass.Batches = &gizmoBatch;
                 gizmoPass.BatchCount = 1;
 
-                viewDesc.Forward.Passes[IB::ViewDesc::Pass::DebugOverlay] = gizmoPass;
+                viewDesc.Forward.Passes[IB::ViewDesc::ForwardPass::DebugOverlay] = gizmoPass;
             }
 
             IB::drawView(viewDesc);

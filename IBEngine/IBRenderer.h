@@ -32,22 +32,25 @@ This assures that we minimize our state changes while maximizing the potential f
 batching instances. (It's also easier to think about for me)
 */
 
+struct ImDrawData;
 namespace IB
 {
-    struct WindowHandle;
+    struct WindowMessagePlatformData;
+    namespace Window
+    {
+        enum Handle : uintptr_t;
+    }
     struct RendererDesc
     {
-        WindowHandle const*Window;
-        struct
-        {
-            struct
-            {
-                uint8_t const*VShader = nullptr;
-                uint32_t VShaderSize = 0;
-                uint8_t const*FShader = nullptr;
-                uint32_t FShaderSize = 0;
-            } Forward;
-        } Materials;
+        Window::Handle Window;
+    };
+
+    struct ForwardPassDesc
+    {
+        uint8_t const*VShader = nullptr;
+        uint32_t VShaderSize = 0;
+        uint8_t const*FShader = nullptr;
+        uint32_t FShaderSize = 0;
     };
 
     struct Vertex
@@ -73,14 +76,19 @@ namespace IB
         } Indices;
     };
 
-    struct MeshHandle
+    namespace Mesh
     {
-        uint32_t Value;
+        enum Handle : uint32_t;
+        constexpr Handle toHandle(uint32_t value) { return static_cast<Handle>(value); }
+        constexpr uint32_t toValue(Handle handle) { return static_cast<uint32_t>(handle); }
     };
 
-    struct ImageFormat
+    constexpr Mesh::Handle InvalidMesh = Mesh::toHandle(0);
+
+
+    namespace ImageFormat
     {
-        enum Enum
+        enum Enum : uint32_t
         {
             RGBA8 = 0,
             Count
@@ -92,44 +100,60 @@ namespace IB
         ImageFormat::Enum Format = {};
         uint32_t Width = 0;
         uint32_t Height = 0;
-        uint8_t *Data = nullptr;
+        uint8_t const*Data = nullptr;
     };
 
-    struct ImageHandle
+    namespace Image
     {
-        uint32_t Value;
+        enum Handle : uint32_t;
+        constexpr Handle toHandle(uint32_t value) { return static_cast<Handle>(value); }
+        constexpr uint32_t toValue(Handle handle) { return static_cast<uint32_t>(handle); }
     };
+
+    constexpr Image::Handle InvalidImage = Image::toHandle(0);
+
+    constexpr uint32_t toRGBA(float r, float g, float b, float a)
+    { 
+        return (static_cast<uint32_t>(r * 255.99f) << 24)
+             | (static_cast<uint32_t>(g * 255.99f) << 16)
+             | (static_cast<uint32_t>(b * 255.99f) << 8)
+             | (static_cast<uint32_t>(a * 255.99f));
+    }
 
     struct ForwardDesc
     {
-        float AlbedoTint[4] = {1.0f, 1.0f, 1.0f, 1.0f};
-        ImageHandle AlbedoImage = {};
+        uint32_t AlbedoTint = 0;
+        Image::Handle AlbedoImage = {};
     };
 
-    struct MaterialHandle
+    namespace Material
     {
-        uint32_t Value;
+        enum Handle : uint32_t;
+        constexpr Handle toHandle(uint32_t value) { return static_cast<Handle>(value); }
+        constexpr uint32_t toValue(Handle handle) { return static_cast<uint32_t>(handle); }
     };
+
+    constexpr Material::Handle InvalidMaterial = Material::toHandle(0);
 
     struct ViewDesc
     {
         struct MeshInstances
         {
-            MeshHandle Mesh;
+            Mesh::Handle Mesh;
             Mat3x4 const *Transforms = nullptr;
             uint32_t Count = 0;
         };
 
         struct Batch
         {
-            MaterialHandle Material;
+            Material::Handle Material;
             MeshInstances *Meshes;
             uint32_t MeshCount = 0;
         };
 
         Mat4x4 ViewProj = Mat4x4::identity();
 
-        struct Pass
+        struct ForwardPass
         {
             enum
             {
@@ -139,19 +163,30 @@ namespace IB
             };
 
             Batch *Batches;
-            uint32_t BatchCount;
+            uint32_t BatchCount = 0;
         };
 
         struct
         {
-            Pass Passes[Pass::Count];
+            ForwardPass Passes[ForwardPass::Count];
         } Forward;
+
+        ImDrawData *ImGuiDrawData = nullptr;
     };
 
     IB_API void initRenderer(RendererDesc const &desc);
     IB_API void killRenderer();
-    IB_API MeshHandle createMesh(MeshDesc const &desc);
-    IB_API ImageHandle createImage(ImageDesc const &desc);
-    IB_API MaterialHandle createMaterial(ForwardDesc const &desc);
+
+    // Can be called multiple times to reset the pipeline.
+    // This function is safe to be called from a separate shader loading thread.
+    // Make sure to only call pass initialization functions from this thread and no other.
+    IB_API void initForwardPass(ForwardPassDesc const &desc);
+
+    IB_API Mesh::Handle createMesh(MeshDesc const &desc);
+    IB_API Image::Handle createImage(ImageDesc const &desc);
+    IB_API Material::Handle createMaterial(ForwardDesc const &desc);
+
+    IB_API void newImGuiFrame();
+    IB_API bool imGuiPlatformMessage(WindowMessagePlatformData const* platformData);
     IB_API void drawView(ViewDesc const &view);
 } // namespace IB

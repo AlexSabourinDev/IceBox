@@ -8,6 +8,10 @@
 #define VK_USE_PLATFORM_WIN32_KHR
 #include <vulkan/vulkan.h>
 
+#include <imgui/imgui_impl_vulkan.h>
+#include <imgui/imgui_impl_win32.h>
+#include <imgui/imgui.h>
+
 /*
 Phew, I assume if you're reading this comment you'd like an overview of how the IceBox renderer works.
 I'll do my best to describe it here, but it's a lot to talk about and it might be easier to simply email
@@ -83,16 +87,21 @@ as well as making the creation of a function quite trivial by making the scope i
 That's pretty much it!
 */
 
-#define IB_VKCHECK(call)                      \
-    if (VK_SUCCESS != call)                   \
-    {                                         \
-        IB_ASSERT(false, "Failed VK Check."); \
-    }
-
 #define IB_VKDEBUG
 
+extern LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam); // ImGui window
 namespace
 {
+    void VulkanCheck(VkResult result)
+    {
+        if (VK_SUCCESS != result)
+        {
+            IB_ASSERT(false, "Failed VK Check.");
+        }
+    }
+
+#define IB_VKCHECK(call) VulkanCheck(call);
+
     // Utilities
     template <typename T, uint32_t Count>
     constexpr uint32_t arrayCount(T (&arr)[Count])
@@ -106,7 +115,25 @@ namespace
 
     constexpr uint32_t MaxAllocatorPools = 10;
     constexpr uint32_t MaxMemoryBlocks = 1000;
-    constexpr uint32_t MaxAllocatorPoolSize = 1024 * 1024 * 64;
+
+    struct AllocationCategory
+    {
+        enum Enum
+        {
+            Misc = 0,
+            TransferSource,
+            Mesh,
+            Image,
+            Count
+        };
+    };
+
+    constexpr uint32_t MaxAllocatorPoolSizes[AllocationCategory::Count] = {
+        1024 * 1024 * 16,
+        1024 * 1024 * 16,
+        1024 * 1024 * 64,
+        1024 * 1024 * 512,
+    };
 
     struct MemoryBlock
     {
@@ -114,6 +141,8 @@ namespace
         VkDeviceSize Offset = 0;
         uint32_t Id = UINT32_MAX;
         uint32_t NextIndex = UINT32_MAX;
+        uint32_t ParentIndex = UINT32_MAX;
+        uint32_t SiblingIndex = UINT32_MAX;
         bool Allocated = false;
     };
 
@@ -124,6 +153,7 @@ namespace
         uint32_t HeadIndex = UINT32_MAX;
         uint32_t NextId = UINT32_MAX;
         uint32_t MemoryType = UINT32_MAX;
+        AllocationCategory::Enum Category;
         void *Map = nullptr;
     };
 
@@ -135,12 +165,24 @@ namespace
         uint32_t PoolIndex = 0;
     };
 
-    struct Allocator
+    struct VulkanAllocator
     {
         MemoryPool MemoryPools[MaxAllocatorPools] = {};
         MemoryBlock BlockPool[MaxMemoryBlocks] = {};
         uint32_t FreeBlocks[MaxMemoryBlocks] = {};
         uint32_t FreeBlockCount = 0;
+    };
+
+    struct AllocationRequest
+    {
+        VkPhysicalDevice PhysicalDevice;
+        VkDevice LogicalDevice;
+        VkDeviceSize Size;
+        VkDeviceSize Alignment;
+        uint32_t TypeBits;
+        VkMemoryPropertyFlags RequiredFlags;
+        VkMemoryPropertyFlags PreferedFlags;
+        AllocationCategory::Enum Category;
     };
 
     uint32_t findMemoryIndex(VkPhysicalDevice physicalDevice, uint32_t typeBits, VkMemoryPropertyFlags requiredFlags, VkMemoryPropertyFlags preferedFlags)
@@ -173,7 +215,7 @@ namespace
         return UINT32_MAX;
     }
 
-    void createAllocator(Allocator *allocator)
+    void createAllocator(VulkanAllocator *allocator)
     {
         allocator->FreeBlockCount = MaxMemoryBlocks;
         for (uint32_t freeBlockIndex = 0; freeBlockIndex < allocator->FreeBlockCount; freeBlockIndex++)
@@ -182,7 +224,7 @@ namespace
         }
     }
 
-    void destroyAllocator(VkDevice device, Allocator *allocator)
+    void destroyAllocator(VkDevice device, VulkanAllocator *allocator)
     {
         for (unsigned int i = 0; i < MaxAllocatorPools; i++)
         {
@@ -205,7 +247,7 @@ namespace
         }
     }
 
-    void *mapAllocation(VkDevice logicalDevice, Allocator *allocator, Allocation allocation)
+    void *mapAllocation(VkDevice logicalDevice, VulkanAllocator *allocator, Allocation allocation)
     {
         if (allocator->MemoryPools[allocation.PoolIndex].Map == nullptr)
         {
@@ -216,19 +258,20 @@ namespace
         return reinterpret_cast<uint8_t *>(allocator->MemoryPools[allocation.PoolIndex].Map) + allocation.Offset;
     }
 
-    void unmapAllocation(Allocator * /*allocator*/, Allocation /*allocation*/)
+    void unmapAllocation(VulkanAllocator * /*allocator*/, Allocation /*allocation*/)
     {
         // Does nothing
     }
 
-    Allocation allocateDeviceMemory(VkDevice device, Allocator *allocator, uint32_t memoryTypeIndex, VkDeviceSize size, VkDeviceSize alignment)
+    Allocation allocateDeviceMemory(VulkanAllocator *allocator, AllocationRequest request)
     {
+        uint32_t const memoryTypeIndex = findMemoryIndex(request.PhysicalDevice, request.TypeBits, request.RequiredFlags, request.PreferedFlags);
         IB_ASSERT(memoryTypeIndex != UINT32_MAX, "Invalid memory type index.");
 
         uint32_t foundPoolIndex = UINT32_MAX;
         for (uint32_t i = 0; i < MaxAllocatorPools; i++)
         {
-            if (allocator->MemoryPools[i].MemoryType == memoryTypeIndex)
+            if (allocator->MemoryPools[i].MemoryType == memoryTypeIndex && allocator->MemoryPools[i].Category == request.Category)
             {
                 foundPoolIndex = i;
                 break;
@@ -242,20 +285,21 @@ namespace
                 MemoryPool *memoryPool = &allocator->MemoryPools[i];
                 if (memoryPool->HeadIndex == UINT32_MAX)
                 {
-                    memoryPool->Size = MaxAllocatorPoolSize;
+                    memoryPool->Size = MaxAllocatorPoolSizes[request.Category];
 
                     VkMemoryAllocateInfo memoryAllocInfo = {};
                     memoryAllocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
                     memoryAllocInfo.allocationSize = memoryPool->Size;
                     memoryAllocInfo.memoryTypeIndex = memoryTypeIndex;
 
-                    IB_VKCHECK(vkAllocateMemory(device, &memoryAllocInfo, NULL, &memoryPool->Memory));
+                    IB_VKCHECK(vkAllocateMemory(request.LogicalDevice, &memoryAllocInfo, NULL, &memoryPool->Memory));
 
                     IB_ASSERT(allocator->FreeBlockCount > 0, "No free blocks left!");
                     uint32_t newBlockIndex = allocator->FreeBlocks[allocator->FreeBlockCount - 1];
                     allocator->FreeBlockCount--;
 
                     MemoryBlock *block = &allocator->BlockPool[newBlockIndex];
+                    *block = MemoryBlock{};//Clear our block before use
                     block->Size = memoryPool->Size;
                     block->Offset = 0;
                     block->Allocated = false;
@@ -263,6 +307,7 @@ namespace
                     memoryPool->HeadIndex = newBlockIndex;
                     memoryPool->NextId = 1;
                     memoryPool->MemoryType = memoryTypeIndex;
+                    memoryPool->Category = request.Category;
 
                     foundPoolIndex = i;
                     break;
@@ -272,7 +317,7 @@ namespace
 
         IB_ASSERT(foundPoolIndex != UINT32_MAX, "Failed to find a memory pool.");
 
-        VkDeviceSize allocationSize = size + (alignment - size % alignment);
+        VkDeviceSize allocationSize = request.Size + (request.Alignment - request.Size % request.Alignment);
         // Fun little trick to round to next nearest power of 2 from https://graphics.stanford.edu/~seander/bithacks.html#RoundUpPowerOf2
         // Reduce number by 1, will handle powers of 2
         allocationSize--;
@@ -304,26 +349,30 @@ namespace
         }
 
         // Couldn't find a block the right size, create one from our closest block
-        MemoryBlock *smallestBlock = NULL;
+        uint32_t smalledBlockIndex = UINT32_MAX;
         for (uint32_t iter = memoryPool->HeadIndex; iter != UINT32_MAX; iter = allocator->BlockPool[iter].NextIndex)
         {
             MemoryBlock *block = &allocator->BlockPool[iter];
 
-            if (smallestBlock == NULL || (block->Size > allocationSize && block->Size < smallestBlock->Size && !block->Allocated))
+            if (!block->Allocated && block->Size > allocationSize)
             {
-                smallestBlock = block;
+                if (smalledBlockIndex == UINT32_MAX || block->Size < allocator->BlockPool[smalledBlockIndex].Size)
+                {
+                    smalledBlockIndex = iter;
+                }
             }
         }
 
-        MemoryBlock *iter = smallestBlock;
-        if (iter == NULL)
+        uint32_t iterIndex = smalledBlockIndex;
+        if (iterIndex == UINT32_MAX)
         {
             IB_ASSERT(false, "Failed to allocate a block.");
             return Allocation{};
         }
 
-        while (iter->Size > allocationSize && iter->Size / 2 > allocationSize)
+        while (allocator->BlockPool[iterIndex].Size > allocationSize)
         {
+            MemoryBlock* iter = &allocator->BlockPool[iterIndex];
             VkDeviceSize newBlockSize = iter->Size / 2;
 
             iter->Allocated = true;
@@ -350,75 +399,84 @@ namespace
             ++memoryPool->NextId;
 
             left->NextIndex = rightIndex;
+            left->ParentIndex = iterIndex;
+            left->SiblingIndex = rightIndex;
+            IB_ASSERT(allocator->BlockPool[left->NextIndex].Size <= left->Size, "Our left sibling should always point to an equal or smaller block.");
+            IB_ASSERT(left->NextIndex != UINT32_MAX, "Our left sibling should never point to the terminator.");
+
             right->NextIndex = iter->NextIndex;
+            right->ParentIndex = iterIndex;
+            right->SiblingIndex = leftIndex;
+            IB_ASSERT(right->NextIndex == UINT32_MAX || allocator->BlockPool[right->NextIndex].Size != right->Size, "Our right sibling should never point to it's own sibling.");
+
             iter->NextIndex = leftIndex;
 
-            iter = left;
+            iterIndex = leftIndex;
         }
 
-        iter->Allocated = true;
+        MemoryBlock* allocationBlock = &allocator->BlockPool[iterIndex];
+        allocationBlock->Allocated = true;
 
         Allocation allocation = {};
         allocation.Memory = memoryPool->Memory;
-        allocation.Offset = iter->Offset;
-        allocation.Id = iter->Id;
+        allocation.Offset = allocationBlock->Offset;
+        allocation.Id = allocationBlock->Id;
         allocation.PoolIndex = foundPoolIndex;
         return allocation;
     }
 
-    void freeDeviceMemory(Allocator *allocator, Allocation allocation)
+    void freeMemoryBlock(VulkanAllocator *allocator, MemoryPool *memoryPool, uint32_t currentBlockIndex)
+    {
+        MemoryBlock* currentBlock = &allocator->BlockPool[currentBlockIndex];
+
+        currentBlock->Allocated = false;
+        if (currentBlock->SiblingIndex != UINT32_MAX)
+        {
+            MemoryBlock *siblingBlock = &allocator->BlockPool[currentBlock->SiblingIndex];
+            IB_ASSERT(siblingBlock->Size == currentBlock->Size, "Sibling is not the right size!");
+
+            if (!siblingBlock->Allocated)
+            {
+                allocator->FreeBlocks[allocator->FreeBlockCount] = currentBlockIndex;
+                allocator->FreeBlocks[allocator->FreeBlockCount + 1] = currentBlock->SiblingIndex;
+                allocator->FreeBlockCount += 2;
+
+                IB_ASSERT(currentBlock->ParentIndex != UINT32_MAX, "Blocks with siblings should have parents");
+
+                MemoryBlock *parentBlock = &allocator->BlockPool[currentBlock->ParentIndex];
+                IB_ASSERT(parentBlock->Size == currentBlock->Size * 2, "Parent block is incorrect!");
+
+                // The rightmost block has to move it's next index to our parent
+                if (currentBlock->Offset > siblingBlock->Offset)
+                {
+                    parentBlock->NextIndex = currentBlock->NextIndex;
+                }
+                else
+                {
+                    parentBlock->NextIndex = siblingBlock->NextIndex;
+                }
+
+                // Make sure to merge upwards
+                freeMemoryBlock(allocator, memoryPool, currentBlock->ParentIndex);
+            }
+        }
+    }
+
+    void freeDeviceMemory(VulkanAllocator *allocator, Allocation allocation)
     {
         MemoryPool *memoryPool = &allocator->MemoryPools[allocation.PoolIndex];
-
-        uint32_t prevIters[2] = {UINT32_MAX, UINT32_MAX};
 
         for (uint32_t iter = memoryPool->HeadIndex; iter != UINT32_MAX; iter = allocator->BlockPool[iter].NextIndex)
         {
             MemoryBlock *currentBlock = &allocator->BlockPool[iter];
             if (currentBlock->Id == allocation.Id)
             {
-                currentBlock->Allocated = false;
-
-                // We can't have a sibling to merge if there was never a previous iterator. This is because
-                // the first previous iterator would be the root block that has no siblings
-                if (prevIters[0] != UINT32_MAX)
-                {
-                    MemoryBlock *previousBlock = &allocator->BlockPool[prevIters[0]];
-                    // Previous iterator is my size, it's my sibling. If it's not allocated, merge it
-                    if (previousBlock->Size == currentBlock->Size && !previousBlock->Allocated)
-                    {
-                        MemoryBlock *parentBlock = &allocator->BlockPool[prevIters[1]];
-                        parentBlock->Allocated = false;
-                        parentBlock->NextIndex = currentBlock->NextIndex;
-
-                        allocator->FreeBlocks[allocator->FreeBlockCount] = iter;
-                        allocator->FreeBlocks[allocator->FreeBlockCount + 1] = prevIters[0];
-                        allocator->FreeBlockCount += 2;
-                    }
-                    // Since we just checked to see if the previous iterator was our sibling and it wasnt
-                    // we know that if we have a next iterator, it's our sibling
-                    else if (currentBlock->NextIndex != UINT32_MAX)
-                    {
-                        MemoryBlock *nextBlock = &allocator->BlockPool[currentBlock->NextIndex];
-                        if (!nextBlock->Allocated)
-                        {
-                            MemoryBlock *parentBlock = &allocator->BlockPool[prevIters[0]];
-
-                            parentBlock->Allocated = false;
-                            parentBlock->NextIndex = nextBlock->NextIndex;
-
-                            allocator->FreeBlocks[allocator->FreeBlockCount] = currentBlock->NextIndex;
-                            allocator->FreeBlocks[allocator->FreeBlockCount + 1] = iter;
-                            allocator->FreeBlockCount += 2;
-                        }
-                    }
-                }
-                break;
+                freeMemoryBlock(allocator, memoryPool, iter);
+                return;
             }
-
-            prevIters[1] = prevIters[0];
-            prevIters[0] = iter;
         }
+
+        IB_ASSERT(false, "Failed to find our block!");
     }
 
     // Main Renderer
@@ -435,41 +493,31 @@ namespace
         };
     };
 
-    struct PipelineType
-    {
-        enum
-        {
-            Default = 0,
-            Count
-        };
-    };
-
     constexpr uint32_t MaxMeshCount = 1000;
     constexpr uint32_t MaxImageCount = 100;
     constexpr uint32_t MaxSamplerCount = 1000;
     constexpr uint32_t FrameBufferCount = 2;
     constexpr uint32_t MaxMaterialInstanceCount = 100;
     constexpr uint32_t MaxPhysicalImageCount = 10;
-    constexpr uint32_t SubpassCount = 2;
+    constexpr uint32_t MaxPipelineCleanups = 10;
     struct Context
     {
         VkInstance VulkanInstance;
-        Allocator Allocator;
+        VkPhysicalDevice PhysicalDevice;
+        VkDevice LogicalDevice;
+
+        VkDescriptorPool DescriptorPool;
+        VkPipelineCache PipelineCache;
 
         struct
         {
-            VkPhysicalDevice PhysicalDevice;
-            VkDevice LogicalDevice;
             VkSurfaceKHR Surface;
             VkSurfaceFormatKHR SurfaceFormat;
             VkExtent2D SurfaceExtents;
             VkPresentModeKHR PresentMode;
-            VkDescriptorPool DescriptorPool;
-            VkPipelineCache PipelineCache;
             VkSwapchainKHR Swapchain;
             VkImage SwapchainImages[MaxPhysicalImageCount];
             uint32_t SwapchainImageCount;
-            VkRenderPass RenderPass;
 
             struct
             {
@@ -485,17 +533,8 @@ namespace
                 VkSemaphore AcquireSemaphore;
                 VkSemaphore FinishedSemaphore;
                 VkImageView SwapchainImageView;
-                VkFramebuffer Framebuffer;
                 VkCommandBuffer PrimaryCommandBuffer;
                 VkFence FinishedFence;
-
-                Allocation DepthImageAllocation;
-                VkImage DepthImage;
-                VkImageView DepthImageView;
-
-                Allocation DebugDepthImageAllocation;
-                VkImage DebugDepthImage;
-                VkImageView DebugDepthImageView;
             } FrameBuffer[FrameBufferCount];
             uint32_t ActiveFrame = 0;
         } Present;
@@ -530,32 +569,67 @@ namespace
 
         struct
         {
-            struct
-            {
-                VkShaderModule VShader;
-                VkShaderModule FShader;
-
-                VkDescriptorSetLayout ShaderInstanceLayout;
-                VkDescriptorSetLayout ShaderLayout;
-
-                VkPipelineLayout PipelineLayout;
-                VkPipeline Pipelines[PipelineType::Count * SubpassCount];
-
-                VkDescriptorSet ShaderDescriptor;
-                VkSampler Sampler;
-
-                struct
-                {
-                    VkDescriptorSet ShaderDescriptor;
-                    VkBuffer FShaderData;
-                    Allocation Allocation;
-                    uint32_t PipelineIndex;
-                } Instances[MaxMaterialInstanceCount];
-                uint32_t InstanceCount = 0;
-            } Forward;
-        } Materials;
+            // Written to by our pipeline loading thread
+            // And during cleanup (rendering) thread.
+            // Pipeline loading thread only writes valid pipelines
+            // And the cleanup thread only writes null handles
+            // The thread communication strategy isn't perfect here
+            // But it's fine for our use case since we just need our pipelines to be cleaned up "at some point"
+            VkPipeline Pipelines[MaxPipelineCleanups] = {};
+        } Cleanup;
     };
+
+    struct ForwardPass
+    {
+        static constexpr uint32_t SubpassCount = 2;
+
+        VkDescriptorSetLayout ShaderInstanceLayout;
+        VkDescriptorSetLayout ShaderLayout;
+
+        VkPipelineLayout PipelineLayout;
+        VkPipeline Pipelines[SubpassCount];
+
+        VkDescriptorSet ShaderDescriptor;
+        VkSampler Sampler;
+
+        VkRenderPass RenderPass;
+
+        struct
+        {
+            VkDescriptorSet ShaderDescriptor;
+            VkBuffer FShaderData;
+            Allocation Allocation;
+        } Instances[MaxMaterialInstanceCount];
+
+        struct
+        {
+            Allocation DepthImageAllocation;
+            VkImage DepthImage;
+            VkImageView DepthImageView;
+
+            Allocation DebugDepthImageAllocation;
+            VkImage DebugDepthImage;
+            VkImageView DebugDepthImageView;
+
+            VkFramebuffer Framebuffer;
+        } FrameBuffer[FrameBufferCount];
+        uint32_t InstanceCount = 0;
+    };
+
+    struct ImGuiPass
+    {
+        VkRenderPass RenderPass;
+
+        struct
+        {
+            VkFramebuffer Framebuffer;
+        } FrameBuffer[FrameBufferCount];
+    };
+
+    VulkanAllocator Allocator;
     Context RendererContext;
+    ForwardPass ForwardPass;
+    ImGuiPass ImGuiPass;
 
     // TODO: Reference to Windows, if we want multiplatform we'll have to change this.
     const char *InstanceExtensions[] = {VK_KHR_SURFACE_EXTENSION_NAME, VK_KHR_WIN32_SURFACE_EXTENSION_NAME};
@@ -577,7 +651,7 @@ namespace
         uint32_t Width = 0;
         uint32_t Height = 0;
         uint32_t Stride = 0;
-        Allocator *Allocator = nullptr;
+        VulkanAllocator *Allocator = nullptr;
     };
 
     struct ImageAndView
@@ -613,12 +687,18 @@ namespace
             VkMemoryRequirements memoryRequirements;
             vkGetImageMemoryRequirements(alloc.LogicalDevice, imageAndView.Image, &memoryRequirements);
 
-            unsigned int preferredBits = 0;
-            uint32_t memoryIndex = findMemoryIndex(alloc.PhysicalDevice, memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, preferredBits);
+            AllocationRequest request;
+            request.Alignment = memoryRequirements.alignment;
+            request.Size = alloc.Width * alloc.Height * alloc.Stride;
+            request.LogicalDevice = alloc.LogicalDevice;
+            request.PhysicalDevice = alloc.PhysicalDevice;
+            request.RequiredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+            request.PreferedFlags = 0;
+            request.TypeBits = memoryRequirements.memoryTypeBits;
+            request.Category = AllocationCategory::Image;
 
             Allocation *allocation = &imageAndView.Allocation;
-            *allocation = allocateDeviceMemory(alloc.LogicalDevice, alloc.Allocator, memoryIndex,
-                                               alloc.Width * alloc.Height * alloc.Stride, memoryRequirements.alignment);
+            *allocation = allocateDeviceMemory(alloc.Allocator, request);
 
             IB_VKCHECK(vkBindImageMemory(alloc.LogicalDevice, imageAndView.Image, allocation->Memory, allocation->Offset));
         }
@@ -650,17 +730,18 @@ namespace
     {
         if (RendererContext.Present.Swapchain != VK_NULL_HANDLE)
         {
-            vkDestroySwapchainKHR(RendererContext.Present.LogicalDevice, RendererContext.Present.Swapchain, NoAllocator);
+            vkDestroySwapchainKHR(RendererContext.LogicalDevice, RendererContext.Present.Swapchain, NoAllocator);
             for (uint32_t fb = 0; fb < FrameBufferCount; fb++)
             {
-                vkDestroyImageView(RendererContext.Present.LogicalDevice, RendererContext.Present.FrameBuffer[fb].SwapchainImageView, NoAllocator);
-                vkDestroyImage(RendererContext.Present.LogicalDevice, RendererContext.Present.FrameBuffer[fb].DepthImage, NoAllocator);
-                vkDestroyImageView(RendererContext.Present.LogicalDevice, RendererContext.Present.FrameBuffer[fb].DepthImageView, NoAllocator);
-                freeDeviceMemory(&RendererContext.Allocator, RendererContext.Present.FrameBuffer[fb].DepthImageAllocation);
-                vkDestroyImage(RendererContext.Present.LogicalDevice, RendererContext.Present.FrameBuffer[fb].DebugDepthImage, NoAllocator);
-                vkDestroyImageView(RendererContext.Present.LogicalDevice, RendererContext.Present.FrameBuffer[fb].DebugDepthImageView, NoAllocator);
-                freeDeviceMemory(&RendererContext.Allocator, RendererContext.Present.FrameBuffer[fb].DebugDepthImageAllocation);
-                vkDestroyFramebuffer(RendererContext.Present.LogicalDevice, RendererContext.Present.FrameBuffer[fb].Framebuffer, NoAllocator);
+                vkDestroyImageView(RendererContext.LogicalDevice, RendererContext.Present.FrameBuffer[fb].SwapchainImageView, NoAllocator);
+                vkDestroyImage(RendererContext.LogicalDevice, ForwardPass.FrameBuffer[fb].DepthImage, NoAllocator);
+                vkDestroyImageView(RendererContext.LogicalDevice, ForwardPass.FrameBuffer[fb].DepthImageView, NoAllocator);
+                freeDeviceMemory(&Allocator, ForwardPass.FrameBuffer[fb].DepthImageAllocation);
+                vkDestroyImage(RendererContext.LogicalDevice, ForwardPass.FrameBuffer[fb].DebugDepthImage, NoAllocator);
+                vkDestroyImageView(RendererContext.LogicalDevice, ForwardPass.FrameBuffer[fb].DebugDepthImageView, NoAllocator);
+                freeDeviceMemory(&Allocator, ForwardPass.FrameBuffer[fb].DebugDepthImageAllocation);
+                vkDestroyFramebuffer(RendererContext.LogicalDevice, ForwardPass.FrameBuffer[fb].Framebuffer, NoAllocator);
+                vkDestroyFramebuffer(RendererContext.LogicalDevice, ImGuiPass.FrameBuffer[fb].Framebuffer, NoAllocator);
             }
         }
 
@@ -700,11 +781,11 @@ namespace
                 swapchainCreate.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
             }
 
-            IB_VKCHECK(vkCreateSwapchainKHR(RendererContext.Present.LogicalDevice, &swapchainCreate, NoAllocator, &RendererContext.Present.Swapchain));
+            IB_VKCHECK(vkCreateSwapchainKHR(RendererContext.LogicalDevice, &swapchainCreate, NoAllocator, &RendererContext.Present.Swapchain));
 
-            IB_VKCHECK(vkGetSwapchainImagesKHR(RendererContext.Present.LogicalDevice, RendererContext.Present.Swapchain, &RendererContext.Present.SwapchainImageCount, NULL));
+            IB_VKCHECK(vkGetSwapchainImagesKHR(RendererContext.LogicalDevice, RendererContext.Present.Swapchain, &RendererContext.Present.SwapchainImageCount, NULL));
             RendererContext.Present.SwapchainImageCount = RendererContext.Present.SwapchainImageCount < MaxPhysicalImageCount ? RendererContext.Present.SwapchainImageCount : MaxPhysicalImageCount;
-            IB_VKCHECK(vkGetSwapchainImagesKHR(RendererContext.Present.LogicalDevice, RendererContext.Present.Swapchain, &RendererContext.Present.SwapchainImageCount, RendererContext.Present.SwapchainImages));
+            IB_VKCHECK(vkGetSwapchainImagesKHR(RendererContext.LogicalDevice, RendererContext.Present.Swapchain, &RendererContext.Present.SwapchainImageCount, RendererContext.Present.SwapchainImages));
 
             for (uint32_t fb = 0; fb < FrameBufferCount; fb++)
             {
@@ -723,7 +804,7 @@ namespace
                 imageViewCreate.image = RendererContext.Present.SwapchainImages[fb];
                 imageViewCreate.format = RendererContext.Present.SurfaceFormat.format;
 
-                IB_VKCHECK(vkCreateImageView(RendererContext.Present.LogicalDevice, &imageViewCreate, NoAllocator, &RendererContext.Present.FrameBuffer[fb].SwapchainImageView));
+                IB_VKCHECK(vkCreateImageView(RendererContext.LogicalDevice, &imageViewCreate, NoAllocator, &RendererContext.Present.FrameBuffer[fb].SwapchainImageView));
             }
         }
 
@@ -732,34 +813,34 @@ namespace
             // Depth image
             {
                 ImageAllocation imageAlloc = {};
-                imageAlloc.LogicalDevice = RendererContext.Present.LogicalDevice;
-                imageAlloc.PhysicalDevice = RendererContext.Present.PhysicalDevice;
+                imageAlloc.LogicalDevice = RendererContext.LogicalDevice;
+                imageAlloc.PhysicalDevice = RendererContext.PhysicalDevice;
                 imageAlloc.ImageUsage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
                 imageAlloc.Format = VK_FORMAT_D32_SFLOAT;
                 imageAlloc.ImageAspect = VK_IMAGE_ASPECT_DEPTH_BIT;
                 imageAlloc.Width = surfaceExtents.width;
                 imageAlloc.Height = surfaceExtents.height;
                 imageAlloc.Stride = 4;
-                imageAlloc.Allocator = &RendererContext.Allocator;
+                imageAlloc.Allocator = &Allocator;
 
                 ImageAndView imageAndView = allocImageAndView(imageAlloc);
-                RendererContext.Present.FrameBuffer[fb].DepthImage = imageAndView.Image;
-                RendererContext.Present.FrameBuffer[fb].DepthImageView = imageAndView.ImageView;
-                RendererContext.Present.FrameBuffer[fb].DepthImageAllocation = imageAndView.Allocation;
+                ForwardPass.FrameBuffer[fb].DepthImage = imageAndView.Image;
+                ForwardPass.FrameBuffer[fb].DepthImageView = imageAndView.ImageView;
+                ForwardPass.FrameBuffer[fb].DepthImageAllocation = imageAndView.Allocation;
 
                 imageAndView = allocImageAndView(imageAlloc);
-                RendererContext.Present.FrameBuffer[fb].DebugDepthImage = imageAndView.Image;
-                RendererContext.Present.FrameBuffer[fb].DebugDepthImageView = imageAndView.ImageView;
-                RendererContext.Present.FrameBuffer[fb].DebugDepthImageAllocation = imageAndView.Allocation;
+                ForwardPass.FrameBuffer[fb].DebugDepthImage = imageAndView.Image;
+                ForwardPass.FrameBuffer[fb].DebugDepthImageView = imageAndView.ImageView;
+                ForwardPass.FrameBuffer[fb].DebugDepthImageAllocation = imageAndView.Allocation;
             }
 
-            // Create the framebuffer
+            // Create our forward pass framebuffers
             {
                 VkImageView images[] =
                     {
                         RendererContext.Present.FrameBuffer[fb].SwapchainImageView,
-                        RendererContext.Present.FrameBuffer[fb].DepthImageView,
-                        RendererContext.Present.FrameBuffer[fb].DebugDepthImageView,
+                        ForwardPass.FrameBuffer[fb].DepthImageView,
+                        ForwardPass.FrameBuffer[fb].DebugDepthImageView,
                     };
 
                 VkFramebufferCreateInfo framebufferCreate = {};
@@ -768,10 +849,29 @@ namespace
                 framebufferCreate.width = surfaceExtents.width;
                 framebufferCreate.height = surfaceExtents.height;
                 framebufferCreate.layers = 1;
-                framebufferCreate.renderPass = RendererContext.Present.RenderPass;
+                framebufferCreate.renderPass = ForwardPass.RenderPass;
                 framebufferCreate.pAttachments = images;
 
-                IB_VKCHECK(vkCreateFramebuffer(RendererContext.Present.LogicalDevice, &framebufferCreate, NoAllocator, &RendererContext.Present.FrameBuffer[fb].Framebuffer));
+                IB_VKCHECK(vkCreateFramebuffer(RendererContext.LogicalDevice, &framebufferCreate, NoAllocator, &ForwardPass.FrameBuffer[fb].Framebuffer));
+            }
+
+            // Create our imgui pass framebuffers
+            {
+                VkImageView images[] =
+                    {
+                        RendererContext.Present.FrameBuffer[fb].SwapchainImageView,
+                    };
+
+                VkFramebufferCreateInfo framebufferCreate = {};
+                framebufferCreate.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+                framebufferCreate.attachmentCount = arrayCount(images);
+                framebufferCreate.width = RendererContext.Present.SurfaceExtents.width;
+                framebufferCreate.height = RendererContext.Present.SurfaceExtents.height;
+                framebufferCreate.layers = 1;
+                framebufferCreate.renderPass = ImGuiPass.RenderPass;
+                framebufferCreate.pAttachments = images;
+
+                IB_VKCHECK(vkCreateFramebuffer(RendererContext.LogicalDevice, &framebufferCreate, NoAllocator, &ImGuiPass.FrameBuffer[fb].Framebuffer));
             }
         }
     }
@@ -782,13 +882,14 @@ namespace IB
     // Forward declared from IBPlatformWin32.cpp
     namespace Win32
     {
-        void getWindowHandleAndInstance(WindowHandle handle, HWND *window, HINSTANCE *instance);
-    }
+        void getWindowHandleAndInstance(Window::Handle handle, HWND *window, HINSTANCE *instance);
+        void getPlatformMessageData(WindowMessagePlatformData const *platformData, HWND *hwnd, UINT *msg, WPARAM *wparam, LPARAM *lparam);
+    } // namespace Win32
 } // namespace IB
 
 namespace
 {
-    VkSurfaceKHR createSurface(IB::WindowHandle window)
+    VkSurfaceKHR createSurface(IB::Window::Handle window)
     {
         HWND windowHandle;
         HINSTANCE instanceHandle;
@@ -807,7 +908,7 @@ namespace
 
 namespace IB
 {
-    IB_API void initRenderer(RendererDesc const &desc)
+    void initRenderer(RendererDesc const &desc)
     {
         {
             VkApplicationInfo appInfo = {};
@@ -831,7 +932,7 @@ namespace IB
             IB_VKCHECK(vkCreateInstance(&createInfo, NoAllocator, &RendererContext.VulkanInstance));
         }
 
-        RendererContext.Present.Surface = createSurface(*desc.Window);
+        RendererContext.Present.Surface = createSurface(desc.Window);
 
         // Device
         {
@@ -925,7 +1026,7 @@ namespace IB
                 }
 
                 IB_ASSERT(physicalDeviceIndex != UINT32_MAX, "Failed to select a physical device!");
-                RendererContext.Present.PhysicalDevice = physicalDevices[physicalDeviceIndex];
+                RendererContext.PhysicalDevice = physicalDevices[physicalDeviceIndex];
             }
 
             // Create the logical device
@@ -982,10 +1083,10 @@ namespace IB
                 deviceCreateInfo.enabledLayerCount = arrayCount(ValidationLayers);
                 deviceCreateInfo.ppEnabledLayerNames = ValidationLayers;
 
-                IB_VKCHECK(vkCreateDevice(RendererContext.Present.PhysicalDevice, &deviceCreateInfo, NoAllocator, &RendererContext.Present.LogicalDevice));
+                IB_VKCHECK(vkCreateDevice(RendererContext.PhysicalDevice, &deviceCreateInfo, NoAllocator, &RendererContext.LogicalDevice));
                 for (uint32_t i = 0; i < Queue::Count; i++)
                 {
-                    vkGetDeviceQueue(RendererContext.Present.LogicalDevice, RendererContext.Present.Queues[i].Index, 0, &RendererContext.Present.Queues[i].Queue);
+                    vkGetDeviceQueue(RendererContext.LogicalDevice, RendererContext.Present.Queues[i].Index, 0, &RendererContext.Present.Queues[i].Queue);
                 }
             }
         }
@@ -1013,14 +1114,14 @@ namespace IB
             descriptorPoolCreate.poolSizeCount = arrayCount(descriptorPoolSizes);
             descriptorPoolCreate.pPoolSizes = descriptorPoolSizes;
 
-            IB_VKCHECK(vkCreateDescriptorPool(RendererContext.Present.LogicalDevice, &descriptorPoolCreate, NoAllocator, &RendererContext.Present.DescriptorPool));
+            IB_VKCHECK(vkCreateDescriptorPool(RendererContext.LogicalDevice, &descriptorPoolCreate, NoAllocator, &RendererContext.DescriptorPool));
         }
 
         {
             VkPipelineCacheCreateInfo pipelineCacheCreate = {};
             pipelineCacheCreate.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO;
 
-            IB_VKCHECK(vkCreatePipelineCache(RendererContext.Present.LogicalDevice, &pipelineCacheCreate, NoAllocator, &RendererContext.Present.PipelineCache));
+            IB_VKCHECK(vkCreatePipelineCache(RendererContext.LogicalDevice, &pipelineCacheCreate, NoAllocator, &RendererContext.PipelineCache));
         }
 
         for (uint32_t i = 0; i < Queue::Count; i++)
@@ -1030,16 +1131,16 @@ namespace IB
             commandPoolCreateInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
             commandPoolCreateInfo.queueFamilyIndex = RendererContext.Present.Queues[i].Index;
 
-            IB_VKCHECK(vkCreateCommandPool(RendererContext.Present.LogicalDevice, &commandPoolCreateInfo, NoAllocator, &RendererContext.Present.Queues[i].CommandPool));
+            IB_VKCHECK(vkCreateCommandPool(RendererContext.LogicalDevice, &commandPoolCreateInfo, NoAllocator, &RendererContext.Present.Queues[i].CommandPool));
         }
 
         {
             VkFenceCreateInfo fenceCreateInfo = {};
             fenceCreateInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-            IB_VKCHECK(vkCreateFence(RendererContext.Present.LogicalDevice, &fenceCreateInfo, NoAllocator, &RendererContext.Present.ImmediateFence));
+            IB_VKCHECK(vkCreateFence(RendererContext.LogicalDevice, &fenceCreateInfo, NoAllocator, &RendererContext.Present.ImmediateFence));
         }
 
-        createAllocator(&RendererContext.Allocator);
+        createAllocator(&Allocator);
 
         {
             VkSemaphoreCreateInfo semaphoreCreateInfo = {};
@@ -1047,7 +1148,7 @@ namespace IB
 
             for (uint32_t i = 0; i < FrameBufferCount; i++)
             {
-                IB_VKCHECK(vkCreateSemaphore(RendererContext.Present.LogicalDevice, &semaphoreCreateInfo, NoAllocator, &RendererContext.Present.FrameBuffer[i].AcquireSemaphore));
+                IB_VKCHECK(vkCreateSemaphore(RendererContext.LogicalDevice, &semaphoreCreateInfo, NoAllocator, &RendererContext.Present.FrameBuffer[i].AcquireSemaphore));
             }
         }
 
@@ -1056,10 +1157,10 @@ namespace IB
             uint32_t surfaceFormatCount;
             VkSurfaceFormatKHR surfaceFormats[maxSurfaceFormatCount];
 
-            IB_VKCHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(RendererContext.Present.PhysicalDevice, RendererContext.Present.Surface, &surfaceFormatCount, NULL));
+            IB_VKCHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(RendererContext.PhysicalDevice, RendererContext.Present.Surface, &surfaceFormatCount, NULL));
             IB_ASSERT(surfaceFormatCount > 0, "Failed to find any surface formats.");
             surfaceFormatCount = surfaceFormatCount < maxSurfaceFormatCount ? surfaceFormatCount : maxSurfaceFormatCount;
-            IB_VKCHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(RendererContext.Present.PhysicalDevice, RendererContext.Present.Surface, &surfaceFormatCount, surfaceFormats));
+            IB_VKCHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(RendererContext.PhysicalDevice, RendererContext.Present.Surface, &surfaceFormatCount, surfaceFormats));
 
             if (1 == surfaceFormatCount && VK_FORMAT_UNDEFINED == surfaceFormats[0].format)
             {
@@ -1082,7 +1183,7 @@ namespace IB
 
         {
             VkSurfaceCapabilitiesKHR surfaceCapabilities;
-            IB_VKCHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(RendererContext.Present.PhysicalDevice, RendererContext.Present.Surface, &surfaceCapabilities));
+            IB_VKCHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(RendererContext.PhysicalDevice, RendererContext.Present.Surface, &surfaceCapabilities));
 
             IB_ASSERT(surfaceCapabilities.currentExtent.width != UINT32_MAX, "Surface has invalid width.");
             RendererContext.Present.SurfaceExtents = surfaceCapabilities.currentExtent;
@@ -1091,16 +1192,16 @@ namespace IB
         RendererContext.Present.PresentMode = VK_PRESENT_MODE_FIFO_KHR;
 
         constexpr bool useVSync = true;
-        if(!useVSync)
+        if (!useVSync)
         {
             constexpr uint32_t maxPresentModes = 100;
             uint32_t presentModeCount;
             VkPresentModeKHR presentModes[maxPresentModes];
 
-            IB_VKCHECK(vkGetPhysicalDeviceSurfacePresentModesKHR(RendererContext.Present.PhysicalDevice, RendererContext.Present.Surface, &presentModeCount, NULL));
+            IB_VKCHECK(vkGetPhysicalDeviceSurfacePresentModesKHR(RendererContext.PhysicalDevice, RendererContext.Present.Surface, &presentModeCount, NULL));
             IB_ASSERT(presentModeCount > 0, "Failed to find a present mode.");
             presentModeCount = presentModeCount < maxPresentModes ? presentModeCount : maxPresentModes;
-            IB_VKCHECK(vkGetPhysicalDeviceSurfacePresentModesKHR(RendererContext.Present.PhysicalDevice, RendererContext.Present.Surface, &presentModeCount, presentModes));
+            IB_VKCHECK(vkGetPhysicalDeviceSurfacePresentModesKHR(RendererContext.PhysicalDevice, RendererContext.Present.Surface, &presentModeCount, presentModes));
 
             for (uint32_t i = 0; i < presentModeCount; i++)
             {
@@ -1113,6 +1214,7 @@ namespace IB
         }
 
         {
+            // Forward Renderpass
             {
                 VkAttachmentDescription output = {};
                 output.samples = VK_SAMPLE_COUNT_1_BIT;
@@ -1159,7 +1261,7 @@ namespace IB
                 debugSubpass.pColorAttachments = &outputAttachment;
                 debugSubpass.pDepthStencilAttachment = &debugDepthAttachment;
 
-                VkSubpassDescription subpasses[] = { renderSubpass, debugSubpass };
+                VkSubpassDescription subpasses[] = {renderSubpass, debugSubpass};
 
                 VkSubpassDependency dependency = {};
                 dependency.srcSubpass = 0;
@@ -1179,7 +1281,42 @@ namespace IB
                 createRenderPass.pAttachments = attachmentDescriptions;
                 createRenderPass.pSubpasses = subpasses;
 
-                IB_VKCHECK(vkCreateRenderPass(RendererContext.Present.LogicalDevice, &createRenderPass, NoAllocator, &RendererContext.Present.RenderPass));
+                IB_VKCHECK(vkCreateRenderPass(RendererContext.LogicalDevice, &createRenderPass, NoAllocator, &ForwardPass.RenderPass));
+            }
+
+            // ImGui Renderpass
+            {
+                VkAttachmentDescription output = {};
+                output.samples = VK_SAMPLE_COUNT_1_BIT;
+                output.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+                output.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+                output.initialLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+                output.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+                output.format = RendererContext.Present.SurfaceFormat.format;
+
+                VkAttachmentDescription attachmentDescriptions[] = {output};
+
+                // Attachments
+                VkAttachmentReference outputAttachment = {};
+                outputAttachment.attachment = 0;
+                outputAttachment.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+                VkSubpassDescription renderSubpass = {};
+                renderSubpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+                renderSubpass.colorAttachmentCount = 1;
+                renderSubpass.pColorAttachments = &outputAttachment;
+
+                VkSubpassDescription subpasses[] = {renderSubpass};
+
+                VkRenderPassCreateInfo createRenderPass = {};
+                createRenderPass.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+                createRenderPass.attachmentCount = arrayCount(attachmentDescriptions);
+                createRenderPass.subpassCount = arrayCount(subpasses);
+                createRenderPass.dependencyCount = 0;
+                createRenderPass.pAttachments = attachmentDescriptions;
+                createRenderPass.pSubpasses = subpasses;
+
+                IB_VKCHECK(vkCreateRenderPass(RendererContext.LogicalDevice, &createRenderPass, NoAllocator, &ImGuiPass.RenderPass));
             }
 
             buildSurfaceSwapchain(RendererContext.Present.SurfaceExtents);
@@ -1190,7 +1327,7 @@ namespace IB
 
                 for (uint32_t fb = 0; fb < FrameBufferCount; fb++)
                 {
-                    IB_VKCHECK(vkCreateSemaphore(RendererContext.Present.LogicalDevice, &semaphoreCreateInfo, NoAllocator, &RendererContext.Present.FrameBuffer[fb].FinishedSemaphore));
+                    IB_VKCHECK(vkCreateSemaphore(RendererContext.LogicalDevice, &semaphoreCreateInfo, NoAllocator, &RendererContext.Present.FrameBuffer[fb].FinishedSemaphore));
                 }
             }
 
@@ -1202,7 +1339,7 @@ namespace IB
                 commandBufferAllocateInfo.commandBufferCount = 1;
                 commandBufferAllocateInfo.commandPool = RendererContext.Present.Queues[Queue::Graphics].CommandPool;
 
-                IB_VKCHECK(vkAllocateCommandBuffers(RendererContext.Present.LogicalDevice, &commandBufferAllocateInfo, &RendererContext.Present.FrameBuffer[fb].PrimaryCommandBuffer));
+                IB_VKCHECK(vkAllocateCommandBuffers(RendererContext.LogicalDevice, &commandBufferAllocateInfo, &RendererContext.Present.FrameBuffer[fb].PrimaryCommandBuffer));
             }
 
             {
@@ -1212,25 +1349,13 @@ namespace IB
 
                 for (uint32_t fb = 0; fb < FrameBufferCount; fb++)
                 {
-                    IB_VKCHECK(vkCreateFence(RendererContext.Present.LogicalDevice, &fenceCreateInfo, NoAllocator, &RendererContext.Present.FrameBuffer[fb].FinishedFence));
+                    IB_VKCHECK(vkCreateFence(RendererContext.LogicalDevice, &fenceCreateInfo, NoAllocator, &RendererContext.Present.FrameBuffer[fb].FinishedFence));
                 }
             }
         }
 
-        // Forward mat
+        // Forward pass constant data
         {
-            VkShaderModuleCreateInfo createVShader = {};
-            createVShader.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-            createVShader.pCode = (const uint32_t *)desc.Materials.Forward.VShader;
-            createVShader.codeSize = desc.Materials.Forward.VShaderSize;
-            IB_VKCHECK(vkCreateShaderModule(RendererContext.Present.LogicalDevice, &createVShader, NoAllocator, &RendererContext.Materials.Forward.VShader));
-
-            VkShaderModuleCreateInfo createFShader = {};
-            createFShader.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-            createFShader.pCode = (const uint32_t *)desc.Materials.Forward.FShader;
-            createFShader.codeSize = desc.Materials.Forward.FShaderSize;
-            IB_VKCHECK(vkCreateShaderModule(RendererContext.Present.LogicalDevice, &createFShader, NoAllocator, &RendererContext.Materials.Forward.FShader));
-
             // Graphics pipeline
 
             // Per material type binding
@@ -1266,7 +1391,7 @@ namespace IB
                 createLayout.pNext = &extendedInfo;
                 createLayout.bindingCount = arrayCount(layoutBindings);
                 createLayout.pBindings = layoutBindings;
-                IB_VKCHECK(vkCreateDescriptorSetLayout(RendererContext.Present.LogicalDevice, &createLayout, NoAllocator, &RendererContext.Materials.Forward.ShaderLayout));
+                IB_VKCHECK(vkCreateDescriptorSetLayout(RendererContext.LogicalDevice, &createLayout, NoAllocator, &ForwardPass.ShaderLayout));
             }
 
             // Per material instance descriptor layouts
@@ -1284,7 +1409,7 @@ namespace IB
                 createLayout.bindingCount = arrayCount(layoutBindings);
                 createLayout.pBindings = layoutBindings;
 
-                IB_VKCHECK(vkCreateDescriptorSetLayout(RendererContext.Present.LogicalDevice, &createLayout, NoAllocator, &RendererContext.Materials.Forward.ShaderInstanceLayout));
+                IB_VKCHECK(vkCreateDescriptorSetLayout(RendererContext.LogicalDevice, &createLayout, NoAllocator, &ForwardPass.ShaderInstanceLayout));
             }
 
             {
@@ -1297,8 +1422,8 @@ namespace IB
 
                 VkDescriptorSetLayout layouts[] =
                     {
-                        RendererContext.Materials.Forward.ShaderLayout,
-                        RendererContext.Materials.Forward.ShaderInstanceLayout,
+                        ForwardPass.ShaderLayout,
+                        ForwardPass.ShaderInstanceLayout,
                     };
 
                 VkPipelineLayoutCreateInfo pipelineLayoutCreate = {};
@@ -1308,128 +1433,7 @@ namespace IB
                 pipelineLayoutCreate.pushConstantRangeCount = arrayCount(pushConstantRanges);
                 pipelineLayoutCreate.pPushConstantRanges = pushConstantRanges;
 
-                IB_VKCHECK(vkCreatePipelineLayout(RendererContext.Present.LogicalDevice, &pipelineLayoutCreate, NoAllocator, &RendererContext.Materials.Forward.PipelineLayout));
-            }
-
-            {
-                VkPipelineVertexInputStateCreateInfo vertexInputCreate = {};
-                vertexInputCreate.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-
-                // Input Assembly
-                VkPipelineInputAssemblyStateCreateInfo inputAssemblyCreate = {};
-                inputAssemblyCreate.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
-                inputAssemblyCreate.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-
-                // Rasterization
-                VkPipelineRasterizationStateCreateInfo rasterizationCreate = {};
-                rasterizationCreate.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
-                rasterizationCreate.rasterizerDiscardEnable = VK_FALSE;
-                rasterizationCreate.depthBiasEnable = VK_FALSE;
-                rasterizationCreate.depthClampEnable = VK_FALSE;
-                rasterizationCreate.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
-                rasterizationCreate.lineWidth = 1.0f;
-                rasterizationCreate.polygonMode = VK_POLYGON_MODE_FILL;
-                rasterizationCreate.cullMode = VK_CULL_MODE_BACK_BIT;
-
-                VkPipelineColorBlendAttachmentState colorBlendAttachment = {};
-                colorBlendAttachment.blendEnable = VK_TRUE;
-                colorBlendAttachment.colorBlendOp = VK_BLEND_OP_ADD;
-                colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
-                colorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-                colorBlendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
-                colorBlendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
-                colorBlendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-                colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-
-                // All color buffers have the same attachments
-                VkPipelineColorBlendAttachmentState colorAttachments[] = {colorBlendAttachment};
-
-                VkPipelineColorBlendStateCreateInfo colorBlendCreate = {};
-                colorBlendCreate.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
-                colorBlendCreate.attachmentCount = arrayCount(colorAttachments);
-                colorBlendCreate.pAttachments = colorAttachments;
-
-                VkPipelineDepthStencilStateCreateInfo depthStencilCreate = {};
-                depthStencilCreate.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
-                depthStencilCreate.depthTestEnable = VK_TRUE;
-                depthStencilCreate.depthWriteEnable = VK_TRUE;
-                depthStencilCreate.depthCompareOp = VK_COMPARE_OP_LESS;
-                depthStencilCreate.depthBoundsTestEnable = VK_FALSE;
-                depthStencilCreate.minDepthBounds = 0.0f;
-                depthStencilCreate.maxDepthBounds = 1.0f;
-                depthStencilCreate.stencilTestEnable = VK_FALSE;
-
-                VkPipelineMultisampleStateCreateInfo multisampleCreate = {};
-                multisampleCreate.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
-                multisampleCreate.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
-
-                VkPipelineShaderStageCreateInfo vertexStage = {};
-                vertexStage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-                vertexStage.pName = "vertexMain";
-                vertexStage.module = RendererContext.Materials.Forward.VShader;
-                vertexStage.stage = VK_SHADER_STAGE_VERTEX_BIT;
-
-                VkPipelineShaderStageCreateInfo fragStage = {};
-                fragStage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-                fragStage.pName = "fragMain";
-                fragStage.module = RendererContext.Materials.Forward.FShader;
-                fragStage.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-
-                VkPipelineShaderStageCreateInfo shaderStages[] = {vertexStage, fragStage};
-                VkRect2D scissor = {};
-                scissor.extent = RendererContext.Present.SurfaceExtents;
-
-                VkViewport viewport = {};
-                viewport.x = 0;
-                viewport.y = 0;
-                viewport.width = (float)RendererContext.Present.SurfaceExtents.width;
-                viewport.height = (float)RendererContext.Present.SurfaceExtents.height;
-                viewport.minDepth = 0.0f;
-                viewport.maxDepth = 1.0f;
-
-                VkPipelineViewportStateCreateInfo viewportStateCreate = {};
-                viewportStateCreate.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
-                viewportStateCreate.viewportCount = 1;
-                viewportStateCreate.pViewports = &viewport;
-                viewportStateCreate.scissorCount = 1;
-                viewportStateCreate.pScissors = &scissor;
-
-                VkGraphicsPipelineCreateInfo baseGraphicsPipelineCreate = {};
-                baseGraphicsPipelineCreate.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-                baseGraphicsPipelineCreate.layout = RendererContext.Materials.Forward.PipelineLayout;
-                baseGraphicsPipelineCreate.renderPass = RendererContext.Present.RenderPass;
-                baseGraphicsPipelineCreate.pVertexInputState = &vertexInputCreate;
-                baseGraphicsPipelineCreate.pInputAssemblyState = &inputAssemblyCreate;
-                baseGraphicsPipelineCreate.pRasterizationState = &rasterizationCreate;
-                baseGraphicsPipelineCreate.pColorBlendState = &colorBlendCreate;
-                baseGraphicsPipelineCreate.pDepthStencilState = &depthStencilCreate;
-                baseGraphicsPipelineCreate.pMultisampleState = &multisampleCreate;
-
-                VkDynamicState dynamicStates[] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
-
-                VkPipelineDynamicStateCreateInfo dynamicStateCreate = {};
-                dynamicStateCreate.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
-                dynamicStateCreate.dynamicStateCount = arrayCount(dynamicStates);
-                dynamicStateCreate.pDynamicStates = dynamicStates;
-
-                baseGraphicsPipelineCreate.pDynamicState = &dynamicStateCreate;
-                baseGraphicsPipelineCreate.pViewportState = &viewportStateCreate;
-                baseGraphicsPipelineCreate.stageCount = arrayCount(shaderStages);
-                baseGraphicsPipelineCreate.pStages = shaderStages;
-
-                baseGraphicsPipelineCreate.flags = VK_PIPELINE_CREATE_ALLOW_DERIVATIVES_BIT;
-                VkGraphicsPipelineCreateInfo subpass0Pipeline = baseGraphicsPipelineCreate;
-                subpass0Pipeline.subpass = 0;
-
-                VkGraphicsPipelineCreateInfo subpass1Pipeline = baseGraphicsPipelineCreate;
-                subpass1Pipeline.subpass = 1;
-                VkGraphicsPipelineCreateInfo pipelines[] =
-                    {
-                        subpass0Pipeline,
-                        subpass1Pipeline
-                    };
-
-                IB_VKCHECK(vkCreateGraphicsPipelines(RendererContext.Present.LogicalDevice, RendererContext.Present.PipelineCache, arrayCount(pipelines), pipelines, NoAllocator, RendererContext.Materials.Forward.Pipelines));
+                IB_VKCHECK(vkCreatePipelineLayout(RendererContext.LogicalDevice, &pipelineLayoutCreate, NoAllocator, &ForwardPass.PipelineLayout));
             }
         }
 
@@ -1442,18 +1446,25 @@ namespace IB
 
             VkBuffer *buffer = &RendererContext.Geometry.MeshDataBuffers;
             RendererContext.Geometry.AllocationSize = meshBufferSize;
-            IB_VKCHECK(vkCreateBuffer(RendererContext.Present.LogicalDevice, &bufferCreate, NoAllocator, buffer));
+            IB_VKCHECK(vkCreateBuffer(RendererContext.LogicalDevice, &bufferCreate, NoAllocator, buffer));
 
             VkMemoryRequirements memoryRequirements;
-            vkGetBufferMemoryRequirements(RendererContext.Present.LogicalDevice, *buffer, &memoryRequirements);
+            vkGetBufferMemoryRequirements(RendererContext.LogicalDevice, *buffer, &memoryRequirements);
 
-            unsigned int preferredBits = 0;
-            uint32_t memoryIndex = findMemoryIndex(RendererContext.Present.PhysicalDevice, memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, preferredBits);
+            AllocationRequest request;
+            request.Alignment = memoryRequirements.alignment;
+            request.Size = meshBufferSize;
+            request.LogicalDevice = RendererContext.LogicalDevice;
+            request.PhysicalDevice = RendererContext.PhysicalDevice;
+            request.RequiredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+            request.PreferedFlags = 0;
+            request.TypeBits = memoryRequirements.memoryTypeBits;
+            request.Category = AllocationCategory::Mesh;
 
             Allocation *allocation = &RendererContext.Geometry.Allocation;
-            *allocation = allocateDeviceMemory(RendererContext.Present.LogicalDevice, &RendererContext.Allocator, memoryIndex, meshBufferSize, memoryRequirements.alignment);
+            *allocation = allocateDeviceMemory(&Allocator, request);
 
-            IB_VKCHECK(vkBindBufferMemory(RendererContext.Present.LogicalDevice, *buffer, allocation->Memory, allocation->Offset));
+            IB_VKCHECK(vkBindBufferMemory(RendererContext.LogicalDevice, *buffer, allocation->Memory, allocation->Offset));
         }
 
         // Create our sampler
@@ -1475,19 +1486,19 @@ namespace IB
             samplerCreate.minLod = 0.0f;
             samplerCreate.maxLod = 0.0f;
 
-            IB_VKCHECK(vkCreateSampler(RendererContext.Present.LogicalDevice, &samplerCreate, NoAllocator, &RendererContext.Materials.Forward.Sampler));
+            IB_VKCHECK(vkCreateSampler(RendererContext.LogicalDevice, &samplerCreate, NoAllocator, &ForwardPass.Sampler));
         }
 
         // Write to our template descriptor set
         {
             VkDescriptorSetAllocateInfo descriptorSetAlloc = {};
             descriptorSetAlloc.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-            descriptorSetAlloc.descriptorPool = RendererContext.Present.DescriptorPool;
+            descriptorSetAlloc.descriptorPool = RendererContext.DescriptorPool;
             descriptorSetAlloc.descriptorSetCount = 1;
-            descriptorSetAlloc.pSetLayouts = &RendererContext.Materials.Forward.ShaderLayout;
+            descriptorSetAlloc.pSetLayouts = &ForwardPass.ShaderLayout;
             IB_VKCHECK(vkAllocateDescriptorSets(
-                RendererContext.Present.LogicalDevice, &descriptorSetAlloc,
-                &RendererContext.Materials.Forward.ShaderDescriptor));
+                RendererContext.LogicalDevice, &descriptorSetAlloc,
+                &ForwardPass.ShaderDescriptor));
 
             VkDescriptorBufferInfo meshBufferInfo = {};
             meshBufferInfo.buffer = RendererContext.Geometry.MeshDataBuffers;
@@ -1496,97 +1507,319 @@ namespace IB
 
             VkWriteDescriptorSet writeGeometry = {};
             writeGeometry.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            writeGeometry.dstSet = RendererContext.Materials.Forward.ShaderDescriptor;
+            writeGeometry.dstSet = ForwardPass.ShaderDescriptor;
             writeGeometry.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
             writeGeometry.dstBinding = 0;
             writeGeometry.descriptorCount = 1;
             writeGeometry.pBufferInfo = &meshBufferInfo;
 
             VkDescriptorImageInfo samplerInfo = {};
-            samplerInfo.sampler = RendererContext.Materials.Forward.Sampler;
+            samplerInfo.sampler = ForwardPass.Sampler;
 
             VkWriteDescriptorSet writeSamplerSet = {};
             writeSamplerSet.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            writeSamplerSet.dstSet = RendererContext.Materials.Forward.ShaderDescriptor;
+            writeSamplerSet.dstSet = ForwardPass.ShaderDescriptor;
             writeSamplerSet.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER;
             writeSamplerSet.dstBinding = 1;
             writeSamplerSet.descriptorCount = 1;
             writeSamplerSet.pImageInfo = &samplerInfo;
 
             VkWriteDescriptorSet writeDescriptorSets[] = {writeSamplerSet, writeGeometry};
-            vkUpdateDescriptorSets(RendererContext.Present.LogicalDevice, arrayCount(writeDescriptorSets), writeDescriptorSets, 0, NULL);
+            vkUpdateDescriptorSets(RendererContext.LogicalDevice, arrayCount(writeDescriptorSets), writeDescriptorSets, 0, NULL);
+        }
+
+        // ImGui
+        {
+            ImGui::CreateContext();
+
+            HWND windowHandle;
+            HINSTANCE instanceHandle;
+            IB::Win32::getWindowHandleAndInstance(desc.Window, &windowHandle, &instanceHandle);
+            ImGui_ImplWin32_Init(windowHandle);
+
+            ImGui_ImplVulkan_InitInfo initInfo = {};
+            initInfo.Instance = RendererContext.VulkanInstance;
+            initInfo.PhysicalDevice = RendererContext.PhysicalDevice;
+            initInfo.Device = RendererContext.LogicalDevice;
+            initInfo.QueueFamily = RendererContext.Present.Queues[Queue::Graphics].Index;
+            initInfo.Queue = RendererContext.Present.Queues[Queue::Graphics].Queue;
+            initInfo.PipelineCache = RendererContext.PipelineCache;
+            initInfo.DescriptorPool = RendererContext.DescriptorPool;
+            initInfo.Allocator = NoAllocator;
+            initInfo.MinImageCount = FrameBufferCount;
+            initInfo.ImageCount = FrameBufferCount;
+            initInfo.CheckVkResultFn = &VulkanCheck;
+            ImGui_ImplVulkan_Init(&initInfo, ImGuiPass.RenderPass);
+
+            // Upload ImGui font
+            {
+                VkCommandBufferAllocateInfo commandBufferAllocateInfo = {};
+                commandBufferAllocateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+                commandBufferAllocateInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+                commandBufferAllocateInfo.commandBufferCount = 1;
+                commandBufferAllocateInfo.commandPool = RendererContext.Present.Queues[Queue::Graphics].CommandPool;
+
+                VkCommandBuffer commandBuffer;
+                IB_VKCHECK(vkAllocateCommandBuffers(RendererContext.LogicalDevice, &commandBufferAllocateInfo, &commandBuffer));
+
+                VkCommandBufferBeginInfo beginBufferInfo = {};
+                beginBufferInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+                beginBufferInfo.flags |= VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+                IB_VKCHECK(vkBeginCommandBuffer(commandBuffer, &beginBufferInfo));
+
+                ImGui_ImplVulkan_CreateFontsTexture(commandBuffer);
+
+                VkSubmitInfo submitInfo = {};
+                submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+                submitInfo.commandBufferCount = 1;
+                submitInfo.pCommandBuffers = &commandBuffer;
+                IB_VKCHECK(vkEndCommandBuffer(commandBuffer));
+
+                IB_VKCHECK(vkQueueSubmit(RendererContext.Present.Queues[Queue::Graphics].Queue, 1, &submitInfo, RendererContext.Present.ImmediateFence));
+                IB_VKCHECK(vkWaitForFences(RendererContext.LogicalDevice, 1, &RendererContext.Present.ImmediateFence, VK_TRUE, UINT64_MAX));
+                IB_VKCHECK(vkResetFences(RendererContext.LogicalDevice, 1, &RendererContext.Present.ImmediateFence));
+
+                vkFreeCommandBuffers(RendererContext.LogicalDevice, RendererContext.Present.Queues[Queue::Graphics].CommandPool, 1, &commandBuffer);
+                ImGui_ImplVulkan_DestroyFontUploadObjects();
+            }
         }
     }
 
-    IB_API void killRenderer()
+    void killRenderer()
     {
-        vkDeviceWaitIdle(RendererContext.Present.LogicalDevice);
+        vkDeviceWaitIdle(RendererContext.LogicalDevice);
+
+        ImGui_ImplVulkan_Shutdown();
+        ImGui_ImplWin32_Shutdown();
+        ImGui::DestroyContext();
 
         for (uint32_t fb = 0; fb < FrameBufferCount; fb++)
         {
-            vkDestroySemaphore(RendererContext.Present.LogicalDevice, RendererContext.Present.FrameBuffer[fb].AcquireSemaphore, NoAllocator);
-            vkDestroySemaphore(RendererContext.Present.LogicalDevice, RendererContext.Present.FrameBuffer[fb].FinishedSemaphore, NoAllocator);
-            vkDestroyImageView(RendererContext.Present.LogicalDevice, RendererContext.Present.FrameBuffer[fb].SwapchainImageView, NoAllocator);
-            vkDestroyFramebuffer(RendererContext.Present.LogicalDevice, RendererContext.Present.FrameBuffer[fb].Framebuffer, NoAllocator);
-            vkDestroyFence(RendererContext.Present.LogicalDevice, RendererContext.Present.FrameBuffer[fb].FinishedFence, NoAllocator);
-            vkDestroyImage(RendererContext.Present.LogicalDevice, RendererContext.Present.FrameBuffer[fb].DepthImage, NoAllocator);
-            vkDestroyImageView(RendererContext.Present.LogicalDevice, RendererContext.Present.FrameBuffer[fb].DepthImageView, NoAllocator);
-            freeDeviceMemory(&RendererContext.Allocator, RendererContext.Present.FrameBuffer[fb].DepthImageAllocation);
-            vkDestroyImage(RendererContext.Present.LogicalDevice, RendererContext.Present.FrameBuffer[fb].DebugDepthImage, NoAllocator);
-            vkDestroyImageView(RendererContext.Present.LogicalDevice, RendererContext.Present.FrameBuffer[fb].DebugDepthImageView, NoAllocator);
-            freeDeviceMemory(&RendererContext.Allocator, RendererContext.Present.FrameBuffer[fb].DebugDepthImageAllocation);
-
+            vkDestroySemaphore(RendererContext.LogicalDevice, RendererContext.Present.FrameBuffer[fb].AcquireSemaphore, NoAllocator);
+            vkDestroySemaphore(RendererContext.LogicalDevice, RendererContext.Present.FrameBuffer[fb].FinishedSemaphore, NoAllocator);
+            vkDestroyImageView(RendererContext.LogicalDevice, RendererContext.Present.FrameBuffer[fb].SwapchainImageView, NoAllocator);
+            vkDestroyFramebuffer(RendererContext.LogicalDevice, ForwardPass.FrameBuffer[fb].Framebuffer, NoAllocator);
+            vkDestroyFramebuffer(RendererContext.LogicalDevice, ImGuiPass.FrameBuffer[fb].Framebuffer, NoAllocator);
+            vkDestroyFence(RendererContext.LogicalDevice, RendererContext.Present.FrameBuffer[fb].FinishedFence, NoAllocator);
+            vkDestroyImage(RendererContext.LogicalDevice, ForwardPass.FrameBuffer[fb].DepthImage, NoAllocator);
+            vkDestroyImageView(RendererContext.LogicalDevice, ForwardPass.FrameBuffer[fb].DepthImageView, NoAllocator);
+            freeDeviceMemory(&Allocator, ForwardPass.FrameBuffer[fb].DepthImageAllocation);
+            vkDestroyImage(RendererContext.LogicalDevice, ForwardPass.FrameBuffer[fb].DebugDepthImage, NoAllocator);
+            vkDestroyImageView(RendererContext.LogicalDevice, ForwardPass.FrameBuffer[fb].DebugDepthImageView, NoAllocator);
+            freeDeviceMemory(&Allocator, ForwardPass.FrameBuffer[fb].DebugDepthImageAllocation);
         }
 
-        vkDestroyBuffer(RendererContext.Present.LogicalDevice, RendererContext.Geometry.MeshDataBuffers, NoAllocator);
-        freeDeviceMemory(&RendererContext.Allocator, RendererContext.Geometry.Allocation);
+        vkDestroyBuffer(RendererContext.LogicalDevice, RendererContext.Geometry.MeshDataBuffers, NoAllocator);
+        freeDeviceMemory(&Allocator, RendererContext.Geometry.Allocation);
 
         for (uint32_t i = 0; i < RendererContext.Textures.ImageCount; i++)
         {
-            vkDestroyImage(RendererContext.Present.LogicalDevice, RendererContext.Textures.Images[i].Image, NoAllocator);
-            vkDestroyImageView(RendererContext.Present.LogicalDevice, RendererContext.Textures.Images[i].ImageView, NoAllocator);
-            freeDeviceMemory(&RendererContext.Allocator, RendererContext.Textures.Images[i].Allocation);
+            vkDestroyImage(RendererContext.LogicalDevice, RendererContext.Textures.Images[i].Image, NoAllocator);
+            vkDestroyImageView(RendererContext.LogicalDevice, RendererContext.Textures.Images[i].ImageView, NoAllocator);
+            freeDeviceMemory(&Allocator, RendererContext.Textures.Images[i].Allocation);
         }
 
-        vkDestroyShaderModule(RendererContext.Present.LogicalDevice, RendererContext.Materials.Forward.VShader, NoAllocator);
-        vkDestroyShaderModule(RendererContext.Present.LogicalDevice, RendererContext.Materials.Forward.FShader, NoAllocator);
+        vkDestroyDescriptorSetLayout(RendererContext.LogicalDevice, ForwardPass.ShaderInstanceLayout, NoAllocator);
+        vkDestroyDescriptorSetLayout(RendererContext.LogicalDevice, ForwardPass.ShaderLayout, NoAllocator);
 
-        vkDestroyDescriptorSetLayout(RendererContext.Present.LogicalDevice, RendererContext.Materials.Forward.ShaderInstanceLayout, NoAllocator);
-        vkDestroyDescriptorSetLayout(RendererContext.Present.LogicalDevice, RendererContext.Materials.Forward.ShaderLayout, NoAllocator);
+        vkDestroyPipelineLayout(RendererContext.LogicalDevice, ForwardPass.PipelineLayout, NoAllocator);
 
-        vkDestroyPipelineLayout(RendererContext.Present.LogicalDevice, RendererContext.Materials.Forward.PipelineLayout, NoAllocator);
-
-        for (uint32_t i = 0; i < arrayCount(RendererContext.Materials.Forward.Pipelines); i++)
+        for (uint32_t i = 0; i < arrayCount(ForwardPass.Pipelines); i++)
         {
-            vkDestroyPipeline(RendererContext.Present.LogicalDevice, RendererContext.Materials.Forward.Pipelines[i], NoAllocator);
+            vkDestroyPipeline(RendererContext.LogicalDevice, ForwardPass.Pipelines[i], NoAllocator);
         }
 
-        vkDestroySampler(RendererContext.Present.LogicalDevice, RendererContext.Materials.Forward.Sampler, NoAllocator);
+        vkDestroySampler(RendererContext.LogicalDevice, ForwardPass.Sampler, NoAllocator);
 
-        for (uint32_t i = 0; i < RendererContext.Materials.Forward.InstanceCount; i++)
+        for (uint32_t i = 0; i < ForwardPass.InstanceCount; i++)
         {
-            vkDestroyBuffer(RendererContext.Present.LogicalDevice, RendererContext.Materials.Forward.Instances[i].FShaderData, NoAllocator);
-            freeDeviceMemory(&RendererContext.Allocator, RendererContext.Materials.Forward.Instances[i].Allocation);
+            vkDestroyBuffer(RendererContext.LogicalDevice, ForwardPass.Instances[i].FShaderData, NoAllocator);
+            freeDeviceMemory(&Allocator, ForwardPass.Instances[i].Allocation);
         }
 
         for (uint32_t i = 0; i < Queue::Count; i++)
         {
-            vkDestroyCommandPool(RendererContext.Present.LogicalDevice, RendererContext.Present.Queues[i].CommandPool, NoAllocator);
+            vkDestroyCommandPool(RendererContext.LogicalDevice, RendererContext.Present.Queues[i].CommandPool, NoAllocator);
         }
 
-        vkDestroyFence(RendererContext.Present.LogicalDevice, RendererContext.Present.ImmediateFence, NoAllocator);
-        vkDestroyRenderPass(RendererContext.Present.LogicalDevice, RendererContext.Present.RenderPass, NoAllocator);
-        vkDestroySwapchainKHR(RendererContext.Present.LogicalDevice, RendererContext.Present.Swapchain, NoAllocator);
-        vkDestroyPipelineCache(RendererContext.Present.LogicalDevice, RendererContext.Present.PipelineCache, NoAllocator);
-        vkDestroyDescriptorPool(RendererContext.Present.LogicalDevice, RendererContext.Present.DescriptorPool, NoAllocator);
+        vkDestroyFence(RendererContext.LogicalDevice, RendererContext.Present.ImmediateFence, NoAllocator);
+        vkDestroyRenderPass(RendererContext.LogicalDevice, ForwardPass.RenderPass, NoAllocator);
+        vkDestroyRenderPass(RendererContext.LogicalDevice, ImGuiPass.RenderPass, NoAllocator);
+        vkDestroySwapchainKHR(RendererContext.LogicalDevice, RendererContext.Present.Swapchain, NoAllocator);
+        vkDestroyPipelineCache(RendererContext.LogicalDevice, RendererContext.PipelineCache, NoAllocator);
+        vkDestroyDescriptorPool(RendererContext.LogicalDevice, RendererContext.DescriptorPool, NoAllocator);
         vkDestroySurfaceKHR(RendererContext.VulkanInstance, RendererContext.Present.Surface, NoAllocator);
 
-        destroyAllocator(RendererContext.Present.LogicalDevice, &RendererContext.Allocator);
-        vkDestroyDevice(RendererContext.Present.LogicalDevice, NoAllocator);
+        destroyAllocator(RendererContext.LogicalDevice, &Allocator);
+        vkDestroyDevice(RendererContext.LogicalDevice, NoAllocator);
         vkDestroyInstance(RendererContext.VulkanInstance, NoAllocator);
     }
 
-    IB_API MeshHandle createMesh(MeshDesc const &desc)
+    void initForwardPass(ForwardPassDesc const &desc)
+    {
+        // Queue up our pipelines for cleanup by our rendering thread
+        for (uint32_t i = 0; i < arrayCount(ForwardPass.Pipelines); i++)
+        {
+            if (ForwardPass.Pipelines[i] != VK_NULL_HANDLE)
+            {
+                for (uint32_t pip = 0; pip < MaxPipelineCleanups; pip++)
+                {
+                    if (RendererContext.Cleanup.Pipelines[pip] == VK_NULL_HANDLE)
+                    {
+                        RendererContext.Cleanup.Pipelines[pip] = ForwardPass.Pipelines[i];
+                        break;
+                    }
+                }
+            }
+        }
+
+        VkShaderModule vertexShader = {};
+
+        VkShaderModuleCreateInfo createVShader = {};
+        createVShader.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+        createVShader.pCode = (const uint32_t *)desc.VShader;
+        createVShader.codeSize = desc.VShaderSize;
+        IB_VKCHECK(vkCreateShaderModule(RendererContext.LogicalDevice, &createVShader, NoAllocator, &vertexShader));
+
+        VkShaderModule fragShader = {};
+
+        VkShaderModuleCreateInfo createFShader = {};
+        createFShader.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+        createFShader.pCode = (const uint32_t *)desc.FShader;
+        createFShader.codeSize = desc.FShaderSize;
+        IB_VKCHECK(vkCreateShaderModule(RendererContext.LogicalDevice, &createFShader, NoAllocator, &fragShader));
+
+        VkPipelineVertexInputStateCreateInfo vertexInputCreate = {};
+        vertexInputCreate.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+
+        // Input Assembly
+        VkPipelineInputAssemblyStateCreateInfo inputAssemblyCreate = {};
+        inputAssemblyCreate.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+        inputAssemblyCreate.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+
+        // Rasterization
+        VkPipelineRasterizationStateCreateInfo rasterizationCreate = {};
+        rasterizationCreate.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+        rasterizationCreate.rasterizerDiscardEnable = VK_FALSE;
+        rasterizationCreate.depthBiasEnable = VK_FALSE;
+        rasterizationCreate.depthClampEnable = VK_FALSE;
+        rasterizationCreate.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+        rasterizationCreate.lineWidth = 1.0f;
+        rasterizationCreate.polygonMode = VK_POLYGON_MODE_FILL;
+        rasterizationCreate.cullMode = VK_CULL_MODE_BACK_BIT;
+
+        VkPipelineColorBlendAttachmentState colorBlendAttachment = {};
+        colorBlendAttachment.blendEnable = VK_TRUE;
+        colorBlendAttachment.colorBlendOp = VK_BLEND_OP_ADD;
+        colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+        colorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+        colorBlendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
+        colorBlendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+        colorBlendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+        colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+
+        // All color buffers have the same attachments
+        VkPipelineColorBlendAttachmentState colorAttachments[] = {colorBlendAttachment};
+
+        VkPipelineColorBlendStateCreateInfo colorBlendCreate = {};
+        colorBlendCreate.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+        colorBlendCreate.attachmentCount = arrayCount(colorAttachments);
+        colorBlendCreate.pAttachments = colorAttachments;
+
+        VkPipelineDepthStencilStateCreateInfo depthStencilCreate = {};
+        depthStencilCreate.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+        depthStencilCreate.depthTestEnable = VK_TRUE;
+        depthStencilCreate.depthWriteEnable = VK_TRUE;
+        depthStencilCreate.depthCompareOp = VK_COMPARE_OP_LESS;
+        depthStencilCreate.depthBoundsTestEnable = VK_FALSE;
+        depthStencilCreate.minDepthBounds = 0.0f;
+        depthStencilCreate.maxDepthBounds = 1.0f;
+        depthStencilCreate.stencilTestEnable = VK_FALSE;
+
+        VkPipelineMultisampleStateCreateInfo multisampleCreate = {};
+        multisampleCreate.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+        multisampleCreate.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+
+        VkPipelineShaderStageCreateInfo vertexStage = {};
+        vertexStage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+        vertexStage.pName = "vertexMain";
+        vertexStage.module = vertexShader;
+        vertexStage.stage = VK_SHADER_STAGE_VERTEX_BIT;
+
+        VkPipelineShaderStageCreateInfo fragStage = {};
+        fragStage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+        fragStage.pName = "fragMain";
+        fragStage.module = fragShader;
+        fragStage.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+        VkPipelineShaderStageCreateInfo shaderStages[] = {vertexStage, fragStage};
+        VkRect2D scissor = {};
+        scissor.extent = RendererContext.Present.SurfaceExtents;
+
+        VkViewport viewport = {};
+        viewport.x = 0;
+        viewport.y = 0;
+        viewport.width = (float)RendererContext.Present.SurfaceExtents.width;
+        viewport.height = (float)RendererContext.Present.SurfaceExtents.height;
+        viewport.minDepth = 0.0f;
+        viewport.maxDepth = 1.0f;
+
+        VkPipelineViewportStateCreateInfo viewportStateCreate = {};
+        viewportStateCreate.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+        viewportStateCreate.viewportCount = 1;
+        viewportStateCreate.pViewports = &viewport;
+        viewportStateCreate.scissorCount = 1;
+        viewportStateCreate.pScissors = &scissor;
+
+        VkGraphicsPipelineCreateInfo baseGraphicsPipelineCreate = {};
+        baseGraphicsPipelineCreate.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+        baseGraphicsPipelineCreate.layout = ForwardPass.PipelineLayout;
+        baseGraphicsPipelineCreate.renderPass = ForwardPass.RenderPass;
+        baseGraphicsPipelineCreate.pVertexInputState = &vertexInputCreate;
+        baseGraphicsPipelineCreate.pInputAssemblyState = &inputAssemblyCreate;
+        baseGraphicsPipelineCreate.pRasterizationState = &rasterizationCreate;
+        baseGraphicsPipelineCreate.pColorBlendState = &colorBlendCreate;
+        baseGraphicsPipelineCreate.pDepthStencilState = &depthStencilCreate;
+        baseGraphicsPipelineCreate.pMultisampleState = &multisampleCreate;
+
+        VkDynamicState dynamicStates[] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
+
+        VkPipelineDynamicStateCreateInfo dynamicStateCreate = {};
+        dynamicStateCreate.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+        dynamicStateCreate.dynamicStateCount = arrayCount(dynamicStates);
+        dynamicStateCreate.pDynamicStates = dynamicStates;
+
+        baseGraphicsPipelineCreate.pDynamicState = &dynamicStateCreate;
+        baseGraphicsPipelineCreate.pViewportState = &viewportStateCreate;
+        baseGraphicsPipelineCreate.stageCount = arrayCount(shaderStages);
+        baseGraphicsPipelineCreate.pStages = shaderStages;
+
+        baseGraphicsPipelineCreate.flags = VK_PIPELINE_CREATE_ALLOW_DERIVATIVES_BIT;
+        VkGraphicsPipelineCreateInfo subpass0Pipeline = baseGraphicsPipelineCreate;
+        subpass0Pipeline.subpass = 0;
+
+        VkGraphicsPipelineCreateInfo subpass1Pipeline = baseGraphicsPipelineCreate;
+        subpass1Pipeline.subpass = 1;
+
+        VkGraphicsPipelineCreateInfo pipelineCreateInfo[] = {subpass0Pipeline, subpass1Pipeline};
+        static_assert(arrayCount(pipelineCreateInfo) == ForwardPass::SubpassCount, "Number of created pipelines is not correct.");
+        VkPipeline createdPipelines[ForwardPass::SubpassCount];
+        IB_VKCHECK(vkCreateGraphicsPipelines(RendererContext.LogicalDevice, RendererContext.PipelineCache, arrayCount(pipelineCreateInfo), pipelineCreateInfo, NoAllocator, createdPipelines));
+
+        // Write our pipelines after our call due to the fact that we expect this function to be called from another thread
+        // And we'd like to assure that our writes are done at the right time.
+        threadRelease();
+        for (uint32_t i = 0; i < ForwardPass::SubpassCount; i++)
+        {
+            ForwardPass.Pipelines[i] = createdPipelines[i];
+        }
+
+        vkDestroyShaderModule(RendererContext.LogicalDevice, vertexShader, NoAllocator);
+        vkDestroyShaderModule(RendererContext.LogicalDevice, fragShader, NoAllocator);
+    }
+
+    Mesh::Handle createMesh(MeshDesc const &desc)
     {
         uint32_t meshIndex = RendererContext.Geometry.MeshCount++;
 
@@ -1611,21 +1844,29 @@ namespace IB
             bufferCreate.size = indexSize + vertexSize;
             bufferCreate.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
 
-            IB_VKCHECK(vkCreateBuffer(RendererContext.Present.LogicalDevice, &bufferCreate, NoAllocator, &srcBuffer));
+            IB_VKCHECK(vkCreateBuffer(RendererContext.LogicalDevice, &bufferCreate, NoAllocator, &srcBuffer));
 
             VkMemoryRequirements memoryRequirements;
-            vkGetBufferMemoryRequirements(RendererContext.Present.LogicalDevice, srcBuffer, &memoryRequirements);
+            vkGetBufferMemoryRequirements(RendererContext.LogicalDevice, srcBuffer, &memoryRequirements);
 
-            uint32_t memoryIndex = findMemoryIndex(RendererContext.Present.PhysicalDevice, memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+            AllocationRequest request;
+            request.Alignment = memoryRequirements.alignment;
+            request.Size = indexSize + vertexSize;
+            request.LogicalDevice = RendererContext.LogicalDevice;
+            request.PhysicalDevice = RendererContext.PhysicalDevice;
+            request.RequiredFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+            request.PreferedFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+            request.TypeBits = memoryRequirements.memoryTypeBits;
+            request.Category = AllocationCategory::TransferSource;
 
-            allocation = allocateDeviceMemory(RendererContext.Present.LogicalDevice, &RendererContext.Allocator, memoryIndex, indexSize + vertexSize, memoryRequirements.alignment);
-            IB_VKCHECK(vkBindBufferMemory(RendererContext.Present.LogicalDevice, srcBuffer, allocation.Memory, allocation.Offset));
+            allocation = allocateDeviceMemory(&Allocator, request);
+            IB_VKCHECK(vkBindBufferMemory(RendererContext.LogicalDevice, srcBuffer, allocation.Memory, allocation.Offset));
 
             {
-                void *memory = mapAllocation(RendererContext.Present.LogicalDevice, &RendererContext.Allocator, allocation);
+                void *memory = mapAllocation(RendererContext.LogicalDevice, &Allocator, allocation);
                 memcpy((uint8_t *)memory, (uint8_t *)desc.Vertices.Data, vertexSize);
                 memcpy((uint8_t *)memory + vertexSize, (uint8_t *)desc.Indices.Data, indexSize);
-                unmapAllocation(&RendererContext.Allocator, allocation);
+                unmapAllocation(&Allocator, allocation);
             }
         }
 
@@ -1638,10 +1879,11 @@ namespace IB
             commandBufferAllocateInfo.commandPool = RendererContext.Present.Queues[Queue::Transfer].CommandPool;
 
             VkCommandBuffer commandBuffer;
-            IB_VKCHECK(vkAllocateCommandBuffers(RendererContext.Present.LogicalDevice, &commandBufferAllocateInfo, &commandBuffer));
+            IB_VKCHECK(vkAllocateCommandBuffers(RendererContext.LogicalDevice, &commandBufferAllocateInfo, &commandBuffer));
 
             VkCommandBufferBeginInfo beginBufferInfo = {};
             beginBufferInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+            beginBufferInfo.flags |= VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
 
             IB_VKCHECK(vkBeginCommandBuffer(commandBuffer, &beginBufferInfo));
 
@@ -1659,18 +1901,18 @@ namespace IB
             submitInfo.pCommandBuffers = &commandBuffer;
 
             IB_VKCHECK(vkQueueSubmit(RendererContext.Present.Queues[Queue::Transfer].Queue, 1, &submitInfo, RendererContext.Present.ImmediateFence));
-            IB_VKCHECK(vkWaitForFences(RendererContext.Present.LogicalDevice, 1, &RendererContext.Present.ImmediateFence, VK_TRUE, UINT64_MAX));
-            IB_VKCHECK(vkResetFences(RendererContext.Present.LogicalDevice, 1, &RendererContext.Present.ImmediateFence));
+            IB_VKCHECK(vkWaitForFences(RendererContext.LogicalDevice, 1, &RendererContext.Present.ImmediateFence, VK_TRUE, UINT64_MAX));
+            IB_VKCHECK(vkResetFences(RendererContext.LogicalDevice, 1, &RendererContext.Present.ImmediateFence));
 
-            vkFreeCommandBuffers(RendererContext.Present.LogicalDevice, RendererContext.Present.Queues[Queue::Transfer].CommandPool, 1, &commandBuffer);
-            vkDestroyBuffer(RendererContext.Present.LogicalDevice, srcBuffer, NoAllocator);
-            freeDeviceMemory(&RendererContext.Allocator, allocation);
+            vkFreeCommandBuffers(RendererContext.LogicalDevice, RendererContext.Present.Queues[Queue::Transfer].CommandPool, 1, &commandBuffer);
+            vkDestroyBuffer(RendererContext.LogicalDevice, srcBuffer, NoAllocator);
+            freeDeviceMemory(&Allocator, allocation);
         }
 
-        return MeshHandle{meshIndex + 1};
+        return Mesh::toHandle(meshIndex + 1);
     }
 
-    IB_API ImageHandle createImage(ImageDesc const &desc)
+    Image::Handle createImage(ImageDesc const &desc)
     {
         VkFormat formats[ImageFormat::Count] = {};
         formats[ImageFormat::RGBA8] = VK_FORMAT_R8G8B8A8_UNORM;
@@ -1681,15 +1923,15 @@ namespace IB
         // Image
         uint32_t imageIndex = RendererContext.Textures.ImageCount++;
         ImageAllocation imageAlloc = {};
-        imageAlloc.LogicalDevice = RendererContext.Present.LogicalDevice;
-        imageAlloc.PhysicalDevice = RendererContext.Present.PhysicalDevice;
+        imageAlloc.LogicalDevice = RendererContext.LogicalDevice;
+        imageAlloc.PhysicalDevice = RendererContext.PhysicalDevice;
         imageAlloc.ImageUsage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
         imageAlloc.Format = formats[desc.Format];
         imageAlloc.ImageAspect = VK_IMAGE_ASPECT_COLOR_BIT;
         imageAlloc.Width = desc.Width;
         imageAlloc.Height = desc.Height;
         imageAlloc.Stride = formatSize[desc.Format];
-        imageAlloc.Allocator = &RendererContext.Allocator;
+        imageAlloc.Allocator = &Allocator;
 
         ImageAndView imageAndView = allocImageAndView(imageAlloc);
         RendererContext.Textures.Images[imageIndex].Image = imageAndView.Image;
@@ -1705,20 +1947,28 @@ namespace IB
             bufferCreate.size = bufferSize;
             bufferCreate.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
 
-            IB_VKCHECK(vkCreateBuffer(RendererContext.Present.LogicalDevice, &bufferCreate, NoAllocator, &srcBuffer));
+            IB_VKCHECK(vkCreateBuffer(RendererContext.LogicalDevice, &bufferCreate, NoAllocator, &srcBuffer));
 
             VkMemoryRequirements memoryRequirements;
-            vkGetBufferMemoryRequirements(RendererContext.Present.LogicalDevice, srcBuffer, &memoryRequirements);
+            vkGetBufferMemoryRequirements(RendererContext.LogicalDevice, srcBuffer, &memoryRequirements);
 
-            uint32_t memoryIndex = findMemoryIndex(RendererContext.Present.PhysicalDevice, memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+            AllocationRequest request;
+            request.Alignment = memoryRequirements.alignment;
+            request.Size = bufferSize;
+            request.LogicalDevice = RendererContext.LogicalDevice;
+            request.PhysicalDevice = RendererContext.PhysicalDevice;
+            request.RequiredFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+            request.PreferedFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+            request.TypeBits = memoryRequirements.memoryTypeBits;
+            request.Category = AllocationCategory::TransferSource;
 
-            allocation = allocateDeviceMemory(RendererContext.Present.LogicalDevice, &RendererContext.Allocator, memoryIndex, bufferSize, memoryRequirements.alignment);
-            IB_VKCHECK(vkBindBufferMemory(RendererContext.Present.LogicalDevice, srcBuffer, allocation.Memory, allocation.Offset));
+            allocation = allocateDeviceMemory(&Allocator, request);
+            IB_VKCHECK(vkBindBufferMemory(RendererContext.LogicalDevice, srcBuffer, allocation.Memory, allocation.Offset));
 
             {
-                void *memory = mapAllocation(RendererContext.Present.LogicalDevice, &RendererContext.Allocator, allocation);
+                void *memory = mapAllocation(RendererContext.LogicalDevice, &Allocator, allocation);
                 memcpy(memory, (uint8_t *)desc.Data, bufferSize);
-                unmapAllocation(&RendererContext.Allocator, allocation);
+                unmapAllocation(&Allocator, allocation);
             }
         }
 
@@ -1729,10 +1979,11 @@ namespace IB
         commandBufferAllocateInfo.commandPool = RendererContext.Present.Queues[Queue::Graphics].CommandPool;
 
         VkCommandBuffer commandBuffer;
-        IB_VKCHECK(vkAllocateCommandBuffers(RendererContext.Present.LogicalDevice, &commandBufferAllocateInfo, &commandBuffer));
+        IB_VKCHECK(vkAllocateCommandBuffers(RendererContext.LogicalDevice, &commandBufferAllocateInfo, &commandBuffer));
 
         VkCommandBufferBeginInfo beginBufferInfo = {};
         beginBufferInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        beginBufferInfo.flags |= VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
 
         IB_VKCHECK(vkBeginCommandBuffer(commandBuffer, &beginBufferInfo));
 
@@ -1825,12 +2076,12 @@ namespace IB
         submitInfo.pCommandBuffers = &commandBuffer;
 
         IB_VKCHECK(vkQueueSubmit(RendererContext.Present.Queues[Queue::Graphics].Queue, 1, &submitInfo, RendererContext.Present.ImmediateFence));
-        IB_VKCHECK(vkWaitForFences(RendererContext.Present.LogicalDevice, 1, &RendererContext.Present.ImmediateFence, VK_TRUE, UINT64_MAX));
-        IB_VKCHECK(vkResetFences(RendererContext.Present.LogicalDevice, 1, &RendererContext.Present.ImmediateFence));
+        IB_VKCHECK(vkWaitForFences(RendererContext.LogicalDevice, 1, &RendererContext.Present.ImmediateFence, VK_TRUE, UINT64_MAX));
+        IB_VKCHECK(vkResetFences(RendererContext.LogicalDevice, 1, &RendererContext.Present.ImmediateFence));
 
-        vkFreeCommandBuffers(RendererContext.Present.LogicalDevice, RendererContext.Present.Queues[Queue::Graphics].CommandPool, 1, &commandBuffer);
-        vkDestroyBuffer(RendererContext.Present.LogicalDevice, srcBuffer, NoAllocator);
-        freeDeviceMemory(&RendererContext.Allocator, allocation);
+        vkFreeCommandBuffers(RendererContext.LogicalDevice, RendererContext.Present.Queues[Queue::Graphics].CommandPool, 1, &commandBuffer);
+        vkDestroyBuffer(RendererContext.LogicalDevice, srcBuffer, NoAllocator);
+        freeDeviceMemory(&Allocator, allocation);
 
         // Update our shader descriptor
         {
@@ -1840,7 +2091,7 @@ namespace IB
 
             VkWriteDescriptorSet writeImageSet = {};
             writeImageSet.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            writeImageSet.dstSet = RendererContext.Materials.Forward.ShaderDescriptor;
+            writeImageSet.dstSet = ForwardPass.ShaderDescriptor;
             writeImageSet.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
             writeImageSet.dstBinding = 2;
             writeImageSet.dstArrayElement = imageIndex;
@@ -1848,25 +2099,23 @@ namespace IB
             writeImageSet.pImageInfo = &imageInfo;
 
             VkWriteDescriptorSet writeDescriptorSets[] = {writeImageSet};
-            vkUpdateDescriptorSets(RendererContext.Present.LogicalDevice, arrayCount(writeDescriptorSets), writeDescriptorSets, 0, NULL);
+            vkUpdateDescriptorSets(RendererContext.LogicalDevice, arrayCount(writeDescriptorSets), writeDescriptorSets, 0, NULL);
         }
 
-        return ImageHandle{imageIndex + 1};
+        return Image::toHandle(imageIndex + 1);
     }
 
-    IB_API MaterialHandle createMaterial(ForwardDesc const &desc)
+    Material::Handle createMaterial(ForwardDesc const &desc)
     {
         struct
         {
-            float AlbedoTint[4];
+            uint32_t albedoTint;
             uint32_t albedoIndex;
         } matData;
-        memcpy(matData.AlbedoTint, desc.AlbedoTint, sizeof(float) * 4);
-        matData.albedoIndex = desc.AlbedoImage.Value - 1;
+        matData.albedoTint = desc.AlbedoTint;
+        matData.albedoIndex = desc.AlbedoImage - 1;
 
-        uint32_t instanceIndex = RendererContext.Materials.Forward.InstanceCount++;
-        RendererContext.Materials.Forward.Instances[instanceIndex].PipelineIndex = PipelineType::Default;
-
+        uint32_t instanceIndex = ForwardPass.InstanceCount++;
         VkBuffer dataBuffer;
         {
             VkBufferCreateInfo bufferCreate = {};
@@ -1874,19 +2123,26 @@ namespace IB
             bufferCreate.size = sizeof(matData);
             bufferCreate.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT; // buffers created through create buffer can always be transfered to
 
-            VkBuffer *buffer = &RendererContext.Materials.Forward.Instances[instanceIndex].FShaderData;
-            IB_VKCHECK(vkCreateBuffer(RendererContext.Present.LogicalDevice, &bufferCreate, NoAllocator, buffer));
+            VkBuffer *buffer = &ForwardPass.Instances[instanceIndex].FShaderData;
+            IB_VKCHECK(vkCreateBuffer(RendererContext.LogicalDevice, &bufferCreate, NoAllocator, buffer));
 
             VkMemoryRequirements memoryRequirements;
-            vkGetBufferMemoryRequirements(RendererContext.Present.LogicalDevice, *buffer, &memoryRequirements);
+            vkGetBufferMemoryRequirements(RendererContext.LogicalDevice, *buffer, &memoryRequirements);
 
-            unsigned int preferredBits = 0;
-            uint32_t memoryIndex = findMemoryIndex(RendererContext.Present.PhysicalDevice, memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, preferredBits);
+            AllocationRequest request;
+            request.Alignment = memoryRequirements.alignment;
+            request.Size = sizeof(matData);
+            request.LogicalDevice = RendererContext.LogicalDevice;
+            request.PhysicalDevice = RendererContext.PhysicalDevice;
+            request.RequiredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+            request.PreferedFlags = 0;
+            request.TypeBits = memoryRequirements.memoryTypeBits;
+            request.Category = AllocationCategory::Misc;
 
-            Allocation *allocation = &RendererContext.Materials.Forward.Instances[instanceIndex].Allocation;
-            *allocation = allocateDeviceMemory(RendererContext.Present.LogicalDevice, &RendererContext.Allocator, memoryIndex, sizeof(matData), memoryRequirements.alignment);
+            Allocation *allocation = &ForwardPass.Instances[instanceIndex].Allocation;
+            *allocation = allocateDeviceMemory(&Allocator, request);
 
-            IB_VKCHECK(vkBindBufferMemory(RendererContext.Present.LogicalDevice, *buffer, allocation->Memory, allocation->Offset));
+            IB_VKCHECK(vkBindBufferMemory(RendererContext.LogicalDevice, *buffer, allocation->Memory, allocation->Offset));
             dataBuffer = *buffer;
         }
 
@@ -1898,20 +2154,28 @@ namespace IB
             bufferCreate.size = sizeof(matData);
             bufferCreate.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
 
-            IB_VKCHECK(vkCreateBuffer(RendererContext.Present.LogicalDevice, &bufferCreate, NoAllocator, &srcBuffer));
+            IB_VKCHECK(vkCreateBuffer(RendererContext.LogicalDevice, &bufferCreate, NoAllocator, &srcBuffer));
 
             VkMemoryRequirements memoryRequirements;
-            vkGetBufferMemoryRequirements(RendererContext.Present.LogicalDevice, srcBuffer, &memoryRequirements);
+            vkGetBufferMemoryRequirements(RendererContext.LogicalDevice, srcBuffer, &memoryRequirements);
 
-            uint32_t memoryIndex = findMemoryIndex(RendererContext.Present.PhysicalDevice, memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+            AllocationRequest request;
+            request.Alignment = memoryRequirements.alignment;
+            request.Size = sizeof(matData);
+            request.LogicalDevice = RendererContext.LogicalDevice;
+            request.PhysicalDevice = RendererContext.PhysicalDevice;
+            request.RequiredFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+            request.PreferedFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+            request.TypeBits = memoryRequirements.memoryTypeBits;
+            request.Category = AllocationCategory::TransferSource;
 
-            allocation = allocateDeviceMemory(RendererContext.Present.LogicalDevice, &RendererContext.Allocator, memoryIndex, sizeof(matData), memoryRequirements.alignment);
-            IB_VKCHECK(vkBindBufferMemory(RendererContext.Present.LogicalDevice, srcBuffer, allocation.Memory, allocation.Offset));
+            allocation = allocateDeviceMemory(&Allocator, request);
+            IB_VKCHECK(vkBindBufferMemory(RendererContext.LogicalDevice, srcBuffer, allocation.Memory, allocation.Offset));
 
             {
-                void *memory = mapAllocation(RendererContext.Present.LogicalDevice, &RendererContext.Allocator, allocation);
+                void *memory = mapAllocation(RendererContext.LogicalDevice, &Allocator, allocation);
                 memcpy((uint8_t *)memory, &matData, sizeof(matData));
-                unmapAllocation(&RendererContext.Allocator, allocation);
+                unmapAllocation(&Allocator, allocation);
             }
         }
 
@@ -1924,10 +2188,11 @@ namespace IB
             commandBufferAllocateInfo.commandPool = RendererContext.Present.Queues[Queue::Transfer].CommandPool;
 
             VkCommandBuffer commandBuffer;
-            IB_VKCHECK(vkAllocateCommandBuffers(RendererContext.Present.LogicalDevice, &commandBufferAllocateInfo, &commandBuffer));
+            IB_VKCHECK(vkAllocateCommandBuffers(RendererContext.LogicalDevice, &commandBufferAllocateInfo, &commandBuffer));
 
             VkCommandBufferBeginInfo beginBufferInfo = {};
             beginBufferInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+            beginBufferInfo.flags |= VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
 
             IB_VKCHECK(vkBeginCommandBuffer(commandBuffer, &beginBufferInfo));
 
@@ -1945,23 +2210,23 @@ namespace IB
             submitInfo.pCommandBuffers = &commandBuffer;
 
             IB_VKCHECK(vkQueueSubmit(RendererContext.Present.Queues[Queue::Transfer].Queue, 1, &submitInfo, RendererContext.Present.ImmediateFence));
-            IB_VKCHECK(vkWaitForFences(RendererContext.Present.LogicalDevice, 1, &RendererContext.Present.ImmediateFence, VK_TRUE, UINT64_MAX));
-            IB_VKCHECK(vkResetFences(RendererContext.Present.LogicalDevice, 1, &RendererContext.Present.ImmediateFence));
+            IB_VKCHECK(vkWaitForFences(RendererContext.LogicalDevice, 1, &RendererContext.Present.ImmediateFence, VK_TRUE, UINT64_MAX));
+            IB_VKCHECK(vkResetFences(RendererContext.LogicalDevice, 1, &RendererContext.Present.ImmediateFence));
 
-            vkFreeCommandBuffers(RendererContext.Present.LogicalDevice, RendererContext.Present.Queues[Queue::Transfer].CommandPool, 1, &commandBuffer);
-            vkDestroyBuffer(RendererContext.Present.LogicalDevice, srcBuffer, NoAllocator);
-            freeDeviceMemory(&RendererContext.Allocator, allocation);
+            vkFreeCommandBuffers(RendererContext.LogicalDevice, RendererContext.Present.Queues[Queue::Transfer].CommandPool, 1, &commandBuffer);
+            vkDestroyBuffer(RendererContext.LogicalDevice, srcBuffer, NoAllocator);
+            freeDeviceMemory(&Allocator, allocation);
         }
 
         VkDescriptorSetAllocateInfo descriptorSetAlloc = {};
         descriptorSetAlloc.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-        descriptorSetAlloc.descriptorPool = RendererContext.Present.DescriptorPool;
+        descriptorSetAlloc.descriptorPool = RendererContext.DescriptorPool;
         descriptorSetAlloc.descriptorSetCount = 1;
-        descriptorSetAlloc.pSetLayouts = &RendererContext.Materials.Forward.ShaderInstanceLayout;
+        descriptorSetAlloc.pSetLayouts = &ForwardPass.ShaderInstanceLayout;
 
         IB_VKCHECK(vkAllocateDescriptorSets(
-            RendererContext.Present.LogicalDevice, &descriptorSetAlloc,
-            &RendererContext.Materials.Forward.Instances[instanceIndex].ShaderDescriptor));
+            RendererContext.LogicalDevice, &descriptorSetAlloc,
+            &ForwardPass.Instances[instanceIndex].ShaderDescriptor));
 
         VkDescriptorBufferInfo bufferInfo = {};
         bufferInfo.buffer = dataBuffer;
@@ -1970,37 +2235,71 @@ namespace IB
 
         VkWriteDescriptorSet writeMaterial = {};
         writeMaterial.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writeMaterial.dstSet = RendererContext.Materials.Forward.Instances[instanceIndex].ShaderDescriptor;
+        writeMaterial.dstSet = ForwardPass.Instances[instanceIndex].ShaderDescriptor;
         writeMaterial.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
         writeMaterial.dstBinding = 0;
         writeMaterial.descriptorCount = 1;
         writeMaterial.pBufferInfo = &bufferInfo;
 
         VkWriteDescriptorSet writeDescriptorSets[] = {writeMaterial};
-        vkUpdateDescriptorSets(RendererContext.Present.LogicalDevice, arrayCount(writeDescriptorSets), writeDescriptorSets, 0, NULL);
+        vkUpdateDescriptorSets(RendererContext.LogicalDevice, arrayCount(writeDescriptorSets), writeDescriptorSets, 0, NULL);
 
-        return MaterialHandle{instanceIndex + 1};
+        return Material::toHandle(instanceIndex + 1);
     }
 
-    IB_API void drawView(ViewDesc const &view)
+    void newImGuiFrame()
     {
+        ImGui_ImplWin32_NewFrame();
+        ImGui_ImplVulkan_NewFrame();
+        ImGui::NewFrame();
+    }
+
+    bool imGuiPlatformMessage(WindowMessagePlatformData const *platformData)
+    {
+        if (platformData == nullptr)
+        {
+            return false;
+        }
+
+        HWND hwnd;
+        UINT msg;
+        WPARAM wparam;
+        LPARAM lparam;
+        Win32::getPlatformMessageData(platformData, &hwnd, &msg, &wparam, &lparam);
+
+        return ImGui_ImplWin32_WndProcHandler(hwnd, msg, wparam, lparam);
+    }
+
+    void drawView(ViewDesc const &view)
+    {
+        // Cleanup our pipelines
+        for (uint32_t i = 0; i < MaxPipelineCleanups; i++)
+        {
+            if (RendererContext.Cleanup.Pipelines[i] != VK_NULL_HANDLE)
+            {
+                vkDeviceWaitIdle(RendererContext.LogicalDevice);
+                vkDestroyPipeline(RendererContext.LogicalDevice, RendererContext.Cleanup.Pipelines[i], NoAllocator);
+                RendererContext.Cleanup.Pipelines[i] = VK_NULL_HANDLE;
+            }
+        }
+
         // Start the frame
         uint32_t buffer = RendererContext.Present.ActiveFrame;
 
         uint32_t imageIndex = 0;
-        VkResult result = vkAcquireNextImageKHR(RendererContext.Present.LogicalDevice, RendererContext.Present.Swapchain, UINT64_MAX, RendererContext.Present.FrameBuffer[buffer].AcquireSemaphore, VK_NULL_HANDLE, &imageIndex);
+        VkResult result = vkAcquireNextImageKHR(RendererContext.LogicalDevice, RendererContext.Present.Swapchain, UINT64_MAX, RendererContext.Present.FrameBuffer[buffer].AcquireSemaphore, VK_NULL_HANDLE, &imageIndex);
         if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR)
         {
-            vkDeviceWaitIdle(RendererContext.Present.LogicalDevice);
+            vkDeviceWaitIdle(RendererContext.LogicalDevice);
             VkSurfaceCapabilitiesKHR surfaceCapabilities;
-            IB_VKCHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(RendererContext.Present.PhysicalDevice, RendererContext.Present.Surface, &surfaceCapabilities));
+            IB_VKCHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(RendererContext.PhysicalDevice, RendererContext.Present.Surface, &surfaceCapabilities));
             IB_ASSERT(surfaceCapabilities.currentExtent.width != UINT32_MAX, "Surface extents are undefined.");
             buildSurfaceSwapchain(surfaceCapabilities.currentExtent);
             return;
         }
 
-        IB_VKCHECK(vkWaitForFences(RendererContext.Present.LogicalDevice, 1, &RendererContext.Present.FrameBuffer[RendererContext.Present.ActiveFrame].FinishedFence, VK_TRUE, UINT64_MAX));
-        IB_VKCHECK(vkResetFences(RendererContext.Present.LogicalDevice, 1, &RendererContext.Present.FrameBuffer[buffer].FinishedFence));
+        IB_VKCHECK(vkWaitForFences(RendererContext.LogicalDevice, 1, &RendererContext.Present.FrameBuffer[RendererContext.Present.ActiveFrame].FinishedFence, VK_TRUE, UINT64_MAX));
+        IB_VKCHECK(vkResetFences(RendererContext.LogicalDevice, 1, &RendererContext.Present.FrameBuffer[buffer].FinishedFence));
 
         VkCommandBuffer currentCommands = RendererContext.Present.FrameBuffer[buffer].PrimaryCommandBuffer;
         {
@@ -2008,102 +2307,126 @@ namespace IB
 
             VkCommandBufferBeginInfo beginBufferInfo = {};
             beginBufferInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-            beginBufferInfo.flags = 0;
+            beginBufferInfo.flags |= VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
 
             IB_VKCHECK(vkBeginCommandBuffer(currentCommands, &beginBufferInfo));
 
-            float color[4] = {0.8f, 0.5f, 0.1f, 0.0f};
-            VkClearColorValue clearColor = {};
-            memcpy(clearColor.float32, &color, sizeof(float) * 4);
-
-            VkClearValue colorClear = {};
-            colorClear.color = clearColor;
-            VkClearValue depthClear = {};
-            depthClear.depthStencil = {1.0f, 0};
-            VkClearValue clearValues[] = {colorClear, depthClear, depthClear };
-
-            VkRect2D renderArea = {};
-            renderArea.extent = RendererContext.Present.SurfaceExtents;
-
-            VkRenderPassBeginInfo renderPassBeginInfo = {};
-            renderPassBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-            renderPassBeginInfo.renderPass = RendererContext.Present.RenderPass;
-            renderPassBeginInfo.framebuffer = RendererContext.Present.FrameBuffer[buffer].Framebuffer;
-            renderPassBeginInfo.renderArea = renderArea;
-            renderPassBeginInfo.clearValueCount = arrayCount(clearValues);
-            renderPassBeginInfo.pClearValues = clearValues;
-
-            // Forward materials
-            vkCmdBeginRenderPass(currentCommands, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
-
-            VkViewport viewport = {};
-            viewport.x = 0;
-            viewport.y = 0;
-            viewport.width = (float)RendererContext.Present.SurfaceExtents.width;
-            viewport.height = (float)RendererContext.Present.SurfaceExtents.height;
-            viewport.minDepth = 0.0f;
-            viewport.maxDepth = 1.0f;
-            vkCmdSetViewport(currentCommands, 0, 1, &viewport);
-
-            VkRect2D scissor = {};
-            scissor.extent = RendererContext.Present.SurfaceExtents;
-            vkCmdSetScissor(currentCommands, 0, 1, &scissor);
-
-            VkDescriptorSet set = RendererContext.Materials.Forward.ShaderDescriptor;
-            vkCmdBindDescriptorSets(
-                currentCommands, VK_PIPELINE_BIND_POINT_GRAPHICS, RendererContext.Materials.Forward.PipelineLayout,
-                0, 1, &set, 0, VK_NULL_HANDLE);
-
-            for (uint32_t passIndex = 0; passIndex < ViewDesc::Pass::Count; passIndex++)
+            // Forward pass
             {
-                ViewDesc::Pass const* pass = &view.Forward.Passes[passIndex];
+                float color[4] = {0.8f, 0.5f, 0.1f, 0.0f};
+                VkClearColorValue clearColor = {};
+                memcpy(clearColor.float32, &color, sizeof(float) * 4);
 
-                if (passIndex > 0)
+                VkClearValue colorClear = {};
+                colorClear.color = clearColor;
+                VkClearValue depthClear = {};
+                depthClear.depthStencil = {1.0f, 0};
+                VkClearValue clearValues[] = {colorClear, depthClear, depthClear};
+
+                VkRect2D renderArea = {};
+                renderArea.extent = RendererContext.Present.SurfaceExtents;
+
+                VkRenderPassBeginInfo renderPassBeginInfo = {};
+                renderPassBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+                renderPassBeginInfo.renderPass = ForwardPass.RenderPass;
+                renderPassBeginInfo.framebuffer = ForwardPass.FrameBuffer[buffer].Framebuffer;
+                renderPassBeginInfo.renderArea = renderArea;
+                renderPassBeginInfo.clearValueCount = arrayCount(clearValues);
+                renderPassBeginInfo.pClearValues = clearValues;
+
+                vkCmdBeginRenderPass(currentCommands, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+                VkViewport viewport = {};
+                viewport.x = 0;
+                viewport.y = 0;
+                viewport.width = (float)RendererContext.Present.SurfaceExtents.width;
+                viewport.height = (float)RendererContext.Present.SurfaceExtents.height;
+                viewport.minDepth = 0.0f;
+                viewport.maxDepth = 1.0f;
+                vkCmdSetViewport(currentCommands, 0, 1, &viewport);
+
+                VkRect2D scissor = {};
+                scissor.extent = RendererContext.Present.SurfaceExtents;
+                vkCmdSetScissor(currentCommands, 0, 1, &scissor);
+
+                VkDescriptorSet set = ForwardPass.ShaderDescriptor;
+                vkCmdBindDescriptorSets(
+                    currentCommands, VK_PIPELINE_BIND_POINT_GRAPHICS, ForwardPass.PipelineLayout,
+                    0, 1, &set, 0, VK_NULL_HANDLE);
+
+                for (uint32_t passIndex = 0; passIndex < ViewDesc::ForwardPass::Count; passIndex++)
                 {
-                    vkCmdNextSubpass(currentCommands, VK_SUBPASS_CONTENTS_INLINE);
-                }
+                    ViewDesc::ForwardPass const *pass = &view.Forward.Passes[passIndex];
 
-                for (uint32_t i = 0; i < pass->BatchCount; i++)
-                {
-                    ViewDesc::Batch *batch = &pass->Batches[i];
-                    uint32_t materialIndex = batch->Material.Value - 1;
-
-                    uint32_t pipelineIndex = RendererContext.Materials.Forward.Instances[materialIndex].PipelineIndex + passIndex;
-                    vkCmdBindPipeline(currentCommands, VK_PIPELINE_BIND_POINT_GRAPHICS, RendererContext.Materials.Forward.Pipelines[pipelineIndex]);
-
-                    VkDescriptorSet instanceSet = RendererContext.Materials.Forward.Instances[materialIndex].ShaderDescriptor;
-                    vkCmdBindDescriptorSets(
-                        currentCommands, VK_PIPELINE_BIND_POINT_GRAPHICS, RendererContext.Materials.Forward.PipelineLayout,
-                        1, 1, &instanceSet, 0, VK_NULL_HANDLE);
-
-                    for (uint32_t mesh = 0; mesh < batch->MeshCount && batch->Meshes[mesh].Mesh.Value > 0; mesh++)
+                    if (passIndex > 0)
                     {
-                        uint32_t meshIndex = batch->Meshes[mesh].Mesh.Value - 1;
+                        vkCmdNextSubpass(currentCommands, VK_SUBPASS_CONTENTS_INLINE);
+                    }
 
-                        vkCmdBindIndexBuffer(currentCommands, RendererContext.Geometry.MeshDataBuffers, RendererContext.Geometry.Meshes[meshIndex].IndexOffset, VK_INDEX_TYPE_UINT16);
-                        for (uint32_t inst = 0; inst < batch->Meshes[mesh].Count; inst++)
+                    for (uint32_t i = 0; i < pass->BatchCount; i++)
+                    {
+                        ViewDesc::Batch *batch = &pass->Batches[i];
+                        uint32_t materialIndex = batch->Material - 1;
+
+                        if (ForwardPass.Pipelines[passIndex] != VK_NULL_HANDLE)
                         {
-                            struct
+                            vkCmdBindPipeline(currentCommands, VK_PIPELINE_BIND_POINT_GRAPHICS, ForwardPass.Pipelines[passIndex]);
+
+                            VkDescriptorSet instanceSet = ForwardPass.Instances[materialIndex].ShaderDescriptor;
+                            vkCmdBindDescriptorSets(
+                                currentCommands, VK_PIPELINE_BIND_POINT_GRAPHICS, ForwardPass.PipelineLayout,
+                                1, 1, &instanceSet, 0, VK_NULL_HANDLE);
+
+                            for (uint32_t mesh = 0; mesh < batch->MeshCount && batch->Meshes[mesh].Mesh > 0; mesh++)
                             {
-                                Mat4x4 VP;
-                                Mat3x4 M;
-                                uint32_t VertexOffset;
-                            } vertPushConstant;
+                                uint32_t meshIndex = batch->Meshes[mesh].Mesh - 1;
 
-                            vertPushConstant.VP = view.ViewProj;
-                            vertPushConstant.M = batch->Meshes[mesh].Transforms[inst];
-                            vertPushConstant.VertexOffset = RendererContext.Geometry.Meshes[meshIndex].VertexOffset / sizeof(Vertex);
+                                vkCmdBindIndexBuffer(currentCommands, RendererContext.Geometry.MeshDataBuffers, RendererContext.Geometry.Meshes[meshIndex].IndexOffset, VK_INDEX_TYPE_UINT16);
+                                for (uint32_t inst = 0; inst < batch->Meshes[mesh].Count; inst++)
+                                {
+                                    struct
+                                    {
+                                        Mat4x4 VP;
+                                        Mat3x4 M;
+                                        uint32_t VertexOffset;
+                                    } vertPushConstant;
 
-                            vkCmdPushConstants(currentCommands, RendererContext.Materials.Forward.PipelineLayout,
-                                VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(vertPushConstant), &vertPushConstant);
+                                    vertPushConstant.VP = view.ViewProj;
+                                    vertPushConstant.M = batch->Meshes[mesh].Transforms[inst];
+                                    vertPushConstant.VertexOffset = RendererContext.Geometry.Meshes[meshIndex].VertexOffset / sizeof(Vertex);
 
-                            vkCmdDrawIndexed(currentCommands, RendererContext.Geometry.Meshes[meshIndex].IndexCount, 1, 0, 0, 0);
+                                    vkCmdPushConstants(currentCommands, ForwardPass.PipelineLayout,
+                                                       VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(vertPushConstant), &vertPushConstant);
+
+                                    vkCmdDrawIndexed(currentCommands, RendererContext.Geometry.Meshes[meshIndex].IndexCount, 1, 0, 0, 0);
+                                }
+                            }
                         }
                     }
                 }
+
+                vkCmdEndRenderPass(currentCommands);
             }
 
-            vkCmdEndRenderPass(currentCommands);
+            // ImGui Pass
+            if (view.ImGuiDrawData != nullptr)
+            {
+                VkRenderPassBeginInfo renderPassBeginInfo = {};
+                renderPassBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+                renderPassBeginInfo.renderPass = ImGuiPass.RenderPass;
+                renderPassBeginInfo.framebuffer = ImGuiPass.FrameBuffer[buffer].Framebuffer;
+
+                VkRect2D renderArea = {};
+                renderArea.extent = RendererContext.Present.SurfaceExtents;
+
+                renderPassBeginInfo.renderArea = renderArea;
+                vkCmdBeginRenderPass(currentCommands, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+                ImGui_ImplVulkan_RenderDrawData(view.ImGuiDrawData, currentCommands);
+
+                vkCmdEndRenderPass(currentCommands);
+            }
+
             vkEndCommandBuffer(currentCommands);
         }
 
@@ -2131,9 +2454,9 @@ namespace IB
         VkResult presentResult = vkQueuePresentKHR(RendererContext.Present.Queues[Queue::Present].Queue, &presentInfo);
         if (presentResult == VK_ERROR_OUT_OF_DATE_KHR || presentResult == VK_SUBOPTIMAL_KHR)
         {
-            vkDeviceWaitIdle(RendererContext.Present.LogicalDevice);
+            vkDeviceWaitIdle(RendererContext.LogicalDevice);
             VkSurfaceCapabilitiesKHR surfaceCapabilities;
-            IB_VKCHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(RendererContext.Present.PhysicalDevice, RendererContext.Present.Surface, &surfaceCapabilities));
+            IB_VKCHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(RendererContext.PhysicalDevice, RendererContext.Present.Surface, &surfaceCapabilities));
             IB_ASSERT(surfaceCapabilities.currentExtent.width != UINT32_MAX, "Failed to get surface extents.");
             buildSurfaceSwapchain(surfaceCapabilities.currentExtent);
         }

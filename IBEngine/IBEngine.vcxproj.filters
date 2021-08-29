@@ -11,6 +11,12 @@
     <Filter Include="cJSON">
       <UniqueIdentifier>{c55c632b-304b-4379-ad43-6b30580144a7}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Shaders">
+      <UniqueIdentifier>{c2d01aed-c398-4f10-aef1-b77a9c5266cd}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ImGui">
+      <UniqueIdentifier>{0c37ac14-60ba-44f2-a41a-f16c9edba75d}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="IBEngineAPI.h" />
@@ -27,6 +33,32 @@
       <Filter>cJSON</Filter>
     </ClInclude>
     <ClInclude Include="IBEntity.h" />
+    <ClInclude Include="..\SDK\imgui_docking\imgui\imconfig.h">
+      <Filter>ImGui</Filter>
+    </ClInclude>
+    <ClInclude Include="..\SDK\imgui_docking\imgui\imgui.h">
+      <Filter>ImGui</Filter>
+    </ClInclude>
+    <ClInclude Include="..\SDK\imgui_docking\imgui\imgui_internal.h">
+      <Filter>ImGui</Filter>
+    </ClInclude>
+    <ClInclude Include="..\SDK\imgui_docking\imgui\imstb_rectpack.h">
+      <Filter>ImGui</Filter>
+    </ClInclude>
+    <ClInclude Include="..\SDK\imgui_docking\imgui\imstb_textedit.h">
+      <Filter>ImGui</Filter>
+    </ClInclude>
+    <ClInclude Include="..\SDK\imgui_docking\imgui\imstb_truetype.h">
+      <Filter>ImGui</Filter>
+    </ClInclude>
+    <ClInclude Include="..\SDK\imgui_docking\imgui\imgui_impl_vulkan.h">
+      <Filter>ImGui</Filter>
+    </ClInclude>
+    <ClInclude Include="..\SDK\imgui_docking\imgui\imgui_impl_win32.h">
+      <Filter>ImGui</Filter>
+    </ClInclude>
+    <ClInclude Include="IBCollection.h" />
+    <ClInclude Include="IBEditor.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Platform\IBPlatformWin32.cpp">
@@ -43,5 +75,32 @@
       <Filter>cJSON</Filter>
     </ClCompile>
     <ClCompile Include="IBEntity.cpp" />
+    <ClCompile Include="..\SDK\imgui_docking\imgui\imgui.cpp">
+      <Filter>ImGui</Filter>
+    </ClCompile>
+    <ClCompile Include="..\SDK\imgui_docking\imgui\imgui_demo.cpp">
+      <Filter>ImGui</Filter>
+    </ClCompile>
+    <ClCompile Include="..\SDK\imgui_docking\imgui\imgui_draw.cpp">
+      <Filter>ImGui</Filter>
+    </ClCompile>
+    <ClCompile Include="..\SDK\imgui_docking\imgui\imgui_tables.cpp">
+      <Filter>ImGui</Filter>
+    </ClCompile>
+    <ClCompile Include="..\SDK\imgui_docking\imgui\imgui_widgets.cpp">
+      <Filter>ImGui</Filter>
+    </ClCompile>
+    <ClCompile Include="..\SDK\imgui_docking\imgui\imgui_impl_vulkan.cpp">
+      <Filter>ImGui</Filter>
+    </ClCompile>
+    <ClCompile Include="..\SDK\imgui_docking\imgui\imgui_impl_win32.cpp">
+      <Filter>ImGui</Filter>
+    </ClCompile>
+    <ClCompile Include="IBEditor.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <FxCompile Include="..\Assets\Raw\SampleForward.hlsl">
+      <Filter>Shaders</Filter>
+    </FxCompile>
   </ItemGroup>
 </Project>

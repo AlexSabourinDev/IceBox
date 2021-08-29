@@ -3,14 +3,53 @@
 #include <stdint.h>
 
 #include "IBEngineAPI.h"
-#include "IBEntity.h"
 
+struct ImDrawData;
 namespace IB
 {
+    struct Mat4x4;
+    struct Transform;
+
+    namespace Asset
+    {
+        enum Handle : uint64_t;
+        constexpr Handle toHandle(uint64_t value);
+
+        enum FourCC : uint32_t;
+        constexpr FourCC toFourCC(char const (&text)[5]);
+    }
+
+    namespace Property
+    {
+        enum Handle : uint64_t;
+        constexpr Handle toHandle(uint64_t value);
+        constexpr uint64_t toValue(Handle handle);
+    }
+
+    namespace Cell
+    {
+        enum Handle : uint64_t;
+    }
+
+    namespace Entity
+    {
+        enum Handle : uint64_t;
+    }
+
+    namespace Job
+    {
+        enum Handle : uint64_t;
+    }
+
+    struct ViewDesc;
+    struct MeshDesc;
+
+    constexpr uint32_t RendererJobQueueIndex = 0;
+
     namespace Serialization
     {
-        struct FileStream;
-        struct MemoryStream;
+        struct WriteStream;
+        struct ReadStream;
     } // namespace Serialization
 
     struct Vertex;
@@ -22,6 +61,7 @@ namespace IB
         uint16_t const *Indices;
         uint32_t IndexCount;
     };
+    Asset::FourCC const MeshType = Asset::toFourCC("MESH");
 
     struct ShaderAsset
     {
@@ -31,21 +71,116 @@ namespace IB
         uint8_t const *FragShader;
         uint32_t FragShaderSize;
     };
+    Asset::FourCC const ShaderType = Asset::toFourCC("SHDR");
 
-    struct WindowHandle;
+    namespace MaterialAsset
+    {
+        enum Handle : uint64_t;
+
+        struct Desc
+        {
+            char const* AlbedoPath;
+            uint32_t AlbedoTint;
+        };
+
+        constexpr Handle toHandle(uint64_t value) { return static_cast<Handle>(value); }
+        constexpr uint64_t toValue(Handle handle) { return static_cast<uint64_t>(handle); }
+    };
+
+    Asset::FourCC const MaterialType = Asset::toFourCC("MATE");
+    inline Asset::Handle toAssetHandle(MaterialAsset::Handle handle) { return Asset::toHandle(static_cast<uint64_t>(handle)); };
+
+    namespace ImageFormat
+    {
+        enum Enum : uint32_t;
+    }
+
+    struct ImageAsset
+    {
+        ImageFormat::Enum Format;
+        uint32_t Width;
+        uint32_t Height;
+        uint8_t const* Data;
+    };
+    Asset::FourCC const ImageType = Asset::toFourCC("IMAG");
+
+    namespace Window
+    {
+        enum Handle : uintptr_t;
+    }
     struct RendererFrontendDesc
     {
-        WindowHandle *Window;
+        Window::Handle Window;
     };
+
+    struct StackAllocator;
+
+    namespace ImGizmo
+    {
+        struct DrawData;
+    }
 
     IB_API void initRendererFrontend(RendererFrontendDesc const &frontendDesc);
     IB_API void killRendererFrontend();
 
-    IB_API IB::PropertyHandle createRendererProperty(IB::Asset::ResourceHandle meshResource);
+    Asset::FourCC const RendererPropertyType = Asset::toFourCC("RNDR");
+    IB_API Property::Handle createRendererProperty(char const* meshPath, char const* materialPath);
+    IB_API MaterialAsset::Handle createMaterialAsset(MaterialAsset::Desc asset);
 
-    IB_API void toBinary(Serialization::FileStream *stream, MeshAsset const &mesh);
-    IB_API void fromBinary(Serialization::MemoryStream *stream, MeshAsset *mesh);
+    struct Camera
+    {
+        float FOV = 90.0f;
+        float Near = 0.01f;
+        float Far = 100.0f;
+        float Aspect = 1.0f;
+    };
+    inline bool operator!=(Camera const& left, Camera const& right)
+    {
+        return left.FOV != right.FOV || left.Near != right.Near || left.Far != right.Far || left.Aspect != right.Aspect;
+    }
 
-    IB_API void toBinary(Serialization::FileStream *stream, ShaderAsset const &shaders);
-    IB_API void fromBinary(Serialization::MemoryStream *stream, ShaderAsset *shaders);
+    namespace CameraProperty
+    {
+        enum Handle : uint64_t;
+        constexpr Handle toHandle(uint64_t value) { return static_cast<Handle>(value); }
+        constexpr uint64_t toValue(Handle handle) { return static_cast<uint64_t>(handle); }
+    }
+
+    inline Property::Handle toPropertyHandle(CameraProperty::Handle cameraHandle) { return Property::toHandle(CameraProperty::toValue(cameraHandle)); }
+    inline CameraProperty::Handle toCameraHandle(Property::Handle cameraHandle) { return CameraProperty::toHandle(Property::toValue(cameraHandle)); }
+
+    Asset::FourCC const CameraPropertyType = Asset::toFourCC("CMRA");
+    IB_API Property::Handle createCameraProperty(Camera camera);
+    IB_API Mat4x4 getViewProjection(CameraProperty::Handle camera, Transform const& worldTransform);
+    IB_API Mat4x4 getInvViewProjection(CameraProperty::Handle camera, Transform const& transform);
+
+    // Can be called from any thread
+    struct GatherCellViewDesc
+    {
+        StackAllocator* Allocator;
+
+        Entity::Handle Camera;
+        Cell::Handle Cell;
+        ImDrawData const* ImGuiDrawData;
+        ImGizmo::DrawData const* ImGizmoDrawData;
+    };
+    IB_API ViewDesc gatherCellView(GatherCellViewDesc const& gatherDesc);
+
+    // Must be called from our renderer queue
+    IB_API void drawCellView(StackAllocator* allocator, ViewDesc const& viewDesc);
+
+    namespace Serialization
+    {
+        IB_API void toBinary(Serialization::WriteStream *stream, MeshAsset const &mesh);
+        IB_API void fromBinary(Serialization::ReadStream *stream, MeshAsset *mesh, uint32_t versionNumber);
+
+        IB_API void toBinary(Serialization::WriteStream *stream, ShaderAsset const &shaders);
+        IB_API void fromBinary(Serialization::ReadStream *stream, ShaderAsset *shaders, uint32_t versionNumber);
+
+        IB_API void toBinary(Serialization::WriteStream *stream, MaterialAsset::Desc const &material);
+        IB_API void fromBinary(Serialization::ReadStream *stream, MaterialAsset::Desc *material, uint32_t versionNumber);
+
+        IB_API void toBinary(Serialization::WriteStream *stream, ImageAsset const &image);
+        IB_API void fromBinary(Serialization::ReadStream *stream, ImageAsset *image, uint32_t versionNumber);
+    }
 } // namespace IB

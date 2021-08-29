@@ -6,6 +6,17 @@
 #include <sysinfoapi.h>
 #include <stdint.h>
 
+namespace IB
+{
+    struct WindowMessagePlatformData
+    {
+        HWND Hwnd;
+        UINT Msg;
+        WPARAM WParam;
+        LPARAM LParam;
+    };
+}
+
 namespace
 {
     template <typename T>
@@ -19,7 +30,7 @@ namespace
         HWND WindowHandle = NULL;
 
         void (*OnCloseRequested)(void *) = nullptr;
-        void (*OnWindowMessage)(void *data, IB::WindowMessage message) = nullptr;
+        bool (*OnWindowMessage)(void *data, IB::WindowMessage message, IB::WindowMessagePlatformData const*platformData) = nullptr;
         void *State = nullptr;
     };
 
@@ -28,6 +39,8 @@ namespace
 
     LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     {
+        const IB::WindowMessagePlatformData platformData = { hwnd, msg, wParam, lParam };
+
         ActiveWindow *activeWindow = nullptr;
         for (uint32_t i = 0; i < MaxActiveWindows; i++)
         {
@@ -38,6 +51,7 @@ namespace
             }
         }
 
+        bool messageHandled = false;
         switch (msg)
         {
         case WM_CLOSE:
@@ -46,7 +60,7 @@ namespace
                 IB::WindowMessage message;
                 message.Type = IB::WindowMessage::Close;
 
-                activeWindow->OnWindowMessage(activeWindow->State, message);
+                messageHandled = activeWindow->OnWindowMessage(activeWindow->State, message, &platformData);
             }
             break;
         case WM_SIZE:
@@ -56,7 +70,7 @@ namespace
                 message.Type = IB::WindowMessage::Resize;
                 message.Data.Resize.Width = LOWORD(lParam);
                 message.Data.Resize.Height = HIWORD(lParam);
-                activeWindow->OnWindowMessage(activeWindow->State, message);
+                messageHandled = activeWindow->OnWindowMessage(activeWindow->State, message, &platformData);
             }
             break;
         case WM_LBUTTONDOWN:
@@ -101,7 +115,7 @@ namespace
                 message.Data.MouseClick.State = IB::WindowMessage::Mouse::Pressed;
                 break;
             }
-            activeWindow->OnWindowMessage(activeWindow->State, message);
+            messageHandled = activeWindow->OnWindowMessage(activeWindow->State, message, &platformData);
         }
         break;
         case WM_MOUSEMOVE:
@@ -110,7 +124,7 @@ namespace
             message.Type = IB::WindowMessage::MouseMove;
             message.Data.MouseMove.X = LOWORD(lParam);
             message.Data.MouseMove.Y = HIWORD(lParam);
-            activeWindow->OnWindowMessage(activeWindow->State, message);
+            messageHandled = activeWindow->OnWindowMessage(activeWindow->State, message, &platformData);
         }
         break;
         case WM_SYSKEYDOWN:
@@ -164,24 +178,39 @@ namespace
                     bool isFirstDown = (lParam & (1 << 30)) == 0; // 30th bit represents if the key was down before this message was sent.
                     if (isFirstDown)
                     {
-                        activeWindow->OnWindowMessage(activeWindow->State, message);
+                        messageHandled = activeWindow->OnWindowMessage(activeWindow->State, message, &platformData);
                     }
                 }
                 else
                 {
-                    activeWindow->OnWindowMessage(activeWindow->State, message);
+                    messageHandled = activeWindow->OnWindowMessage(activeWindow->State, message, &platformData);
                 }
             }
         }
         break;
         default:
-            return DefWindowProc(hwnd, msg, wParam, lParam);
+        {
+            if (activeWindow != nullptr && activeWindow->OnWindowMessage != nullptr)
+            {
+                IB::WindowMessage message;
+                message.Type = IB::WindowMessage::Unknown;
+                messageHandled = activeWindow->OnWindowMessage(activeWindow->State, message, &platformData);
+            }
+        }
+        break;
         }
 
-        return 0;
+        if (!messageHandled)
+        {
+            return DefWindowProc(hwnd, msg, wParam, lParam);
+        }
+        else
+        {
+            return TRUE;
+        }
     }
 
-    IB::WindowHandle createWindowWin32(IB::WindowDesc desc, HWND parentWindowHandle, DWORD style)
+    IB::Window::Handle createWindowWin32(IB::WindowDesc desc, HWND parentWindowHandle, DWORD style)
     {
         HINSTANCE hinstance = GetModuleHandle(NULL);
 
@@ -223,9 +252,19 @@ namespace
                 break;
             }
         }
+
+        if (desc.OnWindowMessage != nullptr)
+        {
+            IB::WindowMessage message;
+            message.Type = IB::WindowMessage::Create;
+            message.Data.Create.Width = desc.Width;
+            message.Data.Create.Height = desc.Height;
+            desc.OnWindowMessage(desc.CallbackState, message, nullptr);
+        }
+
         IB_ASSERT(i < MaxActiveWindows, "Failed to add our window to our list of windows.");
 
-        return IB::WindowHandle{i};
+        return IB::Window::toHandle(i);
     }
 
     struct ActiveFileMapping
@@ -263,22 +302,30 @@ namespace IB
     namespace Win32
     {
         // Must be externed for access
-        void getWindowHandleAndInstance(WindowHandle handle, HWND *window, HINSTANCE *instance)
+        void getWindowHandleAndInstance(Window::Handle handle, HWND *window, HINSTANCE *instance)
         {
             *instance = GetModuleHandle(NULL);
-            *window = ActiveWindows[handle.Value].WindowHandle;
+            *window = ActiveWindows[Window::toValue(handle)].WindowHandle;
+        }
+
+        void getPlatformMessageData(WindowMessagePlatformData const* platformData, HWND* hwnd, UINT* msg, WPARAM* wparam, LPARAM* lparam)
+        {
+            *hwnd = platformData->Hwnd;
+            *msg = platformData->Msg;
+            *wparam = platformData->WParam;
+            *lparam = platformData->LParam;
         }
     } // namespace Win32
 
-    WindowHandle createWindow(WindowDesc desc)
+    Window::Handle createWindow(WindowDesc desc)
     {
         return createWindowWin32(desc, nullptr, WS_OVERLAPPEDWINDOW);
     }
 
-    void destroyWindow(WindowHandle window)
+    void destroyWindow(Window::Handle window)
     {
-        DestroyWindow(ActiveWindows[window.Value].WindowHandle);
-        ActiveWindows[window.Value] = {};
+        DestroyWindow(ActiveWindows[Window::toValue(window)].WindowHandle);
+        ActiveWindows[Window::toValue(window)] = {};
     }
 
     void consumeMessageQueue(void (*consumerFunc)(void *data, PlatformMessage message), void *data)
@@ -405,6 +452,11 @@ namespace IB
         return InterlockedCompareExchangePointerNoFence(atomic, exchange, compare);
     }
 
+    void *atomicExchange(void *volatile *atomic, void *exchange)
+    {
+        return InterlockedExchangePointerNoFence(atomic, exchange);
+    }
+
     uint64_t atomicOr(uint64_t volatile *atomic, uint64_t orValue)
     {
         return InterlockedOr64NoFence(reinterpret_cast<int64_t volatile*>(atomic), orValue);
@@ -477,10 +529,16 @@ namespace IB
         IB_ASSERT(result, "Failed to set our event!");
     }
 
-    void waitOnThreadEvent(ThreadEvent threadEvent)
+    void waitOnThreadEvent(ThreadEvent threadEvent, uint32_t waitInMilliseconds)
     {
-        DWORD result = WaitForSingleObject(reinterpret_cast<HANDLE>(threadEvent.Value), INFINITE);
+        DWORD result = WaitForSingleObject(reinterpret_cast<HANDLE>(threadEvent.Value), waitInMilliseconds);
         IB_ASSERT(result != WAIT_FAILED, "Failed to wait on our event!");
+    }
+
+    void resetThreadEvent(ThreadEvent threadEvent)
+    {
+        BOOL result = ResetEvent(reinterpret_cast<HANDLE>(threadEvent.Value));
+        IB_ASSERT(result, "Failed to reset our event!");
     }
 
     void threadStoreStoreFence()
@@ -522,7 +580,7 @@ namespace IB
         DebugBreak();
     }
 
-    File openFile(char const *filepath, uint32_t options)
+    File::Handle openFile(char const *filepath, uint32_t options)
     {
         DWORD access = 0;
         if ((options & OpenFileOptions::Read) != 0)
@@ -548,20 +606,20 @@ namespace IB
         HANDLE fileHandle = CreateFile(filepath, access, FILE_SHARE_READ, NULL, open, FILE_ATTRIBUTE_NORMAL, NULL);
         if (fileHandle == INVALID_HANDLE_VALUE)
         {
-            return File{};
+            return File::toHandle(0);
         }
 
-        return File{reinterpret_cast<uintptr_t>(fileHandle)};
+        return File::toHandle(reinterpret_cast<uintptr_t>(fileHandle));
     }
 
-    void closeFile(File file)
+    void closeFile(File::Handle file)
     {
-        CloseHandle(reinterpret_cast<HANDLE>(file.Value));
+        CloseHandle(reinterpret_cast<HANDLE>(File::toValue(file)));
     }
 
-    void *mapFile(File file)
+    void *mapFile(File::Handle file)
     {
-        HANDLE fileHandle = reinterpret_cast<HANDLE>(file.Value);
+        HANDLE fileHandle = reinterpret_cast<HANDLE>(File::toValue(file));
         HANDLE fileMapping = CreateFileMapping(fileHandle, NULL, PAGE_READONLY, 0, 0, NULL);
         void *map = MapViewOfFile(fileMapping, FILE_MAP_READ, 0, 0, 0);
 
@@ -578,11 +636,11 @@ namespace IB
         return map;
     }
 
-    void unmapFile(File file)
+    void unmapFile(File::Handle file)
     {
         for (uint32_t i = 0; i < MaxFileMappingCount; i++)
         {
-            if (volatileLoad(&ActiveFileMappings[i].FileHandle) == reinterpret_cast<HANDLE>(file.Value))
+            if (volatileLoad(&ActiveFileMappings[i].FileHandle) == reinterpret_cast<HANDLE>(File::toValue(file)))
             {
                 void *mapping = ActiveFileMappings[i].Mapping;
                 HANDLE handle = ActiveFileMappings[i].MapHandle;
@@ -598,9 +656,9 @@ namespace IB
         }
     }
 
-    void writeToFile(File file, void const *data, size_t size, uint32_t offset)
+    void writeToFile(File::Handle file, void const *data, size_t size, uint32_t offset)
     {
-        HANDLE fileHandle = reinterpret_cast<HANDLE>(file.Value);
+        HANDLE fileHandle = reinterpret_cast<HANDLE>(File::toValue(file));
 
         SetFilePointer(fileHandle, offset, NULL, FILE_BEGIN);
 
@@ -611,9 +669,9 @@ namespace IB
         SetFilePointer(fileHandle, 0, NULL, FILE_BEGIN);
     }
 
-    void appendToFile(File file, void const *data, size_t size)
+    void appendToFile(File::Handle file, void const *data, size_t size)
     {
-        HANDLE fileHandle = reinterpret_cast<HANDLE>(file.Value);
+        HANDLE fileHandle = reinterpret_cast<HANDLE>(File::toValue(file));
 
         SetFilePointer(fileHandle, 0, NULL, FILE_END);
         DWORD bytesWritten;
@@ -623,9 +681,9 @@ namespace IB
         SetFilePointer(fileHandle, 0, NULL, FILE_BEGIN);
     }
 
-    size_t fileSize(File file)
+    size_t fileSize(File::Handle file)
     {
-        HANDLE fileHandle = reinterpret_cast<HANDLE>(file.Value);
+        HANDLE fileHandle = reinterpret_cast<HANDLE>(File::toValue(file));
 
         DWORD high;
         DWORD low;
@@ -647,32 +705,44 @@ namespace IB
     {
         SetCurrentDirectory(path);
     }
-} // namespace IB
 
-// Bridge
-extern "C"
-{
-    IB_API void *IB_createWindow(void *parentWindowHandle, const char *name, int width, int height)
+    bool iterateDirectory(DirectoryIterator* iterator, FileInfo* fileInfo)
     {
-        IB::WindowDesc desc = {};
-        desc.Name = name;
-        desc.Width = width;
-        desc.Height = height;
-        IB::WindowHandle handle = createWindowWin32(desc, reinterpret_cast<HWND>(parentWindowHandle), DS_CONTROL | WS_CHILD);
-        return ActiveWindows[handle.Value].WindowHandle;
-    }
+        bool isDone = false;
 
-    IB_API void IB_destroyWindow(void *windowHandle)
-    {
-        DestroyWindow(reinterpret_cast<HWND>(windowHandle));
-
-        for (uint32_t i = 0; i < MaxActiveWindows; i++)
+        WIN32_FIND_DATA findData;
+        if (iterator->State == 0)
         {
-            if (ActiveWindows[i].WindowHandle == windowHandle)
+            HANDLE fileIterator = FindFirstFile(iterator->Path, &findData);
+            iterator->State = reinterpret_cast<uintptr_t>(fileIterator);
+            if (fileIterator == INVALID_HANDLE_VALUE)
             {
-                ActiveWindows[i] = {};
-                break;
+                isDone = true;
             }
         }
+        else
+        {
+            if (FindNextFile(reinterpret_cast<HANDLE>(iterator->State), &findData) == FALSE)
+            {
+                FindClose(reinterpret_cast<HANDLE>(iterator->State));
+                isDone = true;
+            }
+        }
+
+        // Ignore our recursive directories.
+        while(strcmp(findData.cFileName, ".") == 0 || strcmp(findData.cFileName, "..") == 0)
+        {
+            if (FindNextFile(reinterpret_cast<HANDLE>(iterator->State), &findData) == FALSE)
+            {
+                FindClose(reinterpret_cast<HANDLE>(iterator->State));
+                isDone = true;
+            }
+        }
+
+        static_assert(MaxFilePath == MAX_PATH, "Maximum path values don't match.");
+        memcpy(fileInfo->Path, findData.cFileName, MAX_PATH);
+        fileInfo->IsDirectory = (findData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
+        return !isDone;
     }
-}
+
+} // namespace IB
