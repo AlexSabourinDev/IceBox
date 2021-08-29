@@ -147,28 +147,52 @@ namespace IB
             ImGizmo::newFrame(CameraHandle);
 
             static bool showEditorInspector = false;
+
+            bool openSavePopup = false;
             if (ImGui::BeginMainMenuBar())
             {
                 if (ImGui::BeginMenu("File"))
                 {
-                    if (*state->CellResource != InvalidResource)
+                    if(ImGui::MenuItem("Save", "CTRL+S", false, *state->CellResource != InvalidResource))
                     {
-                        if (ImGui::Button("Save"))
-                        {
-                            wait(Asset::saveResourceAsync(*state->CellResource));
-                        }
+                        openSavePopup = true;
                     }
                     ImGui::EndMenu();
                 }
+
                 if (ImGui::BeginMenu("View"))
                 {
-                    if (ImGui::Button("Toggle Editor Inspector"))
-                    {
-                        showEditorInspector = !showEditorInspector;
-                    }
+                    ImGui::MenuItem("Toggle Editor Inspector", nullptr, &showEditorInspector);
                     ImGui::EndMenu();
                 }
+
                 ImGui::EndMainMenuBar();
+            }
+
+            // Only allow popup saving when we're not in the modal dialog
+            if (!ImGui::IsPopupOpen("Save?"))
+            {
+                bool const saveShortcut = ImGui::IsKeyPressed('S', false) && (ImGui::GetIO().KeyMods & ImGuiKeyModFlags_Ctrl) != 0;
+                if (openSavePopup || saveShortcut)
+                {
+                    ImGui::OpenPopup("Save?");
+                }
+            }
+
+            if (ImGui::BeginPopupModal("Save?"))
+            {
+                if (ImGui::Button("Yes", ImVec2(120, 0)))
+                {
+                    wait(Asset::saveResourceAsync(*state->CellResource));
+                    ImGui::CloseCurrentPopup();
+                }
+
+                ImGui::SameLine();
+                if (ImGui::Button("No", ImVec2(120, 0)))
+                {
+                    ImGui::CloseCurrentPopup();
+                }
+                ImGui::EndPopup();
             }
 
             if (ImGui::Begin("Asset Browser"))

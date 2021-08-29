@@ -141,6 +141,8 @@ namespace
         VkDeviceSize Offset = 0;
         uint32_t Id = UINT32_MAX;
         uint32_t NextIndex = UINT32_MAX;
+        uint32_t ParentIndex = UINT32_MAX;
+        uint32_t SiblingIndex = UINT32_MAX;
         bool Allocated = false;
     };
 
@@ -347,29 +349,30 @@ namespace
         }
 
         // Couldn't find a block the right size, create one from our closest block
-        MemoryBlock *smallestBlock = NULL;
+        uint32_t smalledBlockIndex = UINT32_MAX;
         for (uint32_t iter = memoryPool->HeadIndex; iter != UINT32_MAX; iter = allocator->BlockPool[iter].NextIndex)
         {
             MemoryBlock *block = &allocator->BlockPool[iter];
 
             if (!block->Allocated && block->Size > allocationSize)
             {
-                if (smallestBlock == NULL || block->Size < smallestBlock->Size)
+                if (smalledBlockIndex == UINT32_MAX || block->Size < allocator->BlockPool[smalledBlockIndex].Size)
                 {
-                    smallestBlock = block;
+                    smalledBlockIndex = iter;
                 }
             }
         }
 
-        MemoryBlock *iter = smallestBlock;
-        if (iter == NULL)
+        uint32_t iterIndex = smalledBlockIndex;
+        if (iterIndex == UINT32_MAX)
         {
             IB_ASSERT(false, "Failed to allocate a block.");
             return Allocation{};
         }
 
-        while (iter->Size > allocationSize && iter->Size / 2 > allocationSize)
+        while (allocator->BlockPool[iterIndex].Size > allocationSize)
         {
+            MemoryBlock* iter = &allocator->BlockPool[iterIndex];
             VkDeviceSize newBlockSize = iter->Size / 2;
 
             iter->Allocated = true;
@@ -396,83 +399,84 @@ namespace
             ++memoryPool->NextId;
 
             left->NextIndex = rightIndex;
+            left->ParentIndex = iterIndex;
+            left->SiblingIndex = rightIndex;
+            IB_ASSERT(allocator->BlockPool[left->NextIndex].Size <= left->Size, "Our left sibling should always point to an equal or smaller block.");
+            IB_ASSERT(left->NextIndex != UINT32_MAX, "Our left sibling should never point to the terminator.");
+
             right->NextIndex = iter->NextIndex;
+            right->ParentIndex = iterIndex;
+            right->SiblingIndex = leftIndex;
+            IB_ASSERT(right->NextIndex == UINT32_MAX || allocator->BlockPool[right->NextIndex].Size != right->Size, "Our right sibling should never point to it's own sibling.");
+
             iter->NextIndex = leftIndex;
 
-            iter = left;
+            iterIndex = leftIndex;
         }
 
-        iter->Allocated = true;
+        MemoryBlock* allocationBlock = &allocator->BlockPool[iterIndex];
+        allocationBlock->Allocated = true;
 
         Allocation allocation = {};
         allocation.Memory = memoryPool->Memory;
-        allocation.Offset = iter->Offset;
-        allocation.Id = iter->Id;
+        allocation.Offset = allocationBlock->Offset;
+        allocation.Id = allocationBlock->Id;
         allocation.PoolIndex = foundPoolIndex;
         return allocation;
     }
 
-    void freeMemoryBlock(VulkanAllocator *allocator, MemoryPool *memoryPool, uint32_t blockId)
+    void freeMemoryBlock(VulkanAllocator *allocator, MemoryPool *memoryPool, uint32_t currentBlockIndex)
     {
-        uint32_t prevIters[2] = { UINT32_MAX, UINT32_MAX };
+        MemoryBlock* currentBlock = &allocator->BlockPool[currentBlockIndex];
 
-        for (uint32_t iter = memoryPool->HeadIndex; iter != UINT32_MAX; iter = allocator->BlockPool[iter].NextIndex)
+        currentBlock->Allocated = false;
+        if (currentBlock->SiblingIndex != UINT32_MAX)
         {
-            MemoryBlock *currentBlock = &allocator->BlockPool[iter];
-            if (currentBlock->Id == blockId)
+            MemoryBlock *siblingBlock = &allocator->BlockPool[currentBlock->SiblingIndex];
+            IB_ASSERT(siblingBlock->Size == currentBlock->Size, "Sibling is not the right size!");
+
+            if (!siblingBlock->Allocated)
             {
-                currentBlock->Allocated = false;
+                allocator->FreeBlocks[allocator->FreeBlockCount] = currentBlockIndex;
+                allocator->FreeBlocks[allocator->FreeBlockCount + 1] = currentBlock->SiblingIndex;
+                allocator->FreeBlockCount += 2;
 
-                // We can't have a sibling to merge if there was never a previous iterator. This is because
-                // the first previous iterator would be the root block that has no siblings
-                if (prevIters[0] != UINT32_MAX)
+                IB_ASSERT(currentBlock->ParentIndex != UINT32_MAX, "Blocks with siblings should have parents");
+
+                MemoryBlock *parentBlock = &allocator->BlockPool[currentBlock->ParentIndex];
+                IB_ASSERT(parentBlock->Size == currentBlock->Size * 2, "Parent block is incorrect!");
+
+                // The rightmost block has to move it's next index to our parent
+                if (currentBlock->Offset > siblingBlock->Offset)
                 {
-                    MemoryBlock *previousBlock = &allocator->BlockPool[prevIters[0]];
-                    // Previous iterator is my size, it's my sibling. If it's not allocated, merge it
-                    if (previousBlock->Size == currentBlock->Size)
-                    {
-                        if (!previousBlock->Allocated)
-                        {
-                            allocator->FreeBlocks[allocator->FreeBlockCount] = iter;
-                            allocator->FreeBlocks[allocator->FreeBlockCount + 1] = prevIters[0];
-                            allocator->FreeBlockCount += 2;
-
-                            MemoryBlock *parentBlock = &allocator->BlockPool[prevIters[1]];
-                            parentBlock->NextIndex = currentBlock->NextIndex;
-                            // Make sure to merge upwards
-                            freeMemoryBlock(allocator, memoryPool, parentBlock->Id);
-                        }
-                    }
-                    // Since we just checked to see if the previous iterator was our sibling and it wasnt
-                    // we know that if we have a next iterator, it's our sibling
-                    else if (currentBlock->NextIndex != UINT32_MAX)
-                    {
-                        MemoryBlock *nextBlock = &allocator->BlockPool[currentBlock->NextIndex];
-                        if (!nextBlock->Allocated)
-                        {
-                            allocator->FreeBlocks[allocator->FreeBlockCount] = currentBlock->NextIndex;
-                            allocator->FreeBlocks[allocator->FreeBlockCount + 1] = iter;
-                            allocator->FreeBlockCount += 2;
-
-                            MemoryBlock *parentBlock = &allocator->BlockPool[prevIters[0]];
-                            parentBlock->NextIndex = nextBlock->NextIndex;
-                            // Make sure to merge upwards
-                            freeMemoryBlock(allocator, memoryPool, parentBlock->Id);
-                        }
-                    }
+                    parentBlock->NextIndex = currentBlock->NextIndex;
                 }
-                break;
-            }
+                else
+                {
+                    parentBlock->NextIndex = siblingBlock->NextIndex;
+                }
 
-            prevIters[1] = prevIters[0];
-            prevIters[0] = iter;
+                // Make sure to merge upwards
+                freeMemoryBlock(allocator, memoryPool, currentBlock->ParentIndex);
+            }
         }
     }
 
     void freeDeviceMemory(VulkanAllocator *allocator, Allocation allocation)
     {
         MemoryPool *memoryPool = &allocator->MemoryPools[allocation.PoolIndex];
-        freeMemoryBlock(allocator, memoryPool, allocation.Id);
+
+        for (uint32_t iter = memoryPool->HeadIndex; iter != UINT32_MAX; iter = allocator->BlockPool[iter].NextIndex)
+        {
+            MemoryBlock *currentBlock = &allocator->BlockPool[iter];
+            if (currentBlock->Id == allocation.Id)
+            {
+                freeMemoryBlock(allocator, memoryPool, iter);
+                return;
+            }
+        }
+
+        IB_ASSERT(false, "Failed to find our block!");
     }
 
     // Main Renderer
