@@ -23,9 +23,6 @@ jobs:
         uses: microsoft/setup-msbuild@v1.0.2
       - name: Set Path
         run: cd $GITHUB_WORKSPACE
-      # Assure that our Nuget packages are present
-      - name: Nuget Restore
-        run: msbuild -t:restore Samples/SampleWPF/SampleWPF.csproj
       # Build our engine lib to make sure it's present for our samples.
       - name: Build IBEngine Debug|x64
         run: msbuild VisualStudio\IceBox.sln -t:IBEngine -p:Configuration=Debug -p:Platform="x64" -m
@@ -38,10 +35,6 @@ jobs:
         run: msbuild VisualStudio\IceBox.sln -t:Samples\SampleMemory -p:Configuration=Debug -p:Platform="x64" -m
       - name: Build Sample Memory Release|x64
         run: msbuild VisualStudio\IceBox.sln -t:Samples\SampleMemory -p:Configuration=Release -p:Platform="x64" -m
-      - name: Build Sample WPF Debug|x64
-        run: msbuild VisualStudio\IceBox.sln -t:Samples\SampleWPF -p:Configuration=Debug -p:Platform="x64" -m
-      - name: Build Sample WPF Release|x64
-        run: msbuild VisualStudio\IceBox.sln -t:Samples\SampleWPF -p:Configuration=Release -p:Platform="x64" -m
       - name: Build Sample Graphics Debug|x64
         run: msbuild VisualStudio\IceBox.sln -t:Samples\SampleGraphics -p:Configuration=Debug -p:Platform="x64" -m
       - name: Build Sample Graphics Release|x64
@@ -50,3 +43,15 @@ jobs:
         run: msbuild VisualStudio\IceBox.sln -t:Samples\SampleThreading -p:Configuration=Debug -p:Platform="x64" -m
       - name: Build Sample Threading Release|x64
         run: msbuild VisualStudio\IceBox.sln -t:Samples\SampleThreading -p:Configuration=Release -p:Platform="x64" -m
+      - name: Build Sample Asset Loading Debug|x64
+        run: msbuild VisualStudio\IceBox.sln -t:Samples\SampleAssetLoading -p:Configuration=Debug -p:Platform="x64" -m
+      - name: Build Sample Asset Loading Release|x64
+        run: msbuild VisualStudio\IceBox.sln -t:Samples\SampleAssetLoading -p:Configuration=Release -p:Platform="x64" -m
+      - name: Build Sample Editor UI Debug|x64
+        run: msbuild VisualStudio\IceBox.sln -t:Samples\SampleEditorUI -p:Configuration=Debug -p:Platform="x64" -m
+      - name: Build Sample Editor UI Release|x64
+        run: msbuild VisualStudio\IceBox.sln -t:Samples\SampleEditorUI -p:Configuration=Release -p:Platform="x64" -m
+      - name: Build Sample Game Object Debug|x64
+        run: msbuild VisualStudio\IceBox.sln -t:Samples\SampleGameObject -p:Configuration=Debug -p:Platform="x64" -m
+      - name: Build Sample Game Object Release|x64
+        run: msbuild VisualStudio\IceBox.sln -t:Samples\SampleGameObject -p:Configuration=Release -p:Platform="x64" -m
