@@ -166,8 +166,8 @@ namespace IB
 
             // Writes:
             // Backend Renderer state
-            continueJob([viewDescriptor]() {
-                drawCellView(*viewDescriptor);
+            continueJob([viewDescriptor, renderFrameAllocator]() {
+                drawCellView(renderFrameAllocator, *viewDescriptor);
 
                 uint32_t previousPendingFrameCount = volatileLoad(&QueuedFrameCount) - CommitedFrameCount;
                 CommitedFrameCount++;

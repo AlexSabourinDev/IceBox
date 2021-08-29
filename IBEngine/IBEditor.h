@@ -37,9 +37,9 @@ namespace IB
 
     namespace Editor
     {
-        using AssetEditorCallback = void(Asset::Handle asset);
+        using AssetEditorCallback = void(Asset::Handle asset, void* parentEditorData);
         IB_API void addAssetEditor(Asset::FourCC type, AssetEditorCallback* frame);
-        IB_API void drawAssetEditor(Asset::FourCC type, Asset::Handle handle);
+        IB_API void drawAssetEditor(Asset::FourCC type, Asset::Handle handle, void* parentEditorData = nullptr);
 
         struct FrameState
         {
@@ -49,6 +49,8 @@ namespace IB
         IB_API void kill();
         IB_API void frame(FrameState* state);
         IB_API Entity::Handle getCamera();
+
+        IB_API bool isSelected(Entity::Handle entity);
     }
 
     namespace ImGizmo

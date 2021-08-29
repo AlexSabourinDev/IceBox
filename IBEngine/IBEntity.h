@@ -10,6 +10,8 @@ namespace IB
     namespace Asset
     {
         enum FourCC : uint32_t;
+        constexpr FourCC toFourCC(char const (&text)[5]);
+
         enum Handle : uint64_t;
         constexpr Handle toHandle(uint64_t value);
         constexpr uint64_t toValue(Handle handle);
@@ -47,7 +49,9 @@ namespace IB
     IB_API void initEntitySystem();
     IB_API void killEntitySystem();
 
-    IB_API Entity::Handle createEntity();
+    Asset::FourCC const EntityType = Asset::toFourCC("ENTT");
+    IB_API Entity::Handle createEntity(char const* name = "");
+    IB_API void destroyEntity(Entity::Handle entity);
     IB_API void addPropertyToEntity(Entity::Handle entity, Asset::FourCC type, Property::Handle propertyHandle);
     IB_API Property::Handle getPropertyFromEntity(Entity::Handle entity, Asset::FourCC type);
     IB_API char const* getEntityName(Entity::Handle entity);
@@ -65,13 +69,16 @@ namespace IB
     inline Cell::Handle toCellHandle(Asset::Handle asset) { return Cell::toHandle(Asset::toValue(asset)); }
     inline Asset::Handle toAssetHandle(Cell::Handle cell) { return Asset::toHandle(Cell::toValue(cell)); }
 
+    Asset::FourCC const CellType = Asset::toFourCC("CELL");
     IB_API Cell::Handle createCell(Resource::Handle baseCell = Resource::toHandle(0));
     IB_API void addEntityToCell(Cell::Handle cell, Entity::Handle entity);
     IB_API void getEntityList(Cell::Handle cell, Entity::Handle** entities, uint32_t* entityCount);
 
     // Transform API
+    Asset::FourCC const TransformPropertyType = Asset::toFourCC("TFRM");
     IB_API Property::Handle createTransformProperty();
     IB_API Transform const& getLocalTransform(Property::Handle handle);
+    inline Transform const& getWorldTransform(Property::Handle handle) { return getLocalTransform(handle); } // No transform hierarchy yet.
     IB_API void setLocalTransform(Property::Handle handle, Transform const& transform);
 }
 

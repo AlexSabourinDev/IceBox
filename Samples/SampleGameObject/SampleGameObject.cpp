@@ -48,19 +48,19 @@ int main()
     if(createAndSaveCell)
     {
         IB::Cell::Handle cellHandle = IB::createCell();
-        IB::Resource::Handle cellResource = IB::Asset::createResourceThreadSafe("TestCell.cell", IB::Asset::toFourCC("CELL"), IB::toAssetHandle(cellHandle));
+        IB::Resource::Handle cellResource = IB::Asset::createResourceThreadSafe("TestCell.cell", IB::CellType, IB::toAssetHandle(cellHandle));
 
         IB::MaterialAsset::Desc materialAsset;
         materialAsset.AlbedoPath = "bubbles.tex";
         materialAsset.AlbedoTint = IB::toRGBA(1.0f, 1.0f, 1.0f, 1.0f);
         IB::MaterialAsset::Handle materialHandle = IB::createMaterialAsset(materialAsset);
-        IB::Resource::Handle materialResource = IB::Asset::createResourceThreadSafe("Test.mat", IB::Asset::toFourCC("MATE"), IB::toAssetHandle(materialHandle));
+        IB::Resource::Handle materialResource = IB::Asset::createResourceThreadSafe("Test.mat", IB::MaterialType, IB::toAssetHandle(materialHandle));
 
         {
             IB::Entity::Handle entityHandle = IB::createEntity();
             IB::setEntityName(entityHandle, "EntityName01");
             IB::Property::Handle rendererProperty = IB::createRendererProperty("Box.msh", "Test.mat");
-            IB::addPropertyToEntity(entityHandle, IB::Asset::toFourCC("RNDR"), rendererProperty);
+            IB::addPropertyToEntity(entityHandle, IB::RendererPropertyType, rendererProperty);
             IB::addEntityToCell(cellHandle, entityHandle);
         }
 
@@ -71,13 +71,13 @@ int main()
         waitOnJob(saveJob);
 
         IB::Cell::Handle derivedCellHandle = IB::createCell(cellResource);
-        IB::Resource::Handle derivedCellResource = IB::Asset::createResourceThreadSafe("TestDerivedCell.cell", IB::Asset::toFourCC("CELL"), IB::toAssetHandle(derivedCellHandle));
+        IB::Resource::Handle derivedCellResource = IB::Asset::createResourceThreadSafe("TestDerivedCell.cell", IB::CellType, IB::toAssetHandle(derivedCellHandle));
 
         {
             IB::Entity::Handle entityHandle = IB::createEntity();
             IB::setEntityName(entityHandle, "EntityName02");
             IB::Property::Handle rendererProperty = IB::createRendererProperty("Box.msh", "Test.mat");
-            IB::addPropertyToEntity(entityHandle, IB::Asset::toFourCC("RNDR"), rendererProperty);
+            IB::addPropertyToEntity(entityHandle, IB::RendererPropertyType, rendererProperty);
             IB::addEntityToCell(derivedCellHandle, entityHandle);
         }
 
@@ -105,7 +105,7 @@ int main()
     }
 
     IB::Resource::Handle cellResource;
-    IB::Job::Handle loadJob = IB::Asset::loadResourceAsync("TestDerivedCell.cell", { IB::Asset::toFourCC("CELL") }, &cellResource);
+    IB::Job::Handle loadJob = IB::Asset::loadResourceAsync("TestDerivedCell.cell", { IB::CellType }, &cellResource);
     waitOnJob(loadJob);
     IB::Cell::Handle cellHandle = IB::toCellHandle(IB::Asset::getAssetFromResource(cellResource));
 
@@ -123,13 +123,13 @@ int main()
 
         IB::GatherCellViewDesc gatherDesc
         {
-            allocator,
-            InvalidEntity,
+            &allocator,
+            IB::InvalidEntity,
             cellHandle,
             nullptr,
             nullptr
         };
-        IB::drawCellView(IB::gatherCellView(gatherDesc));
+        IB::drawCellView(&allocator, IB::gatherCellView(gatherDesc));
     }
 
     IB::Asset::releaseResourceAsync(cellResource);

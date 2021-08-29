@@ -146,10 +146,16 @@ namespace IB
     template<typename T, typename... TArgs>
     T *allocate(StackAllocator* allocator, TArgs&&... args)
     {
-        static_assert(std::is_trivially_destructible_v<T>, "Object must be trivially destructible. Any destruction logic will be ignored in this allocator.");
         void* memory = memoryAllocate(allocator, sizeof(T), alignof(T));
-        T* object = new (memory) T;
+        T* object = new (memory) T{ std::forward<TArgs>(args)... };
         return object;
+    }
+
+    template <typename T>
+    void deallocate(StackAllocator*, T const*object)
+    {
+        // Stack allocator deallocation is purely destruction.
+        object->~T();
     }
 
     template<typename T, typename... TArgs>
@@ -162,7 +168,7 @@ namespace IB
             T *arrayMemory = reinterpret_cast<T *>(memory);
             for (uint32_t i = 0; i < count; i++)
             {
-                new (arrayMemory + i) T(std::forward<TArgs>(args)...);
+                new (arrayMemory + i) T{ std::forward<TArgs>(args)... };
             }
 
             return arrayMemory;
@@ -170,6 +176,19 @@ namespace IB
         else
         {
             return nullptr;
+        }
+    }
+
+    template <typename T>
+    void deallocateArray(StackAllocator*, T const *arrayMemory, uint32_t count)
+    {
+        if (count > 0)
+        {
+            // Stack allocator deallocation is purely destruction.
+            for (uint32_t i = 0; i < count; i++)
+            {
+                arrayMemory[i].~T();
+            }
         }
     }
 } // namespace IB

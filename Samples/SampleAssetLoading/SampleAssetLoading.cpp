@@ -73,7 +73,7 @@ int main()
     IB::initJobSystem();
     IB::initRendererFrontend({ window });
     IB::initEntitySystem();
-    IB::Asset::addStreamer(IB::Asset::toFourCC("TFRM"), &TransformPropertyStreamer);
+    IB::Asset::addStreamer(IB::TransformPropertyType, &TransformPropertyStreamer);
 
     auto waitOnJob = [](IB::Job::Handle job)
     {
@@ -93,8 +93,8 @@ int main()
         IB::Resource::Handle meshAsset1;
         IB::Resource::Handle meshAsset2;
 
-        IB::Asset::loadResourceAsync("Box.msh", { IB::Asset::toFourCC("MESH") }, &meshAsset1);
-        IB::Job::Handle meshJob = IB::Asset::loadResourceAsync("Box.msh", { IB::Asset::toFourCC("MESH") }, &meshAsset2);
+        IB::Asset::loadResourceAsync("Box.msh", { IB::MeshType }, &meshAsset1);
+        IB::Job::Handle meshJob = IB::Asset::loadResourceAsync("Box.msh", { IB::MeshType }, &meshAsset2);
         waitOnJob(meshJob);
 
         IB_ASSERT(meshAsset1 == meshAsset2, "Loaded the same asset.");
@@ -114,19 +114,19 @@ int main()
     // Create our entity asset
     IB::Entity::Handle entityAsset = IB::createEntity();
     {
-        IB::addPropertyToEntity(entityAsset, IB::Asset::toFourCC("RNDR"), rendererPropertyAsset);
-        IB::addPropertyToEntity(entityAsset, IB::Asset::toFourCC("TFRM"), transformPropertyAsset);
+        IB::addPropertyToEntity(entityAsset, IB::RendererPropertyType, rendererPropertyAsset);
+        IB::addPropertyToEntity(entityAsset, IB::TransformPropertyType, transformPropertyAsset);
     }
 
     // Save our resource
     {
-        IB::Resource::Handle entityResource = IB::Asset::createResourceThreadSafe("TestEntity.entt", IB::Asset::toFourCC("ENTT"), IB::toAssetHandle(entityAsset));
+        IB::Resource::Handle entityResource = IB::Asset::createResourceThreadSafe("TestEntity.entt", IB::EntityType, IB::toAssetHandle(entityAsset));
         IB::Job::Handle saveJob = IB::Asset::saveResourceAsync(entityResource);
 
         waitOnJob(saveJob);
 
         IB::Resource::Handle savedEntityResource;
-        IB::Job::Handle entityJob = IB::Asset::loadResourceAsync("TestEntity.entt", { IB::Asset::toFourCC("ENTT") }, &savedEntityResource);
+        IB::Job::Handle entityJob = IB::Asset::loadResourceAsync("TestEntity.entt", { EntityType }, &savedEntityResource);
         waitOnJob(entityJob);
         IB_ASSERT(savedEntityResource == entityResource, "Failed to load the same asset!");
 
@@ -137,7 +137,7 @@ int main()
 
     {
         IB::Resource::Handle entityResource;
-        IB::Job::Handle entityJob = IB::Asset::loadResourceAsync("TestEntity.entt", { IB::Asset::toFourCC("ENTT") }, &entityResource);
+        IB::Job::Handle entityJob = IB::Asset::loadResourceAsync("TestEntity.entt", { IB::EntityType }, &entityResource);
         waitOnJob(entityJob);
         entityJob = IB::Asset::releaseResourceAsync(entityResource);
         waitOnJob(entityJob);

@@ -11,6 +11,7 @@
 
 #include <imgui/imgui.h>
 
+
 namespace
 {
     constexpr uint32_t InitPassesJobQueueIndex = 1;
@@ -133,7 +134,7 @@ namespace
                 RuntimeMaterial& materialData = *reinterpret_cast<RuntimeMaterial*>(IB::Asset::toValue(context->LoadingAsset));
                 fromBinary(&context->Stream, &materialData.Asset, context->SaveVersion);
 
-                IB::Job::Handle textureJob = IB::Asset::loadResourceAsync(materialData.Asset.AlbedoPath, { IB::Asset::toFourCC("IMAG") }, &materialData.AlbedoTexture);
+                IB::Job::Handle textureJob = IB::Asset::loadResourceAsync(materialData.Asset.AlbedoPath, { IB::ImageType }, &materialData.AlbedoTexture);
                 IB::Job::Handle materialJob = IB::continueJob([materialPtr = &materialData, contextData = &context->Data]() {
                     IB::Resource::Handle textureResource = materialPtr->AlbedoTexture;
 
@@ -196,36 +197,297 @@ namespace
     };
     ShaderAssetStreamer ShaderStreamer;
 
-    struct RendererProperty
+    constexpr uint32_t FormatStride[IB::ImageFormat::Count] =
     {
-        IB::Resource::Handle MeshResource;
-        IB::Resource::Handle MaterialResource;
-    };
-    RendererProperty constexpr EmptyRendererProperty = {};
+        4 };
 
-    RendererProperty* toRendererProperty(IB::Asset::Handle assetHandle) { return reinterpret_cast<RendererProperty *>(IB::Asset::toValue(assetHandle)); }
-    RendererProperty* toRendererProperty(IB::Property::Handle propertyHandle) { return reinterpret_cast<RendererProperty *>(IB::Property::toValue(propertyHandle)); }
+} // namespace
 
-    IB::ThreadSafePool<RendererProperty> RendererProperties;
-
-    class RendererPropertyAssetStreamer : public IB::Asset::IStreamer
+// Camera property
+namespace IB
+{
+    namespace CameraProperty
     {
-    public:
-        IB::Asset::Handle create() override
+        namespace
         {
-            RendererProperty &renderer = RendererProperties.add();
-            return IB::Asset::toHandle(reinterpret_cast<uint64_t>(&renderer));
-        }
-
-        IB::Asset::LoadContinuation loadAsync(IB::Asset::LoadContext *context) override
-        {
-            enum
+            struct Data
             {
-                LoadMesh = 0,
-                Complete
+                IB::Camera Camera;
+                IB::Mat4x4 Projection = IB::Mat4x4::identity();
+                IB::Mat4x4 InvProjection = IB::Mat4x4::identity();
+            };
+        }
+    }
+
+    namespace
+    {
+        void UpdateCameraProjection(IB::CameraProperty::Data* cameraProperty)
+        {
+            float fov = 1.0f / tanf(cameraProperty->Camera.FOV * IB::DegToRad * 0.5f);
+            const float f = cameraProperty->Camera.Far;
+            const float n = cameraProperty->Camera.Near;
+            const float a = cameraProperty->Camera.Aspect;
+            cameraProperty->Projection =
+                IB::Mat4x4{
+                    {{fov / a, 0.0f, 0.0f, 0.0f},
+                     {0.0f, -fov, 0.0f, 0.0f},
+                     {0.0f, 0.0f, f / (f - n), -n * f / (f - n)},
+                     {0.0f, 0.0f, 1.0, 0.0f}},
             };
 
-            if (context->State == LoadMesh)
+            cameraProperty->InvProjection =
+                IB::Mat4x4{
+                    {{a / fov, 0.0f, 0.0f, 0.0f},
+                     {0.0f, -1.0f / fov, 0.0f, 0.0f},
+                     {0.0f, 0.0f, 0.0f, 1.0f},
+                     {0.0f, 0.0f, (f - n) / (-n * f), f / (n * f)}},
+            };
+        }
+
+        IB::CameraProperty::Data* toCameraProperty(IB::CameraProperty::Handle handle) { return reinterpret_cast<IB::CameraProperty::Data*>(IB::CameraProperty::toValue(handle)); }
+        IB::CameraProperty::Data* toCameraProperty(IB::Asset::Handle asset) { return reinterpret_cast<IB::CameraProperty::Data*>(IB::Asset::toValue(asset)); }
+
+        IB::ThreadSafePool<IB::CameraProperty::Data> CameraProperties;
+        class CameraPropertyStreamer : public IB::Asset::IStreamer
+        {
+        public:
+            IB::Asset::Handle create() override
+            {
+                IB::CameraProperty::Data& camera = CameraProperties.add();
+                return IB::Asset::toHandle(reinterpret_cast<uint64_t>(&camera));
+            }
+
+            IB::Asset::LoadContinuation loadAsync(IB::Asset::LoadContext *context) override
+            {
+                IB::Camera baseCamera = {};
+                if (context->BaseAsset != IB::InvalidAsset)
+                {
+                    baseCamera = toCameraProperty(context->BaseAsset)->Camera;
+                }
+
+                IB::CameraProperty::Data& cameraProperty = *toCameraProperty(context->LoadingAsset);
+                IB::Serialization::Delta::fromBinary(&context->Stream, &cameraProperty.Camera, baseCamera);
+
+                UpdateCameraProjection(&cameraProperty);
+
+                return IB::Asset::complete(IB::Asset::toHandle(reinterpret_cast<uint64_t>(&cameraProperty)));
+            }
+
+            void saveThreadSafe(IB::Asset::SaveContext *context) override
+            {
+                IB::Camera baseCamera = {};
+                if (context->BaseAsset != IB::InvalidAsset)
+                {
+                    baseCamera = toCameraProperty(context->BaseAsset)->Camera;
+                }
+
+                IB::CameraProperty::Data& cameraProperty = *toCameraProperty(context->Asset);
+                IB::Serialization::Delta::toBinary(context->Stream, cameraProperty.Camera, baseCamera);
+            }
+
+            void unloadThreadSafe(IB::Asset::Handle assetHandle) override
+            {
+                CameraProperties.remove(*toCameraProperty(assetHandle));
+            }
+        };
+
+        CameraPropertyStreamer CameraStreamer;
+    }
+
+    Property::Handle createCameraProperty(Camera camera)
+    {
+        CameraProperty::Data& cameraProperty = CameraProperties.add();
+        cameraProperty.Camera = camera;
+        UpdateCameraProjection(&cameraProperty);
+        return Property::toHandle(reinterpret_cast<uint64_t>(&cameraProperty));
+    }
+
+    Mat4x4 getViewProjection(CameraProperty::Handle cameraHandle, Transform const& worldTransform)
+    {
+        CameraProperty::Data* camera = toCameraProperty(cameraHandle);
+        Mat3x4 viewFromWorld = toInvMatrix(worldTransform);
+        // Swap Y and Z rows since we want Y to be up in camera space
+        // Equivalent to
+        // 1 0 0
+        // 0 0 1 * invWorld
+        // 0 1 0
+        // The order of operations we want is:
+        // worldPos * viewToWorld * YZflip * projection
+        Float4 temp = viewFromWorld[1];
+        viewFromWorld[1] = viewFromWorld[2];
+        viewFromWorld[2] = temp;
+
+        // world->viewZUp->viewYUp->projection
+        return mul(camera->Projection, viewFromWorld);
+    }
+
+    Mat4x4 getInvViewProjection(CameraProperty::Handle cameraHandle, Transform const& worldTransform)
+    {
+        CameraProperty::Data* camera = toCameraProperty(cameraHandle);
+        Mat3x4 worldFromViewZUp = toMatrix(worldTransform);
+        constexpr Mat4x4 viewZUpFromViewYUp =
+        { {
+            {1.0f, 0.0f, 0.0f, 0.0f},
+            {0.0f, 0.0f, 1.0f, 0.0f},
+            {0.0f, 1.0f, 0.0f, 0.0f},
+            {0.0f, 0.0f, 0.0f, 1.0f}
+        } };
+
+        // projection->viewYUp->viewZUp->World
+        return mul(mul(worldFromViewZUp, viewZUpFromViewYUp), camera->InvProjection);
+    }
+
+    namespace Editor
+    {
+        void cameraEditor(Asset::Handle asset, void*)
+        {
+            CameraProperty::Data *cameraProperty = toCameraProperty(asset);
+            if (ImGui::TreeNode("Camera"))
+            {
+                if (ImGui::BeginTable("Inspector Table", 2))
+                {
+                    ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed);
+                    ImGui::TableSetupColumn("Data", ImGuiTableColumnFlags_None);
+
+                    bool changed = false;
+
+                    ImGui::TableNextColumn();
+                    ImGui::Text("FOV");
+
+                    ImGui::TableNextColumn();
+                    ImGui::SetNextItemWidth(-FLT_MIN);
+                    changed |= ImGui::InputFloat("#FOV", &cameraProperty->Camera.FOV);
+
+                    ImGui::TableNextColumn();
+                    ImGui::Text("Near");
+
+                    ImGui::TableNextColumn();
+                    ImGui::SetNextItemWidth(-FLT_MIN);
+                    changed |= ImGui::InputFloat("#Near", &cameraProperty->Camera.Near);
+
+                    ImGui::TableNextColumn();
+                    ImGui::Text("Far");
+
+                    ImGui::TableNextColumn();
+                    ImGui::SetNextItemWidth(-FLT_MIN);
+                    changed |= ImGui::InputFloat("#Far", &cameraProperty->Camera.Far);
+
+                    if (changed)
+                    {
+                        UpdateCameraProjection(cameraProperty);
+                    }
+
+                    ImGui::EndTable();
+                }
+                ImGui::TreePop();
+            }
+        }
+    }
+}
+
+// Renderer property
+namespace IB
+{
+    namespace
+    {
+        struct RendererProperty
+        {
+            IB::Resource::Handle MeshResource;
+            IB::Resource::Handle MaterialResource;
+        };
+        RendererProperty constexpr EmptyRendererProperty = {};
+
+        RendererProperty* toRendererProperty(IB::Asset::Handle assetHandle) { return reinterpret_cast<RendererProperty *>(IB::Asset::toValue(assetHandle)); }
+        RendererProperty* toRendererProperty(IB::Property::Handle propertyHandle) { return reinterpret_cast<RendererProperty *>(IB::Property::toValue(propertyHandle)); }
+
+        IB::ThreadSafePool<RendererProperty> RendererProperties;
+
+        class RendererPropertyAssetStreamer : public IB::Asset::IStreamer
+        {
+        public:
+            IB::Asset::Handle create() override
+            {
+                RendererProperty &renderer = RendererProperties.add();
+                return IB::Asset::toHandle(reinterpret_cast<uint64_t>(&renderer));
+            }
+
+            IB::Asset::LoadContinuation loadAsync(IB::Asset::LoadContext *context) override
+            {
+                enum
+                {
+                    LoadMesh = 0,
+                    Complete
+                };
+
+                if (context->State == LoadMesh)
+                {
+                    RendererProperty const* baseRenderer = &EmptyRendererProperty;
+                    if (context->BaseAsset != IB::InvalidAsset)
+                    {
+                        baseRenderer = toRendererProperty(context->BaseAsset);
+                    }
+
+                    RendererProperty &renderer = *toRendererProperty(context->LoadingAsset);
+
+                    // Unload our current resources if we had existing data.
+                    {
+                        IB::Asset::releaseResourceAsync(renderer.MeshResource);
+                        IB::Asset::releaseResourceAsync(renderer.MaterialResource);
+                    }
+
+                    context->Data = reinterpret_cast<uint64_t>(&renderer);
+
+                    char const *baseMeshPath = IB::Asset::getResourcePath(baseRenderer->MeshResource);
+
+                    char const *meshPath;
+                    IB::Serialization::Delta::fromBinary(&context->Stream, &meshPath, baseMeshPath);
+
+                    char const *baseMaterialPath = IB::Asset::getResourcePath(baseRenderer->MaterialResource);
+
+                    char const *materialPath;
+                    IB::Serialization::Delta::fromBinary(&context->Stream, &materialPath, baseMaterialPath);
+
+                    enum
+                    {
+                        MeshJob = 0,
+                        MaterialJob,
+                        JobCount
+                    };
+                    IB::Job::Handle jobs[JobCount];
+
+                    jobs[MeshJob] = IB::Asset::loadResourceAsync(meshPath, { IB::MeshType },
+                        [](void *data, IB::Resource::Handle resource, IB::Asset::ResourceLoad::State loadState)
+                    {
+                        // Assign our mesh resource even when it's loading
+                        // We want to gracefully handle the resource not being available yet.
+                        if (loadState >= IB::Asset::ResourceLoad::Loading)
+                        {
+                            *reinterpret_cast<IB::Resource::Handle *>(data) = resource;
+                        }
+                    },
+                        &renderer.MeshResource);
+
+                    jobs[MaterialJob] = IB::Asset::loadResourceAsync(materialPath, { IB::MaterialType },
+                        [](void *data, IB::Resource::Handle resource, IB::Asset::ResourceLoad::State loadState)
+                    {
+                        // Assign our mesh resource even when it's loading
+                        // We want to gracefully handle the resource not being available yet.
+                        if (loadState >= IB::Asset::ResourceLoad::Loading)
+                        {
+                            *reinterpret_cast<IB::Resource::Handle *>(data) = resource;
+                        }
+                    },
+                        &renderer.MaterialResource);
+
+                    return IB::Asset::wait(jobs, JobCount, Complete);
+                }
+                else
+                {
+                    return IB::Asset::complete(IB::Asset::toHandle(context->Data));
+                }
+            }
+
+            void saveThreadSafe(IB::Asset::SaveContext *context) override
             {
                 RendererProperty const* baseRenderer = &EmptyRendererProperty;
                 if (context->BaseAsset != IB::InvalidAsset)
@@ -233,104 +495,31 @@ namespace
                     baseRenderer = toRendererProperty(context->BaseAsset);
                 }
 
-                RendererProperty &renderer = *toRendererProperty(context->LoadingAsset);
-
-                // Unload our current resources if we had existing data.
-                {
-                    IB::Asset::releaseResourceAsync(renderer.MeshResource);
-                    IB::Asset::releaseResourceAsync(renderer.MaterialResource);
-                }
-
-                context->Data = reinterpret_cast<uint64_t>(&renderer);
-
+                RendererProperty *renderer = toRendererProperty(context->Asset);
+                char const *meshPath = IB::Asset::getResourcePath(renderer->MeshResource);
                 char const *baseMeshPath = IB::Asset::getResourcePath(baseRenderer->MeshResource);
+                IB::Serialization::Delta::toBinary(context->Stream, meshPath, baseMeshPath);
 
-                char const *meshPath;
-                IB::Serialization::Delta::fromBinary(&context->Stream, &meshPath, baseMeshPath);
-
+                char const *materialPath = IB::Asset::getResourcePath(renderer->MaterialResource);
                 char const *baseMaterialPath = IB::Asset::getResourcePath(baseRenderer->MaterialResource);
-
-                char const *materialPath;
-                IB::Serialization::Delta::fromBinary(&context->Stream, &materialPath, baseMaterialPath);
-
-                enum
-                {
-                    MeshJob = 0,
-                    MaterialJob,
-                    JobCount
-                };
-                IB::Job::Handle jobs[JobCount];
-
-                jobs[MeshJob] = IB::Asset::loadResourceAsync(meshPath, { IB::Asset::toFourCC("MESH") },
-                                                             [](void *data, IB::Resource::Handle resource, IB::Asset::ResourceLoad::State loadState) {
-                                                                 // Assign our mesh resource even when it's loading
-                                                                 // We want to gracefully handle the resource not being available yet.
-                                                                 if (loadState >= IB::Asset::ResourceLoad::Loading)
-                                                                 {
-                                                                     *reinterpret_cast<IB::Resource::Handle *>(data) = resource;
-                                                                 }
-                                                             },
-                                                             &renderer.MeshResource);
-
-                jobs[MaterialJob] = IB::Asset::loadResourceAsync(materialPath, { IB::Asset::toFourCC("MATE") },
-                                                                 [](void *data, IB::Resource::Handle resource, IB::Asset::ResourceLoad::State loadState) {
-                                                                     // Assign our mesh resource even when it's loading
-                                                                     // We want to gracefully handle the resource not being available yet.
-                                                                     if (loadState >= IB::Asset::ResourceLoad::Loading)
-                                                                     {
-                                                                         *reinterpret_cast<IB::Resource::Handle *>(data) = resource;
-                                                                     }
-                                                                 },
-                                                                 &renderer.MaterialResource);
-
-                return IB::Asset::wait(jobs, JobCount, Complete);
+                IB::Serialization::Delta::toBinary(context->Stream, materialPath, baseMaterialPath);
             }
-            else
+
+            void unloadThreadSafe(IB::Asset::Handle asset) override
             {
-                return IB::Asset::complete(IB::Asset::toHandle(context->Data));
+                RendererProperty *renderer = toRendererProperty(asset);
+                IB::Asset::releaseResourceAsync(renderer->MeshResource);
+                IB::Asset::releaseResourceAsync(renderer->MaterialResource);
+                RendererProperties.remove(*renderer);
             }
-        }
+        };
 
-        void saveThreadSafe(IB::Asset::SaveContext *context) override
-        {
-            RendererProperty const* baseRenderer = &EmptyRendererProperty;
-            if (context->BaseAsset != IB::InvalidAsset)
-            {
-                baseRenderer = toRendererProperty(context->BaseAsset);
-            }
+        RendererPropertyAssetStreamer RendererPropertyStreamer;
+    }
 
-            RendererProperty *renderer = toRendererProperty(context->Asset);
-            char const *meshPath = IB::Asset::getResourcePath(renderer->MeshResource);
-            char const *baseMeshPath = IB::Asset::getResourcePath(baseRenderer->MeshResource);
-            IB::Serialization::Delta::toBinary(context->Stream, meshPath, baseMeshPath);
-
-            char const *materialPath = IB::Asset::getResourcePath(renderer->MaterialResource);
-            char const *baseMaterialPath = IB::Asset::getResourcePath(baseRenderer->MaterialResource);
-            IB::Serialization::Delta::toBinary(context->Stream, materialPath, baseMaterialPath);
-        }
-
-        void unloadThreadSafe(IB::Asset::Handle asset) override
-        {
-            RendererProperty *renderer = toRendererProperty(asset);
-            IB::Asset::releaseResourceAsync(renderer->MeshResource);
-            IB::Asset::releaseResourceAsync(renderer->MaterialResource);
-            RendererProperties.remove(*renderer);
-        }
-    };
-
-    RendererPropertyAssetStreamer RendererPropertyStreamer;
-
-    constexpr uint32_t FormatStride[IB::ImageFormat::Count] =
-        {
-            4};
-
-} // namespace
-
-namespace IB
-{
     namespace Editor
     {
-        void rendererEditor(Asset::Handle asset)
+        void rendererEditor(Asset::Handle asset, void*)
         {
             RendererProperty *renderer = toRendererProperty(asset);
             if (ImGui::TreeNode("Renderer"))
@@ -356,18 +545,54 @@ namespace IB
         }
     }
 
+    Property::Handle createRendererProperty(char const *meshPath, char const *materialPath)
+    {
+        RendererProperty &renderer = RendererProperties.add();
+        IB::Asset::loadResourceAsync(meshPath, { IB::MeshType },
+            [](void *data, IB::Resource::Handle resource, IB::Asset::ResourceLoad::State loadState)
+        {
+            // Assign our mesh resource even when it's loading
+            // We want to gracefully handle the resource not being available yet.
+            if (loadState >= IB::Asset::ResourceLoad::Loading)
+            {
+                *reinterpret_cast<IB::Resource::Handle *>(data) = resource;
+            }
+        },
+            &renderer.MeshResource);
+
+        IB::Asset::loadResourceAsync(materialPath, { IB::MaterialType },
+            [](void *data, IB::Resource::Handle resource, IB::Asset::ResourceLoad::State loadState)
+        {
+            // Assign our mesh resource even when it's loading
+            // We want to gracefully handle the resource not being available yet.
+            if (loadState >= IB::Asset::ResourceLoad::Loading)
+            {
+                *reinterpret_cast<IB::Resource::Handle *>(data) = resource;
+            }
+        },
+            &renderer.MaterialResource);
+
+        return Property::toHandle(reinterpret_cast<uint64_t>(&renderer));
+    }
+
+}
+
+namespace IB
+{
+
     void initRendererFrontend(RendererFrontendDesc const &desc)
     {
-        Asset::addStreamer(Asset::toFourCC("MESH"), &MeshStreamer);
-        Asset::addStreamer(Asset::toFourCC("IMAG"), &ImageStreamer);
-        Asset::addStreamer(Asset::toFourCC("MATE"), &MaterialStreamer);
-        Asset::addStreamer(Asset::toFourCC("SHDR"), &ShaderStreamer);
-        Asset::addStreamer(Asset::toFourCC("RNDR"), &RendererPropertyStreamer);
+        Asset::addStreamer(MeshType, &MeshStreamer);
+        Asset::addStreamer(ImageType, &ImageStreamer);
+        Asset::addStreamer(MaterialType, &MaterialStreamer);
+        Asset::addStreamer(ShaderType, &ShaderStreamer);
+        Asset::addStreamer(RendererPropertyType, &RendererPropertyStreamer);
+        Asset::addStreamer(CameraPropertyType, &CameraStreamer);
 
         RendererDesc rendererDesc = {desc.Window};
         initRenderer(rendererDesc);
 
-        Asset::loadResourceAsync("SampleForward.shdr", { Asset::toFourCC("SHDR") },
+        Asset::loadResourceAsync("SampleForward.shdr", { ShaderType },
                                  [](void*, Resource::Handle resource, IB::Asset::ResourceLoad::State loadState) {
                                      if (loadState == Asset::ResourceLoad::Available)
                                      {
@@ -387,7 +612,8 @@ namespace IB
                                      }
                                  });
 
-        Editor::addAssetEditor(Asset::toFourCC("RNDR"), &Editor::rendererEditor);
+        Editor::addAssetEditor(RendererPropertyType, &Editor::rendererEditor);
+        Editor::addAssetEditor(CameraPropertyType, &Editor::cameraEditor);
     }
 
     void killRendererFrontend()
@@ -399,39 +625,11 @@ namespace IB
                   RendererJobQueueIndex);
     }
 
-    Property::Handle createRendererProperty(char const *meshPath, char const *materialPath)
-    {
-        RendererProperty &renderer = RendererProperties.add();
-        IB::Asset::loadResourceAsync(meshPath, { IB::Asset::toFourCC("MESH") },
-                                     [](void *data, IB::Resource::Handle resource, IB::Asset::ResourceLoad::State loadState) {
-                                         // Assign our mesh resource even when it's loading
-                                         // We want to gracefully handle the resource not being available yet.
-                                         if (loadState >= IB::Asset::ResourceLoad::Loading)
-                                         {
-                                             *reinterpret_cast<IB::Resource::Handle *>(data) = resource;
-                                         }
-                                     },
-                                     &renderer.MeshResource);
-
-        IB::Asset::loadResourceAsync(materialPath, { IB::Asset::toFourCC("MATE") },
-                                     [](void *data, IB::Resource::Handle resource, IB::Asset::ResourceLoad::State loadState) {
-                                         // Assign our mesh resource even when it's loading
-                                         // We want to gracefully handle the resource not being available yet.
-                                         if (loadState >= IB::Asset::ResourceLoad::Loading)
-                                         {
-                                             *reinterpret_cast<IB::Resource::Handle *>(data) = resource;
-                                         }
-                                     },
-                                     &renderer.MaterialResource);
-
-        return Property::toHandle(reinterpret_cast<uint64_t>(&renderer));
-    }
-
     MaterialAsset::Handle createMaterialAsset(MaterialAsset::Desc asset)
     {
         RuntimeMaterial &materialData = MaterialPool.add();
         materialData.Asset = asset;
-        Job::Handle textureJob = Asset::loadResourceAsync(asset.AlbedoPath, { Asset::toFourCC("IMAG") }, &materialData.AlbedoTexture);
+        Job::Handle textureJob = Asset::loadResourceAsync(asset.AlbedoPath, { ImageType }, &materialData.AlbedoTexture);
         continueJob([materialPtr = &materialData]() {
             IB::Resource::Handle textureResource = materialPtr->AlbedoTexture;
             IB::ForwardDesc materialDesc = {};
@@ -451,8 +649,8 @@ namespace IB
         ImDrawData* imguiDrawData = nullptr;
         if (gatherDesc.ImGuiDrawData != nullptr && gatherDesc.ImGuiDrawData->CmdListsCount > 0)
         {
-            imguiDrawData = allocate<ImDrawData>(*gatherDesc.ImGuiDrawData);
-            imguiDrawData->CmdLists = allocateArray<ImDrawList*>(imguiDrawData->CmdListsCount);
+            imguiDrawData = allocate<ImDrawData>(gatherDesc.Allocator, *gatherDesc.ImGuiDrawData);
+            imguiDrawData->CmdLists = allocateArray<ImDrawList*>(gatherDesc.Allocator, imguiDrawData->CmdListsCount);
             for (int32_t i = 0; i < imguiDrawData->CmdListsCount; i++)
             {
                 imguiDrawData->CmdLists[i] = gatherDesc.ImGuiDrawData->CmdLists[i]->CloneOutput();
@@ -469,7 +667,7 @@ namespace IB
         Transform transforms[32];
         for (uint32_t i = 0; i < entityCount; i++)
         {
-            Property::Handle handle = getPropertyFromEntity(entities[i], Asset::toFourCC("RNDR"));
+            Property::Handle handle = getPropertyFromEntity(entities[i], RendererPropertyType);
             if (handle != InvalidProperty)
             {
                 RendererProperty *renderer = toRendererProperty(handle);
@@ -484,7 +682,7 @@ namespace IB
                         meshes[rendererCount] = toMeshHandle(Asset::getAssetFromResource(renderer->MeshResource));
                         materials[rendererCount] = material->Material;
 
-                        Property::Handle transformHandle = getPropertyFromEntity(entities[i], Asset::toFourCC("TFRM"));
+                        Property::Handle transformHandle = getPropertyFromEntity(entities[i], TransformPropertyType);
                         if (transformHandle != InvalidProperty)
                         {
                             transforms[rendererCount] = getLocalTransform(transformHandle);
@@ -499,36 +697,20 @@ namespace IB
         ViewDesc viewDesc = {};
         {
             Transform cameraTransform = {};
-            Property::Handle transformProperty = getPropertyFromEntity(gatherDesc.Camera, Asset::toFourCC("TFRM"));
+            Property::Handle transformProperty = getPropertyFromEntity(gatherDesc.Camera, TransformPropertyType);
             if (transformProperty != InvalidProperty)
             {
                 cameraTransform = getLocalTransform(transformProperty);
             }
 
-            Float3 viewPos = cameraTransform.Position;
-            // TODO: camera rotation
-            Mat4x4 view =
-            {
-                {{1.0f, 0.0f, 0.0f, -viewPos.x},
-                 {0.0f, 0.0f, 1.0f, -viewPos.z},
-                 {0.0f, 1.0f, 0.0f, -viewPos.y},
-                 {0.0f, 0.0f, 0.0f, 1.0f}},
-            };
+            CameraProperty::Handle cameraProperty = toCameraHandle(getPropertyFromEntity(gatherDesc.Camera, CameraPropertyType));
+            IB_ASSERT(cameraProperty != InvalidProperty, "Camera handle should have a camera property!");
 
-            // TODO: camera projection
-            float fov = 1.0f / tanf(3.1415f * 0.25);
-            const float f = 45.0f;
-            const float n = 1.0f;
-            const float a = 1.0f;
-            Mat4x4 projection =
+            Mat4x4 viewProj = Mat4x4::identity();
+            if (cameraProperty != InvalidProperty)
             {
-                {{fov / a, 0.0f, 0.0f, 0.0f},
-                 {0.0f, -fov, 0.0f, 0.0f},
-                 {0.0f, 0.0f, f / (f - n), -n * f / (f - n)},
-                 {0.0f, 0.0f, 1.0, 0.0f}},
-            };
-
-            Mat4x4 viewProj = mul(projection, view);
+                viewProj = getViewProjection(cameraProperty, cameraTransform);
+            }
 
             ViewDesc::MeshInstances* meshInstances = allocateArray<ViewDesc::MeshInstances>(gatherDesc.Allocator, rendererCount);
 
@@ -596,7 +778,7 @@ namespace IB
         return viewDesc;
     }
 
-    void drawCellView(ViewDesc const& viewDesc)
+    void drawCellView(StackAllocator* allocator, ViewDesc const& viewDesc)
     {
         drawView(viewDesc);
 
@@ -607,8 +789,8 @@ namespace IB
             {
                 IM_DELETE(viewDesc.ImGuiDrawData->CmdLists[i]);
             }
-            deallocateArray(viewDesc.ImGuiDrawData->CmdLists, viewDesc.ImGuiDrawData->CmdListsCount);
-            deallocate(viewDesc.ImGuiDrawData);
+            deallocateArray(allocator, viewDesc.ImGuiDrawData->CmdLists, viewDesc.ImGuiDrawData->CmdListsCount);
+            deallocate(allocator, viewDesc.ImGuiDrawData);
         }
     }
 

@@ -8,6 +8,7 @@
 #include "IBRendererFrontend.h"
 #include "IBEntity.h"
 #include "IBJobs.h"
+#include "IBLogging.h"
 
 #include <imgui/imgui.h>
 
@@ -41,7 +42,7 @@ namespace IB
 
     namespace Editor
     {
-        Entity::Handle Camera;
+        Entity::Handle CameraHandle;
 
         struct AssetBrowserState
         {
@@ -74,13 +75,13 @@ namespace IB
             AssetEditors.add(type, frame);
         }
 
-        void drawAssetEditor(Asset::FourCC type, Asset::Handle handle)
+        void drawAssetEditor(Asset::FourCC type, Asset::Handle handle, void* parentEditorData)
         {
             for (uint32_t i = 0; i < AssetEditors.count(); i++)
             {
                 if (AssetEditors[i].Type == type)
                 {
-                    AssetEditors[i].Callback(handle);
+                    AssetEditors[i].Callback(handle, parentEditorData);
                     break;
                 }
             }
@@ -121,26 +122,31 @@ namespace IB
             }
         };
 
-        Entity::Handle getCamera() { return Camera; }
+        Entity::Handle getCamera() { return CameraHandle; }
 
         void init()
         {
-            Camera = createEntity();
+            CameraHandle = createEntity("Editor Camera");
             Property::Handle transformProperty = createTransformProperty();
-            addPropertyToEntity(Camera, Asset::toFourCC("TFRM"), transformProperty);
+            addPropertyToEntity(CameraHandle, TransformPropertyType, transformProperty);
             setLocalTransform(transformProperty, { {0.0f, -5.0f, 0.0f}, Quaternion::identity(), 1.0f });
+
+            Camera camera = {};
+            Property::Handle cameraProperty = createCameraProperty(camera);
+            addPropertyToEntity(CameraHandle, CameraPropertyType, cameraProperty);
         }
 
         void kill()
         {
-
+            destroyEntity(CameraHandle);
         }
 
         void frame(Editor::FrameState* state)
         {
             newImGuiFrame();
-            ImGizmo::newFrame(Camera);
+            ImGizmo::newFrame(CameraHandle);
 
+            static bool showEditorInspector = false;
             if (ImGui::BeginMainMenuBar())
             {
                 if (ImGui::BeginMenu("File"))
@@ -154,8 +160,12 @@ namespace IB
                     }
                     ImGui::EndMenu();
                 }
-                if (ImGui::BeginMenu("Edit"))
+                if (ImGui::BeginMenu("View"))
                 {
+                    if (ImGui::Button("Toggle Editor Inspector"))
+                    {
+                        showEditorInspector = !showEditorInspector;
+                    }
                     ImGui::EndMenu();
                 }
                 ImGui::EndMainMenuBar();
@@ -175,7 +185,7 @@ namespace IB
                             Asset::releaseResourceAsync(*state->CellResource);
                         }
 
-                        Asset::loadResourceAsync(assetBrowserState.LoadResourceInfo.Path, Asset::toFourCC("CELL"),
+                        Asset::loadResourceAsync(assetBrowserState.LoadResourceInfo.Path, CellType,
                             [](void *data, Resource::Handle resource, Asset::ResourceLoad::State loadState)
                             {
                                 if (loadState >= Asset::ResourceLoad::Loading)
@@ -185,7 +195,7 @@ namespace IB
                             }, state->CellResource);
                         InspectorState.Selected.Resource = *state->CellResource;
                         InspectorState.Selected.IsResource = true;
-                        InspectorState.Selected.Type = Asset::toFourCC("CELL");
+                        InspectorState.Selected.Type = CellType;
 
                         ImGui::CloseCurrentPopup();
                     }
@@ -198,8 +208,8 @@ namespace IB
                     }
                     ImGui::EndPopup();
                 }
+                ImGui::End();
             }
-            ImGui::End();
 
             if (ImGui::Begin("Cell"))
             {
@@ -218,7 +228,7 @@ namespace IB
                         {
                             InspectorState.Selected.Asset = toAssetHandle(entities[i]);
                             InspectorState.Selected.IsResource = false;
-                            InspectorState.Selected.Type = Asset::toFourCC("ENTT");
+                            InspectorState.Selected.Type = EntityType;
                         }
                     }
 
@@ -232,8 +242,8 @@ namespace IB
                         ImGui::EndPopup();
                     }
                 }
+                ImGui::End();
             }
-            ImGui::End();
 
             if (ImGui::Begin("Inspector"))
             {
@@ -254,11 +264,33 @@ namespace IB
                 {
                     drawAssetEditor(InspectorState.Selected.Type, assetHandle);
                 }
+                ImGui::End();
             }
-            ImGui::End();
+
+            if (showEditorInspector)
+            {
+                if (ImGui::Begin("Editor Inspector", &showEditorInspector))
+                {
+                    drawAssetEditor(EntityType, toAssetHandle(CameraHandle));
+                    ImGui::End();
+                }
+            }
 
             ImGizmo::endFrame();
             ImGui::Render();
+        }
+
+        bool isSelected(Entity::Handle entity)
+        {
+            if (InspectorState.Selected.IsResource)
+            {
+                // TODO: we probably still want this to work with entity resources
+                return false;
+            }
+            else
+            {
+                return InspectorState.Selected.Type == EntityType && toEntityHandle(InspectorState.Selected.Asset) == entity;
+            }
         }
     } // namespace Editor
 
@@ -499,34 +531,21 @@ namespace IB
 
         void translation(Float3* position, Quaternion rotation, TranslationState* state)
         {
-            // TODO: store camera state
-            float fov = 1.0f / tanf(3.1415f * 0.25);
-            const float f = 45.0f;
-            const float n = 1.0f;
-            const float a = 1.0f;
-            Mat4x4 invProjection =
-            {
-                {{a / fov, 0.0f, 0.0f, 0.0f},
-                 {0.0f, -1.0f / fov, 0.0f, 0.0f},
-                 {0.0f, 0.0f, 0.0f, 1.0f},
-                 {0.0f, 0.0f, (f - n) / (-n * f), f / (n*f)}},
-            };
-
             Transform cameraTransform = {};
-            Property::Handle transformProperty = getPropertyFromEntity(FrameCamera, Asset::toFourCC("TFRM"));
+            Property::Handle transformProperty = getPropertyFromEntity(FrameCamera, TransformPropertyType);
             if (transformProperty != InvalidProperty)
             {
                 cameraTransform = getLocalTransform(transformProperty);
             }
 
-            Mat4x4 invView =
+            CameraProperty::Handle cameraProperty = toCameraHandle(getPropertyFromEntity(FrameCamera, CameraPropertyType));
+            IB_ASSERT(cameraProperty != InvalidProperty, "Camera handle should have a camera property!");
+
+            Mat4x4 invViewProj = Mat4x4::identity();
+            if (cameraProperty != InvalidProperty)
             {
-                {{1.0f, 0.0f, 0.0f, cameraTransform.Position.x},
-                 {0.0f, 0.0f, 1.0f, cameraTransform.Position.y},
-                 {0.0f, 1.0f, 0.0f, cameraTransform.Position.z},
-                 {0.0f, 0.0f, 0.0f, 1.0f}},
-            };
-            Mat4x4 invViewProj = IB::mul(invView, invProjection);
+                invViewProj = getInvViewProjection(cameraProperty, cameraTransform);
+            }
 
             Float3 axies[3] =
             {

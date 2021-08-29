@@ -15,6 +15,7 @@ namespace IB
         float &operator[](uint32_t i) { return (&x)[i]; }
         float operator[](uint32_t i) const { return (&x)[i]; }
         Float3& operator+=(Float3 rhs);
+        Float3 operator-() const { return Float3{ -x, -y, -z }; }
 
         float x, y, z;
     };
@@ -92,6 +93,24 @@ namespace IB
         }
     };
 
+    struct Mat3x3
+    {
+        Float3 &operator[](uint32_t i) { return Values[i]; }
+        Float3 operator[](uint32_t i) const { return Values[i]; }
+        Float3 Values[3];
+
+        static constexpr Mat3x3 identity()
+        {
+            return Mat3x3{
+                {
+                    {1.0f, 0.0f, 0.0f},
+                    {0.0f, 1.0f, 0.0f},
+                    {0.0f, 0.0f, 1.0f},
+                },
+            };
+        }
+    };
+
     struct Transform
     {
         Float3 Position = {};
@@ -104,9 +123,14 @@ namespace IB
         return lhs.Position != rhs.Position || lhs.Rotation != rhs.Rotation || lhs.Scale != rhs.Scale;
     }
 
-    // Left will be applied first, right will be applied second
+    // Right will be applied first, left will be applied second
     // When multiplying a vector by this new matrix
-    inline Mat4x4 mul(const Mat4x4 &left, const Mat4x4 &right);
+    inline Mat3x4 toMat3x4(Mat3x3 const& matrix, Float3 column);
+    inline Mat4x4 toMat4x4(Mat3x4 const& matrix);
+    inline Mat4x4 mul(Mat4x4 const&left, Mat4x4 const&right);
+    inline Mat4x4 mul(Mat4x4 const&left, Mat3x4 const&right);
+    inline Mat4x4 mul(Mat3x4 const&left, Mat4x4 const&right);
+
     inline Float4 mul(const Mat4x4 &left, Float4 right);
 
     inline Float4 operator/(Float4 left, float right);
@@ -123,6 +147,7 @@ namespace IB
     inline float length(Float3 value);
     inline float dot(Float3 left, Float3 right);
     inline float* toArray(Float3* value) { return &value->x; };
+    inline Float3 mul(const Mat3x3 &left, Float3 right);
 
     inline Float3 rotate(Quaternion rotator, Float3 point);
     inline Quaternion operator*(Quaternion left, Quaternion right);
@@ -137,8 +162,23 @@ namespace IB
     inline AABB consume(AABB aabb, Float3 p);
 
     inline Mat3x4 toMatrix(const Transform& transform);
+    inline Mat3x4 toInvMatrix(const Transform& transform);
 
     // Implementation
+    inline Mat4x4 toMat4x4(Mat3x4 const& matrix)
+    {
+        return Mat4x4{ matrix[0], matrix[1], matrix[2], {0.0f, 0.0f, 0.0f, 1.0f} };
+    }
+
+    inline Mat3x4 toMat3x4(Mat3x3 const& matrix, Float3 column)
+    {
+        return Mat3x4{ {
+            {matrix[0].x, matrix[0].y, matrix[0].z, column.x},
+            {matrix[1].x, matrix[1].y, matrix[1].z, column.y},
+            {matrix[2].x, matrix[2].y, matrix[2].z, column.z}
+        } };
+    }
+
     inline Mat4x4 mul(const Mat4x4 &left, const Mat4x4 &right)
     {
         Mat4x4 out = {};
@@ -166,6 +206,16 @@ namespace IB
         }
 
         return out;
+    }
+
+    inline Mat4x4 mul(const Mat4x4 &left, const Mat3x4 &right)
+    {
+        return mul(left, toMat4x4(right));
+    }
+
+    inline Mat4x4 mul(const Mat3x4 &left, const Mat4x4 &right)
+    {
+        return mul(toMat4x4(left), right);
     }
 
     inline Float4 mul(const Mat4x4 &left, Float4 right)
@@ -247,6 +297,20 @@ namespace IB
     inline float dot(Float3 left, Float3 right)
     {
         return left.x * right.x + left.y * right.y + left.z * right.z;
+    }
+
+    inline Float3 mul(const Mat3x3 &left, Float3 right)
+    {
+        Float3 out = {};
+        for (uint32_t row = 0; row < 3; row++)
+        {
+            Float3 r = {
+                left[row][0] * right[0],
+                left[row][1] * right[1],
+                left[row][2] * right[2]};
+            out[row] = r[0] + r[1] + r[2];
+        }
+        return out;
     }
 
     inline Float3 rotate(Quaternion rotator, Float3 point)
@@ -417,5 +481,29 @@ namespace IB
             right.y, forward.y, up.y, transform.Position.y,
             right.z, forward.z, up.z, transform.Position.z,
         };
+    }
+
+    inline Mat3x4 toInvMatrix(const Transform& transform)
+    {
+        // Given that our original transformation is:
+        // P1 = P0 * S * R + T
+        // Our inverse should be
+        // (P1 - T) invR * invS
+        // Which we can distribute as
+        // P1 * invR * invS  - T * invR * invS
+
+        Float3 right = rotate(transform.Rotation, Float3{ 1.0f / transform.Scale, 0.0f, 0.0f });
+        Float3 forward = rotate(transform.Rotation, Float3{ 0.0f, 1.0f / transform.Scale, 0.0f });
+        Float3 up = rotate(transform.Rotation, Float3{ 0.0f, 0.0f, 1.0f / transform.Scale });
+
+        Mat3x3 inverseScaleRotation =
+        {
+            right.x, right.y, right.z,
+            forward.x, forward.y, forward.z,
+            up.x, up.y, up.z
+        };
+
+        Float3 inversePosition = mul(inverseScaleRotation, transform.Position);
+        return toMat3x4(inverseScaleRotation, -inversePosition);
     }
 } // namespace IB

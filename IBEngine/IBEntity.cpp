@@ -96,12 +96,15 @@ namespace IB
 
     namespace Editor
     {
-        void transformEditor(Asset::Handle asset)
+        void transformEditor(Asset::Handle asset, void* parentData)
         {
             Transform* transform = reinterpret_cast<Transform*>(Asset::toValue(asset));
-
-            static ImGizmo::TranslationState translationState;
-            ImGizmo::translation(&transform->Position, transform->Rotation, &translationState);
+            Entity::Handle parentEntity = *reinterpret_cast<Entity::Handle*>(parentData);
+            if (isSelected(parentEntity))
+            {
+                static ImGizmo::TranslationState translationState;
+                ImGizmo::translation(&transform->Position, transform->Rotation, &translationState);
+            }
 
             if (ImGui::TreeNode("Transform"))
             {
@@ -327,13 +330,7 @@ namespace IB
 
             void unloadThreadSafe(IB::Asset::Handle assetHandle) override
             {
-                Entity::Data* entity = Entity::toData(assetHandle);
-                for (uint32_t i = 0; i < entity->Properties.count(); i++)
-                {
-                    IB::Asset::unloadAssetThreadSafe(entity->Properties[i].Type, toAssetHandle(entity->Properties[i].Handle));
-                }
-
-                ActiveEntities.remove(*entity);
+                destroyEntity(toEntityHandle(assetHandle));
             }
         };
 
@@ -341,10 +338,23 @@ namespace IB
     }
 
     // Entity API
-    Entity::Handle createEntity()
+    Entity::Handle createEntity(char const* name)
     {
         Entity::Data& entity = ActiveEntities.add();
+        strcpy(entity.Name.String, name);
+
         return Entity::toHandle(reinterpret_cast<uint64_t>(&entity));
+    }
+
+    void destroyEntity(Entity::Handle entityHandle)
+    {
+        Entity::Data* entity = Entity::toData(entityHandle);
+        for (uint32_t i = 0; i < entity->Properties.count(); i++)
+        {
+            IB::Asset::unloadAssetThreadSafe(entity->Properties[i].Type, toAssetHandle(entity->Properties[i].Handle));
+        }
+
+        ActiveEntities.remove(*entity);
     }
 
     void addPropertyToEntity(Entity::Handle entityHandle, Asset::FourCC type, Property::Handle propertyHandle)
@@ -385,7 +395,7 @@ namespace IB
 
     namespace Editor
     {
-        void entityEditor(Asset::Handle asset)
+        void entityEditor(Asset::Handle asset, void*)
         {
             Entity::Data* entity = Entity::toData(asset);
 
@@ -411,12 +421,13 @@ namespace IB
 
             if (ImGui::Button("Add Transform"))
             {
-                addPropertyToEntity(toEntityHandle(asset), Asset::toFourCC("TFRM"), createTransformProperty());
+                addPropertyToEntity(toEntityHandle(asset), TransformPropertyType, createTransformProperty());
             }
 
+            Entity::Handle entityHandle = toEntityHandle(asset);
             for (uint32_t i = 0; i < entity->Properties.count(); i++)
             {
-                Editor::drawAssetEditor(entity->Properties[i].Type, toAssetHandle(entity->Properties[i].Handle));
+                Editor::drawAssetEditor(entity->Properties[i].Type, toAssetHandle(entity->Properties[i].Handle), &entityHandle);
             }
         }
     }
@@ -495,7 +506,7 @@ namespace IB
                     char const *baseCellPath = "";
                     fromBinary(&context->Stream, &baseCellPath);
 
-                    Job::Handle baseCellLoad = Asset::loadResourceAsync(baseCellPath, { Asset::toFourCC("CELL") }, &cell.BaseCell);
+                    Job::Handle baseCellLoad = Asset::loadResourceAsync(baseCellPath, { CellType }, &cell.BaseCell);
                     return IB::Asset::wait(&baseCellLoad, 1, LoadEntities);
                 }
                 else if (context->State == LoadEntities)
@@ -546,8 +557,8 @@ namespace IB
                         Asset::LoadSubAssetDesc loadSubAssetDesc =
                         {
                             context,
-                            Asset::toFourCC("ENTT"),
-                            Asset::createAsset(IB::Asset::toFourCC("ENTT")),
+                            EntityType,
+                            Asset::createAsset(EntityType),
                             baseAsset
                         };
                         
@@ -603,7 +614,7 @@ namespace IB
                     toBinary(context->Stream, dummyWriteSize);
                     uint32_t writeStart = context->Stream->BufferCursor;
 
-                    IB::Asset::saveAssetThreadSafe(context->Stream, IB::Asset::toFourCC("ENTT"), toAssetHandle(cell.Entities[i]), baseEntityAsset);
+                    IB::Asset::saveAssetThreadSafe(context->Stream, IB::EntityType, toAssetHandle(cell.Entities[i]), baseEntityAsset);
 
                     uint32_t writeEnd = context->Stream->BufferCursor;
 
@@ -619,7 +630,7 @@ namespace IB
                 Asset::releaseResourceAsync(cell.BaseCell);
                 for (uint32_t i = 0; i < cell.Entities.count(); i++)
                 {
-                    IB::Asset::unloadAssetThreadSafe(IB::Asset::toFourCC("ENTT"), toAssetHandle(cell.Entities[i]));
+                    IB::Asset::unloadAssetThreadSafe(IB::EntityType, toAssetHandle(cell.Entities[i]));
                 }
 
                 cell = {};
@@ -632,7 +643,7 @@ namespace IB
 
     namespace Editor
     {
-        void cellEditor(Asset::Handle asset)
+        void cellEditor(Asset::Handle asset, void*)
         {
             Cell::Handle cellHandle = toCellHandle(asset);
             CellAsset& cell = Cells[Cell::toValue(cellHandle)];
@@ -687,7 +698,7 @@ namespace IB
             for (uint32_t i = 0; i < entityCount; i++)
             {
                 Asset::Handle baseEntityAsset = toAssetHandle(baseCellAsset.Entities[i]);
-                Asset::Handle clonedAsset = Asset::cloneAssetThreadSafe(baseEntityAsset, Asset::toFourCC("ENTT"));
+                Asset::Handle clonedAsset = Asset::cloneAssetThreadSafe(baseEntityAsset, EntityType);
                 if (clonedAsset != InvalidAsset)
                 {
                     createdCell.EntityIDs.add(baseCellAsset.EntityIDs[i].HierarchyID + 1, baseCellAsset.EntityIDs[i].LocalID);
@@ -722,13 +733,13 @@ namespace IB
 
     void initEntitySystem()
     {
-        Asset::addStreamer(Asset::toFourCC("ENTT"), &EntityStreamer);
-        Asset::addStreamer(Asset::toFourCC("CELL"), &CellStreamer);
-        Asset::addStreamer(Asset::toFourCC("TFRM"), &TransformStreamer);
+        Asset::addStreamer(EntityType, &EntityStreamer);
+        Asset::addStreamer(CellType, &CellStreamer);
+        Asset::addStreamer(TransformPropertyType, &TransformStreamer);
 
-        Editor::addAssetEditor(Asset::toFourCC("CELL"), &Editor::cellEditor);
-        Editor::addAssetEditor(Asset::toFourCC("ENTT"), &Editor::entityEditor);
-        Editor::addAssetEditor(Asset::toFourCC("TFRM"), &Editor::transformEditor);
+        Editor::addAssetEditor(CellType, &Editor::cellEditor);
+        Editor::addAssetEditor(EntityType, &Editor::entityEditor);
+        Editor::addAssetEditor(TransformPropertyType, &Editor::transformEditor);
     }
 
     void killEntitySystem()
