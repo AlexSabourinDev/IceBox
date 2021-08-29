@@ -126,7 +126,7 @@ int main()
         waitOnJob(saveJob);
 
         IB::Resource::Handle savedEntityResource;
-        IB::Job::Handle entityJob = IB::Asset::loadResourceAsync("TestEntity.entt", { EntityType }, &savedEntityResource);
+        IB::Job::Handle entityJob = IB::Asset::loadResourceAsync("TestEntity.entt", { IB::EntityType }, &savedEntityResource);
         waitOnJob(entityJob);
         IB_ASSERT(savedEntityResource == entityResource, "Failed to load the same asset!");
 
