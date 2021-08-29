@@ -232,8 +232,8 @@ namespace IB
                     }
                     ImGui::EndPopup();
                 }
-                ImGui::End();
             }
+            ImGui::End();
 
             if (ImGui::Begin("Cell"))
             {
@@ -266,8 +266,8 @@ namespace IB
                         ImGui::EndPopup();
                     }
                 }
-                ImGui::End();
             }
+            ImGui::End();
 
             if (ImGui::Begin("Inspector"))
             {
@@ -288,16 +288,16 @@ namespace IB
                 {
                     drawAssetEditor(InspectorState.Selected.Type, assetHandle);
                 }
-                ImGui::End();
             }
+            ImGui::End();
 
             if (showEditorInspector)
             {
                 if (ImGui::Begin("Editor Inspector", &showEditorInspector))
                 {
                     drawAssetEditor(EntityType, toAssetHandle(CameraHandle));
-                    ImGui::End();
                 }
+                ImGui::End();
             }
 
             ImGizmo::endFrame();
