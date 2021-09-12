@@ -2,6 +2,7 @@
 
 #include <stdint.h>
 #include <math.h>
+#include <float.h>
 
 namespace IB
 {
@@ -9,6 +10,9 @@ namespace IB
     constexpr float Tao = 2.0f * Pi;
     constexpr float DegToRad = Pi / 180.0f;
     constexpr float RadToDeg = 180.0f / Pi;
+
+    template<typename T>
+    inline T min(T left, T right) { return left < right ? left : right; }
 
     struct Float3
     {
@@ -118,10 +122,17 @@ namespace IB
         float Scale = 1.0f;
     };
 
+    struct Triangle
+    {
+        Float3 Vertices[3];
+    };
+
     inline bool operator!=(Transform const& lhs, Transform const& rhs)
     {
         return lhs.Position != rhs.Position || lhs.Rotation != rhs.Rotation || lhs.Scale != rhs.Scale;
     }
+
+    inline float rcp(float value) { return 1.0f / value; }
 
     // Right will be applied first, left will be applied second
     // When multiplying a vector by this new matrix
@@ -148,6 +159,7 @@ namespace IB
     inline float dot(Float3 left, Float3 right);
     inline float* toArray(Float3* value) { return &value->x; };
     inline Float3 mul(const Mat3x3 &left, Float3 right);
+    inline Float3 cross(Float3 left, Float3 right);
 
     inline Float3 rotate(Quaternion rotator, Float3 point);
     inline Quaternion operator*(Quaternion left, Quaternion right);
@@ -163,6 +175,8 @@ namespace IB
 
     inline Mat3x4 toMatrix(const Transform& transform);
     inline Mat3x4 toInvMatrix(const Transform& transform);
+
+    inline bool doesRayIntersectTriangle(Float3 rayO, Float3 rayD, float rayMin, float rayMax, const Triangle& triangle);
 
     // Implementation
     inline Mat4x4 toMat4x4(Mat3x4 const& matrix)
@@ -307,15 +321,25 @@ namespace IB
             Float3 r = {
                 left[row][0] * right[0],
                 left[row][1] * right[1],
-                left[row][2] * right[2]};
+                left[row][2] * right[2] };
             out[row] = r[0] + r[1] + r[2];
         }
         return out;
     }
 
+    inline Float3 cross(Float3 left, Float3 right)
+    {
+        return Float3
+        {
+            left.y*right.z - left.z*right.y,
+            left.z*right.x - left.x*right.z,
+            left.x*right.y - left.y*right.x
+        };
+    }
+
     inline Float3 rotate(Quaternion rotator, Float3 point)
     {
-        Quaternion rotatedPoint = rotator * Quaternion{ point.x, point.y, point.z, 0.0f } * conjugate(rotator);
+        Quaternion rotatedPoint = rotator * Quaternion{ point.x, point.y, point.z, 0.0f } *conjugate(rotator);
         return Float3{ rotatedPoint.x, rotatedPoint.y, rotatedPoint.z };
     }
 
@@ -332,7 +356,7 @@ namespace IB
 
     inline Quaternion conjugate(Quaternion q)
     {
-        return Quaternion{-q.x, -q.y, -q.z, q.w};
+        return Quaternion{ -q.x, -q.y, -q.z, q.w };
     }
 
     inline Quaternion fromAxisAngle(Float3 axis, float angle)
@@ -344,8 +368,8 @@ namespace IB
     inline Quaternion fromEulerAngles(Float3 angles)
     {
         return fromAxisAngle(Float3{ 1.0f, 0.0f, 0.0f }, angles.x)
-                * fromAxisAngle(Float3{ 0.0f, 1.0f, 0.0f }, angles.y)
-                * fromAxisAngle(Float3{ 0.0f, 0.0f, 1.0f }, angles.z);
+            * fromAxisAngle(Float3{ 0.0f, 1.0f, 0.0f }, angles.y)
+            * fromAxisAngle(Float3{ 0.0f, 0.0f, 1.0f }, angles.z);
     }
 
     inline bool doesLineAABBIntersect(Float3 lineStart, Float3 lineEnd, AABB aabb)
@@ -368,7 +392,7 @@ namespace IB
 
     inline AABB consume(AABB aabb, Float3 p)
     {
-        return AABB{min(aabb.Min, p), max(aabb.Max, p)};
+        return AABB{ min(aabb.Min, p), max(aabb.Max, p) };
     }
 
     inline bool doesLineCylinderIntersect(Float3 lineStart, Float3 lineEnd, Float3 cylinderStart, Float3 cylinderEnd, float radius)
@@ -404,7 +428,7 @@ namespace IB
 
             auto clipToPlane = [](Float3 s, Float3 e, Float3 n, float d)
             {
-                float t = (d-dot(s, n)) / dot(e - s, n);
+                float t = (d - dot(s, n)) / dot(e - s, n);
                 t = fminf(fmaxf(t, 0.0f), 1.0f);
                 return (e - s)*t + s;
             };
@@ -415,8 +439,8 @@ namespace IB
 
         // Project our line against the plane defined by our cylinder caps
         // Then calculate the closest point this new projected line has to 0,0,0
-        s = s - dot(s,delta) * delta;
-        e = e - dot(e,delta) * delta;
+        s = s - dot(s, delta) * delta;
+        e = e - dot(e, delta) * delta;
 
         // To calculate the closest point for a line to a point, we can calculate the local minimum using the derivative
         // of our equation where:
@@ -472,9 +496,9 @@ namespace IB
 
     inline Mat3x4 toMatrix(const Transform& transform)
     {
-        Float3 right   = rotate(transform.Rotation, Float3{ transform.Scale, 0.0f, 0.0f });
+        Float3 right = rotate(transform.Rotation, Float3{ transform.Scale, 0.0f, 0.0f });
         Float3 forward = rotate(transform.Rotation, Float3{ 0.0f, transform.Scale, 0.0f });
-        Float3 up      = rotate(transform.Rotation, Float3{ 0.0f, 0.0f, transform.Scale });
+        Float3 up = rotate(transform.Rotation, Float3{ 0.0f, 0.0f, transform.Scale });
         return Mat3x4
         {
             right.x, forward.x, up.x, transform.Position.x,
@@ -505,5 +529,195 @@ namespace IB
 
         Float3 inversePosition = mul(inverseScaleRotation, transform.Position);
         return toMat3x4(inverseScaleRotation, -inversePosition);
+    }
+
+    inline bool doesRayIntersectTriangle(Float3 rayO, Float3 rayD, float rayMin, float rayMax, Triangle triangle)
+    {
+        // Source: https://www.scratchapixel.com/lessons/3d-basic-rendering/ray-tracing-rendering-a-triangle/moller-trumbore-ray-triangle-intersection
+        Float3 e1 = triangle.Vertices[1] - triangle.Vertices[0];
+        Float3 e2 = triangle.Vertices[2] - triangle.Vertices[0];
+        Float3 p = cross(rayD, e2);
+        float d = dot(e1, p);
+        if (d < FLT_EPSILON)
+        {
+            return false;
+        }
+
+        float invD = rcp(d);
+        Float3 tv = rayO - triangle.Vertices[0];
+        float v = dot(tv, p) * invD;
+        if (v < 0.0f || v > 1.0f)
+        {
+            return false;
+        }
+
+        Float3 q = cross(tv, e1);
+        float w = dot(rayD, q) * invD;
+        if (w < 0.0f || v + w > 1.0f)
+        {
+            return false;
+        }
+
+        float t = dot(e2, q) * invD;
+        if (t > rayMin && t < rayMax)
+        {
+            return true;
+        }
+
+        return false;
+    }
+}
+
+#include <immintrin.h>
+namespace IB
+{
+    // Simd API
+    constexpr uint32_t SimdLaneCount = 4;
+
+    struct alignas(16) SimdFloat
+    {
+        __m128 Values;
+    };
+
+    struct SimdFloat3
+    {
+        SimdFloat x;
+        SimdFloat y;
+        SimdFloat z;
+    };
+
+    struct SimdTriangleSet
+    {
+        SimdFloat3 Vertices[3];
+    };
+
+    inline SimdFloat splat(float value);
+    inline SimdFloat simdSet(float const (&values)[SimdLaneCount]);
+    inline SimdFloat operator+(SimdFloat left, SimdFloat right);
+    inline SimdFloat operator-(SimdFloat left, SimdFloat right);
+    inline SimdFloat operator*(SimdFloat left, SimdFloat right);
+    inline SimdFloat lessThan(SimdFloat left, SimdFloat right);
+    inline SimdFloat greaterThan(SimdFloat left, SimdFloat right);
+    inline SimdFloat simdOr(SimdFloat left, SimdFloat right);
+    inline SimdFloat simdAnd(SimdFloat left, SimdFloat right);
+    inline SimdFloat rcp(SimdFloat value);
+    inline bool any(SimdFloat comparison, uint32_t mask = 0xFFFFFFFF);
+    inline bool all(SimdFloat comparison, uint32_t mask = 0xFFFFFFFF);
+
+    inline SimdFloat3 splat(Float3 value);
+    // valueCount must be less than or equal to 4
+    inline SimdFloat3 simdSet(Float3* values, uint32_t valueCount);
+    inline SimdFloat3 operator-(const SimdFloat3& left, const SimdFloat3& right);
+    inline SimdFloat3 cross(const SimdFloat3& left, const SimdFloat3& right);
+    inline SimdFloat dot(const SimdFloat3& left, const SimdFloat3& right);
+
+    inline bool doesRayIntersectAnyTriangle(SimdFloat3 rayO, SimdFloat3 rayD, SimdFloat rayMin, SimdFloat rayMax, SimdTriangleSet triangleSet, uint32_t trianglesInSet);
+
+    static const SimdFloat SimdEpsilon = splat(FLT_EPSILON);
+    static const SimdFloat SimdZero = splat(0.0f);
+    static const SimdFloat SimdOne = splat(1.0f);
+
+    // Implementation
+
+    inline SimdFloat splat(float value) { return SimdFloat{ _mm_set_ps1(value) }; }
+    inline SimdFloat simdSet(float const (&values)[SimdLaneCount]) { return SimdFloat{ _mm_set_ps(values[0], values[1], values[2], values[3]) }; }
+    inline SimdFloat operator+(SimdFloat left, SimdFloat right) { return SimdFloat{ _mm_add_ps(left.Values, right.Values) }; }
+    inline SimdFloat operator-(SimdFloat left, SimdFloat right) { return SimdFloat{ _mm_sub_ps(left.Values, right.Values) }; }
+    inline SimdFloat operator*(SimdFloat left, SimdFloat right) { return SimdFloat{ _mm_mul_ps(left.Values, right.Values) }; }
+    inline SimdFloat lessThan(SimdFloat left, SimdFloat right) { return SimdFloat{ _mm_cmp_ps(left.Values, right.Values, _CMP_LT_OQ) }; }
+    inline SimdFloat greaterThan(SimdFloat left, SimdFloat right) { return SimdFloat{ _mm_cmp_ps(left.Values, right.Values, _CMP_GT_OQ) }; }
+    inline SimdFloat simdOr(SimdFloat left, SimdFloat right) { return SimdFloat{ _mm_or_ps(left.Values, right.Values) }; };
+    inline SimdFloat simdAnd(SimdFloat left, SimdFloat right) { return SimdFloat{ _mm_and_ps(left.Values, right.Values) }; };
+    inline SimdFloat rcp(SimdFloat value) { return SimdFloat{ _mm_rcp_ps(value.Values) }; }
+
+    inline bool any(SimdFloat comparison, uint32_t mask)
+    {
+        return (_mm_movemask_ps(comparison.Values) & mask) != 0;
+    }
+
+    inline bool all(SimdFloat comparison, uint32_t mask)
+    {
+        return (_mm_movemask_ps(comparison.Values) & mask) == mask;
+    }
+
+    inline SimdFloat3 splat(Float3 value) { return SimdFloat3{ splat(value.x), splat(value.y), splat(value.z) }; }
+    inline SimdFloat3 operator-(const SimdFloat3& left, const SimdFloat3& right) { return SimdFloat3{ left.x-right.x, left.y - right.y, left.z - right.z }; }
+
+    inline SimdFloat3 simdSet(Float3* values, uint32_t valueCount)
+    {
+        float x[SimdLaneCount] = {};
+        float y[SimdLaneCount] = {};
+        float z[SimdLaneCount] = {};
+        for (uint32_t i = 0; i < valueCount && i < SimdLaneCount; i++)
+        {
+            x[i] = values[i].x;
+            y[i] = values[i].y;
+            z[i] = values[i].z;
+        }
+
+        return SimdFloat3
+        {
+            simdSet(x),
+            simdSet(y),
+            simdSet(z)
+        };
+    }
+
+    inline SimdFloat3 cross(const SimdFloat3& left, const SimdFloat3& right)
+    {
+        return SimdFloat3
+        {
+            left.y*right.z - left.z*right.y,
+            left.z*right.x - left.x*right.z,
+            left.x*right.y - left.y*right.x
+        };
+    }
+
+    inline SimdFloat dot(const SimdFloat3& left, const SimdFloat3& right)
+    {
+        return SimdFloat{ left.x * right.y + left.y * right.y + left.z * right.z };
+    }
+
+    inline bool doesRayIntersectAnyTriangle(SimdFloat3 rayO, SimdFloat3 rayD, SimdFloat rayMin, SimdFloat rayMax, SimdTriangleSet triangleSet, uint32_t trianglesInSet)
+    {
+        // Source: https://www.scratchapixel.com/lessons/3d-basic-rendering/ray-tracing-rendering-a-triangle/moller-trumbore-ray-triangle-intersection
+        SimdFloat3 e1 = triangleSet.Vertices[1] - triangleSet.Vertices[0];
+        SimdFloat3 e2 = triangleSet.Vertices[2] - triangleSet.Vertices[0];
+        SimdFloat3 p = cross(rayD, e2);
+        SimdFloat d = dot(e1, p);
+
+        uint32_t const triangleMask = (1 << trianglesInSet) - 1;
+        if (all(lessThan(d, SimdEpsilon), triangleMask))
+        {
+            return false;
+        }
+
+        SimdFloat invD = rcp(d);
+        SimdFloat3 tv = rayO - triangleSet.Vertices[0];
+        SimdFloat v = dot(tv, p) * invD;
+
+        // If all of our triangles fail, then end early
+        if (all(simdOr(lessThan(v, SimdZero), greaterThan(v, SimdOne)), triangleMask))
+        {
+            return false;
+        }
+
+        SimdFloat3 q = cross(tv, e1);
+        SimdFloat w = dot(rayD, q) * invD;
+
+        // If all of our triangles fail, then end early
+        if (all(simdOr(lessThan(w, SimdZero), greaterThan(v + w, SimdOne)), triangleMask))
+        {
+            return false;
+        }
+
+        SimdFloat t = dot(e2, q) * invD;
+        // If any of our triangles passes, then we intersect the set
+        if (any(simdAnd(greaterThan(t, rayMin), lessThan(t, rayMax)), triangleMask))
+        {
+            return true;
+        }
+
+        return false;
     }
 } // namespace IB

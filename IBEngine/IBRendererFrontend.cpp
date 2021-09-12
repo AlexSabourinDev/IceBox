@@ -17,7 +17,6 @@ namespace
     constexpr uint32_t InitPassesJobQueueIndex = 1;
 
     IB::Image::Handle toImageHandle(IB::Asset::Handle asset) { return IB::Image::toHandle(static_cast<uint32_t>(IB::Asset::toValue(asset))); }
-    IB::Mesh::Handle toMeshHandle(IB::Asset::Handle asset) { return IB::Mesh::toHandle(static_cast<uint32_t>(IB::Asset::toValue(asset))); }
 
     class ImageAssetStreamer : public IB::Asset::IStreamer
     {
@@ -62,6 +61,15 @@ namespace
     };
     ImageAssetStreamer ImageStreamer;
 
+    struct MeshData
+    {
+        IB::Mesh::Handle RendererMesh;
+        IB::DynamicArray<IB::SimdTriangleSet> Triangles;
+    };
+
+    IB::Mesh::Handle toMeshHandle(IB::Asset::Handle asset) { return reinterpret_cast<MeshData*>(IB::Asset::toValue(asset))->RendererMesh; }
+
+    IB::ThreadSafePool<MeshData> MeshDataPool;
     class MeshAssetStreamer : public IB::Asset::IStreamer
     {
     public:
@@ -75,22 +83,55 @@ namespace
 
             if (context->State == Load)
             {
-                IB::MeshAsset mesh;
-                fromBinary(&context->Stream, &mesh, context->SaveVersion);
+                MeshData& meshData = MeshDataPool.add();
 
-                IB::Job::Handle meshCreate = IB::launchJob([mesh, meshHandle = &context->Data]() {
+                IB::MeshAsset meshAsset;
+                fromBinary(&context->Stream, &meshAsset, context->SaveVersion);
+
+                IB::Job::Handle jobs[2];
+
+                jobs[0] = IB::launchJob([meshAsset, &meshData]() {
                     IB::MeshDesc meshDesc = {};
-                    meshDesc.Vertices.Data = mesh.Vertices;
-                    meshDesc.Vertices.Count = mesh.VertexCount;
-                    meshDesc.Indices.Data = mesh.Indices;
-                    meshDesc.Indices.Count = mesh.IndexCount;
-                    *meshHandle = createMesh(meshDesc);
+                    meshDesc.Vertices.Data = meshAsset.Vertices;
+                    meshDesc.Vertices.Count = meshAsset.VertexCount;
+                    meshDesc.Indices.Data = meshAsset.Indices;
+                    meshDesc.Indices.Count = meshAsset.IndexCount;
+                    meshData.RendererMesh = createMesh(meshDesc);
 
                     return IB::JobResult::Complete;
                 },
                     IB::RendererJobQueueIndex);
 
-                return IB::Asset::wait(&meshCreate, 1, Create);
+                // Store mesh for collision detection
+                jobs[1] = IB::launchJob([meshAsset, &meshData]()
+                {
+                    uint32_t triangleCount = meshAsset.IndexCount / 3;
+                    meshData.Triangles.reserve(triangleCount / IB::SimdLaneCount + 1);
+                    for (uint32_t t = 0; t < triangleCount; t += IB::SimdLaneCount)
+                    {
+                        IB::Float3 p0[IB::SimdLaneCount];
+                        IB::Float3 p1[IB::SimdLaneCount];
+                        IB::Float3 p2[IB::SimdLaneCount];
+
+                        uint32_t triangleSetCount = IB::min(triangleCount, IB::SimdLaneCount);
+                        for (uint32_t ti = 0; ti < triangleSetCount; ti++)
+                        {
+                            uint32_t i0 = meshAsset.Indices[(triangleCount + ti) * 3 + 0];
+                            uint32_t i1 = meshAsset.Indices[(triangleCount + ti) * 3 + 1];
+                            uint32_t i2 = meshAsset.Indices[(triangleCount + ti) * 3 + 2];
+                            p0[ti] = IB::Float3{ meshAsset.Vertices[i0].Pos[0], meshAsset.Vertices[i0].Pos[1], meshAsset.Vertices[i0].Pos[2] };
+                            p1[ti] = IB::Float3{ meshAsset.Vertices[i1].Pos[0], meshAsset.Vertices[i1].Pos[1], meshAsset.Vertices[i1].Pos[2] };
+                            p2[ti] = IB::Float3{ meshAsset.Vertices[i2].Pos[0], meshAsset.Vertices[i2].Pos[1], meshAsset.Vertices[i2].Pos[2] };
+                        }
+
+                        meshData.Triangles.add(IB::SimdTriangleSet{ simdSet(p0, triangleSetCount), simdSet(p1, triangleSetCount), simdSet(p2, triangleSetCount) });
+                    }
+
+                    return IB::JobResult::Complete;
+                });
+
+                context->Data = reinterpret_cast<uint64_t>(&meshData);
+                return IB::Asset::wait(jobs, 2, Create);
             }
             else
             {
@@ -98,9 +139,12 @@ namespace
             }
         }
 
-        void unloadThreadSafe(IB::Asset::Handle) override
+        void unloadThreadSafe(IB::Asset::Handle meshAsset) override
         {
             // TODO: Handle mesh destruction
+
+            MeshData* meshData = reinterpret_cast<MeshData*>(IB::Asset::toValue(meshAsset));
+            MeshDataPool.remove(*meshData);
         }
     };
     MeshAssetStreamer MeshStreamer;
@@ -574,7 +618,6 @@ namespace IB
 
         return Property::toHandle(reinterpret_cast<uint64_t>(&renderer));
     }
-
 }
 
 namespace IB
