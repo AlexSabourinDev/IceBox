@@ -160,6 +160,7 @@ namespace IB
     inline float* toArray(Float3* value) { return &value->x; };
     inline Float3 mul(const Mat3x3 &left, Float3 right);
     inline Float3 cross(Float3 left, Float3 right);
+    inline Float3 normalize(Float3 value);
 
     inline Float3 rotate(Quaternion rotator, Float3 point);
     inline Quaternion operator*(Quaternion left, Quaternion right);
@@ -175,6 +176,11 @@ namespace IB
 
     inline Mat3x4 toMatrix(const Transform& transform);
     inline Mat3x4 toInvMatrix(const Transform& transform);
+    inline Float3 transformDirection(const Transform& transform, Float3 direction);
+    inline Float3 inverseTransformDirection(const Transform& transform, Float3 direction);
+
+    inline Float3 transformPoint(const Transform& transform, Float3 direction);
+    inline Float3 inverseTransformPoint(const Transform& transform, Float3 direction);
 
     inline bool doesRayIntersectTriangle(Float3 rayO, Float3 rayD, float rayMin, float rayMax, const Triangle& triangle);
 
@@ -335,6 +341,17 @@ namespace IB
             left.z*right.x - left.x*right.z,
             left.x*right.y - left.y*right.x
         };
+    }
+
+    inline Float3 normalize(Float3 value)
+    {
+        float l = length(value);
+        if (l == 0.0f)
+        {
+            return { 0.0f, 0.0f, 0.0f };
+        }
+
+        return value / l;
     }
 
     inline Float3 rotate(Quaternion rotator, Float3 point)
@@ -531,6 +548,26 @@ namespace IB
         return toMat3x4(inverseScaleRotation, -inversePosition);
     }
 
+    inline Float3 transformDirection(const Transform& transform, Float3 direction)
+    {
+        return rotate(transform.Rotation, direction * transform.Scale);
+    }
+
+    inline Float3 inverseTransformDirection(const Transform& transform, Float3 direction)
+    {
+        return rotate(inverse(transform.Rotation), direction) / transform.Scale;
+    }
+
+    inline Float3 transformPoint(const Transform& transform, Float3 point)
+    {
+        return rotate(transform.Rotation, point * transform.Scale) + transform.Position;
+    }
+
+    inline Float3 inverseTransformPoint(const Transform& transform, Float3 point)
+    {
+        return rotate(inverse(transform.Rotation), point - transform.Position) / transform.Scale;
+    }
+
     inline bool doesRayIntersectTriangle(Float3 rayO, Float3 rayD, float rayMin, float rayMax, Triangle triangle)
     {
         // Source: https://www.scratchapixel.com/lessons/3d-basic-rendering/ray-tracing-rendering-a-triangle/moller-trumbore-ray-triangle-intersection
@@ -592,43 +629,58 @@ namespace IB
     };
 
     inline SimdFloat splat(float value);
+    inline SimdFloat splatBitwise(int32_t value);
     inline SimdFloat simdSet(float const (&values)[SimdLaneCount]);
     inline SimdFloat operator+(SimdFloat left, SimdFloat right);
     inline SimdFloat operator-(SimdFloat left, SimdFloat right);
     inline SimdFloat operator*(SimdFloat left, SimdFloat right);
     inline SimdFloat lessThan(SimdFloat left, SimdFloat right);
+    inline SimdFloat lessThanOrEqual(SimdFloat left, SimdFloat right);
     inline SimdFloat greaterThan(SimdFloat left, SimdFloat right);
-    inline SimdFloat simdOr(SimdFloat left, SimdFloat right);
-    inline SimdFloat simdAnd(SimdFloat left, SimdFloat right);
+    inline SimdFloat greaterThanOrEqual(SimdFloat left, SimdFloat right);
+    inline SimdFloat bitOr(SimdFloat left, SimdFloat right);
+    inline SimdFloat bitAnd(SimdFloat left, SimdFloat right);
     inline SimdFloat rcp(SimdFloat value);
+    inline SimdFloat abs(SimdFloat value);
+    inline SimdFloat bitNot(SimdFloat value);
     inline bool any(SimdFloat comparison, uint32_t mask = 0xFFFFFFFF);
     inline bool all(SimdFloat comparison, uint32_t mask = 0xFFFFFFFF);
 
     inline SimdFloat3 splat(Float3 value);
     // valueCount must be less than or equal to 4
-    inline SimdFloat3 simdSet(Float3* values, uint32_t valueCount);
+    inline SimdFloat3 simdSet(Float3 (&values)[SimdLaneCount]);
     inline SimdFloat3 operator-(const SimdFloat3& left, const SimdFloat3& right);
     inline SimdFloat3 cross(const SimdFloat3& left, const SimdFloat3& right);
     inline SimdFloat dot(const SimdFloat3& left, const SimdFloat3& right);
 
-    inline bool doesRayIntersectAnyTriangle(SimdFloat3 rayO, SimdFloat3 rayD, SimdFloat rayMin, SimdFloat rayMax, SimdTriangleSet triangleSet, uint32_t trianglesInSet);
+    inline bool doesRayIntersectAnyTriangle(SimdFloat3 rayO, SimdFloat3 rayD, SimdFloat rayMin, SimdFloat rayMax, const SimdTriangleSet& triangleSet, uint32_t trianglesInSet);
 
     static const SimdFloat SimdEpsilon = splat(FLT_EPSILON);
     static const SimdFloat SimdZero = splat(0.0f);
     static const SimdFloat SimdOne = splat(1.0f);
+    static const SimdFloat SimdAllMask = splatBitwise(-1); // Create a mask of all bits set
 
     // Implementation
 
-    inline SimdFloat splat(float value) { return SimdFloat{ _mm_set_ps1(value) }; }
+    inline SimdFloat splat(float value) { return SimdFloat{ _mm_set1_ps(value) }; }
+    inline SimdFloat splatBitwise(int32_t value) { return SimdFloat{ _mm_castsi128_ps(_mm_set1_epi32(value)) }; }
+
     inline SimdFloat simdSet(float const (&values)[SimdLaneCount]) { return SimdFloat{ _mm_set_ps(values[0], values[1], values[2], values[3]) }; }
     inline SimdFloat operator+(SimdFloat left, SimdFloat right) { return SimdFloat{ _mm_add_ps(left.Values, right.Values) }; }
     inline SimdFloat operator-(SimdFloat left, SimdFloat right) { return SimdFloat{ _mm_sub_ps(left.Values, right.Values) }; }
     inline SimdFloat operator*(SimdFloat left, SimdFloat right) { return SimdFloat{ _mm_mul_ps(left.Values, right.Values) }; }
     inline SimdFloat lessThan(SimdFloat left, SimdFloat right) { return SimdFloat{ _mm_cmp_ps(left.Values, right.Values, _CMP_LT_OQ) }; }
+    inline SimdFloat lessThanOrEqual(SimdFloat left, SimdFloat right) { return SimdFloat{ _mm_cmp_ps(left.Values, right.Values, _CMP_LE_OQ) }; }
     inline SimdFloat greaterThan(SimdFloat left, SimdFloat right) { return SimdFloat{ _mm_cmp_ps(left.Values, right.Values, _CMP_GT_OQ) }; }
-    inline SimdFloat simdOr(SimdFloat left, SimdFloat right) { return SimdFloat{ _mm_or_ps(left.Values, right.Values) }; };
-    inline SimdFloat simdAnd(SimdFloat left, SimdFloat right) { return SimdFloat{ _mm_and_ps(left.Values, right.Values) }; };
+    inline SimdFloat greaterThanOrEqual(SimdFloat left, SimdFloat right) { return SimdFloat{ _mm_cmp_ps(left.Values, right.Values, _CMP_GE_OQ) }; }
+    inline SimdFloat bitOr(SimdFloat left, SimdFloat right) { return SimdFloat{ _mm_or_ps(left.Values, right.Values) }; };
+    inline SimdFloat bitAnd(SimdFloat left, SimdFloat right) { return SimdFloat{ _mm_and_ps(left.Values, right.Values) }; };
     inline SimdFloat rcp(SimdFloat value) { return SimdFloat{ _mm_rcp_ps(value.Values) }; }
+    inline SimdFloat abs(SimdFloat value)
+    {
+        return SimdFloat{ _mm_and_ps(value.Values, splatBitwise(static_cast<int32_t>(0x7FFFFFFF)).Values) }; // Mask out our sign bit
+    }
+    inline SimdFloat bitNot(SimdFloat value) { return SimdFloat{ _mm_xor_ps(value.Values, SimdAllMask.Values) }; }
 
     inline bool any(SimdFloat comparison, uint32_t mask)
     {
@@ -643,12 +695,12 @@ namespace IB
     inline SimdFloat3 splat(Float3 value) { return SimdFloat3{ splat(value.x), splat(value.y), splat(value.z) }; }
     inline SimdFloat3 operator-(const SimdFloat3& left, const SimdFloat3& right) { return SimdFloat3{ left.x-right.x, left.y - right.y, left.z - right.z }; }
 
-    inline SimdFloat3 simdSet(Float3* values, uint32_t valueCount)
+    inline SimdFloat3 simdSet(Float3(&values)[SimdLaneCount])
     {
         float x[SimdLaneCount] = {};
         float y[SimdLaneCount] = {};
         float z[SimdLaneCount] = {};
-        for (uint32_t i = 0; i < valueCount && i < SimdLaneCount; i++)
+        for (uint32_t i = 0; i < SimdLaneCount; i++)
         {
             x[i] = values[i].x;
             y[i] = values[i].y;
@@ -675,10 +727,10 @@ namespace IB
 
     inline SimdFloat dot(const SimdFloat3& left, const SimdFloat3& right)
     {
-        return SimdFloat{ left.x * right.y + left.y * right.y + left.z * right.z };
+        return SimdFloat{ left.x * right.x + left.y * right.y + left.z * right.z };
     }
 
-    inline bool doesRayIntersectAnyTriangle(SimdFloat3 rayO, SimdFloat3 rayD, SimdFloat rayMin, SimdFloat rayMax, SimdTriangleSet triangleSet, uint32_t trianglesInSet)
+    inline bool doesRayIntersectAnyTriangle(SimdFloat3 rayO, SimdFloat3 rayD, SimdFloat rayMin, SimdFloat rayMax, const SimdTriangleSet& triangleSet, uint32_t trianglesInSet)
     {
         // Source: https://www.scratchapixel.com/lessons/3d-basic-rendering/ray-tracing-rendering-a-triangle/moller-trumbore-ray-triangle-intersection
         SimdFloat3 e1 = triangleSet.Vertices[1] - triangleSet.Vertices[0];
@@ -687,7 +739,10 @@ namespace IB
         SimdFloat d = dot(e1, p);
 
         uint32_t const triangleMask = (1 << trianglesInSet) - 1;
-        if (all(lessThan(d, SimdEpsilon), triangleMask))
+        SimdFloat projectionTest = greaterThanOrEqual(d, SimdEpsilon);
+        SimdFloat resultMask = projectionTest;
+        // If none of our lanes pass, early out
+        if (all(bitNot(resultMask), triangleMask))
         {
             return false;
         }
@@ -696,8 +751,11 @@ namespace IB
         SimdFloat3 tv = rayO - triangleSet.Vertices[0];
         SimdFloat v = dot(tv, p) * invD;
 
+        projectionTest = bitAnd(greaterThanOrEqual(v, SimdZero), lessThanOrEqual(v, SimdOne));
+        resultMask = bitAnd(resultMask, projectionTest); // Carry our successes forward
+
         // If all of our triangles fail, then end early
-        if (all(simdOr(lessThan(v, SimdZero), greaterThan(v, SimdOne)), triangleMask))
+        if (all(bitNot(resultMask), triangleMask))
         {
             return false;
         }
@@ -706,14 +764,22 @@ namespace IB
         SimdFloat w = dot(rayD, q) * invD;
 
         // If all of our triangles fail, then end early
-        if (all(simdOr(lessThan(w, SimdZero), greaterThan(v + w, SimdOne)), triangleMask))
+
+        projectionTest = bitAnd(greaterThanOrEqual(w, SimdZero), lessThanOrEqual(v + w, SimdOne));
+        resultMask = bitAnd(resultMask, projectionTest); // Carry our successes forward
+
+        // If all of our triangles fail, then end early
+        if (all(bitNot(resultMask), triangleMask))
         {
             return false;
         }
 
         SimdFloat t = dot(e2, q) * invD;
-        // If any of our triangles passes, then we intersect the set
-        if (any(simdAnd(greaterThan(t, rayMin), lessThan(t, rayMax)), triangleMask))
+        projectionTest = bitAnd(greaterThan(t, rayMin), lessThan(t, rayMax));
+        resultMask = bitAnd(projectionTest, resultMask);
+
+        // If any of our triangles have made it this far, pass
+        if (any(resultMask, triangleMask))
         {
             return true;
         }

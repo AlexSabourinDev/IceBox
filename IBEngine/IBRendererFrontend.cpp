@@ -65,8 +65,10 @@ namespace
     {
         IB::Mesh::Handle RendererMesh;
         IB::DynamicArray<IB::SimdTriangleSet> Triangles;
+        uint32_t TriangleCount = 0;
     };
 
+    MeshData* toMeshData(IB::Asset::Handle asset) { return reinterpret_cast<MeshData*>(IB::Asset::toValue(asset)); }
     IB::Mesh::Handle toMeshHandle(IB::Asset::Handle asset) { return reinterpret_cast<MeshData*>(IB::Asset::toValue(asset))->RendererMesh; }
 
     IB::ThreadSafePool<MeshData> MeshDataPool;
@@ -116,16 +118,17 @@ namespace
                         uint32_t triangleSetCount = IB::min(triangleCount, IB::SimdLaneCount);
                         for (uint32_t ti = 0; ti < triangleSetCount; ti++)
                         {
-                            uint32_t i0 = meshAsset.Indices[(triangleCount + ti) * 3 + 0];
-                            uint32_t i1 = meshAsset.Indices[(triangleCount + ti) * 3 + 1];
-                            uint32_t i2 = meshAsset.Indices[(triangleCount + ti) * 3 + 2];
+                            uint32_t i0 = meshAsset.Indices[(t + ti) * 3 + 0];
+                            uint32_t i1 = meshAsset.Indices[(t + ti) * 3 + 1];
+                            uint32_t i2 = meshAsset.Indices[(t + ti) * 3 + 2];
                             p0[ti] = IB::Float3{ meshAsset.Vertices[i0].Pos[0], meshAsset.Vertices[i0].Pos[1], meshAsset.Vertices[i0].Pos[2] };
                             p1[ti] = IB::Float3{ meshAsset.Vertices[i1].Pos[0], meshAsset.Vertices[i1].Pos[1], meshAsset.Vertices[i1].Pos[2] };
                             p2[ti] = IB::Float3{ meshAsset.Vertices[i2].Pos[0], meshAsset.Vertices[i2].Pos[1], meshAsset.Vertices[i2].Pos[2] };
                         }
 
-                        meshData.Triangles.add(IB::SimdTriangleSet{ simdSet(p0, triangleSetCount), simdSet(p1, triangleSetCount), simdSet(p2, triangleSetCount) });
+                        meshData.Triangles.add(IB::SimdTriangleSet{ simdSet(p0), simdSet(p1), simdSet(p2) });
                     }
+                    meshData.TriangleCount = triangleCount;
 
                     return IB::JobResult::Complete;
                 });
@@ -617,6 +620,26 @@ namespace IB
             &renderer.MaterialResource);
 
         return Property::toHandle(reinterpret_cast<uint64_t>(&renderer));
+    }
+
+    bool tryGetTriangleSet(Property::Handle rendererProperty, SimdTriangleSet** triangles, uint32_t* triangleCount)
+    {
+        if (rendererProperty == InvalidProperty)
+        {
+            return false;
+        }
+
+        RendererProperty* renderer = toRendererProperty(rendererProperty);
+
+        bool const isMeshAvailable = Asset::isResourceAssetAvailable(renderer->MeshResource);
+        if (isMeshAvailable)
+        {
+            MeshData* meshData = toMeshData(Asset::getAssetFromResource(renderer->MeshResource));
+            *triangles = meshData->Triangles.data();
+            *triangleCount = meshData->TriangleCount;
+        }
+
+        return isMeshAvailable;
     }
 }
 

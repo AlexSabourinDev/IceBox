@@ -28,7 +28,7 @@ namespace
             return true;
         }
 
-        if (ImGizmo::onWindowMessage(message))
+        if (Editor::onWindowMessage(message))
         {
             return true;
         }

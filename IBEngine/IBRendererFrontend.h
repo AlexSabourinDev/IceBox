@@ -120,6 +120,8 @@ namespace IB
         struct DrawData;
     }
 
+    struct SimdTriangleSet;
+
     IB_API void initRendererFrontend(RendererFrontendDesc const &frontendDesc);
     IB_API void killRendererFrontend();
 
@@ -153,6 +155,9 @@ namespace IB
     IB_API Property::Handle createCameraProperty(Camera camera);
     IB_API Mat4x4 getViewProjection(CameraProperty::Handle camera, Transform const& worldTransform);
     IB_API Mat4x4 getInvViewProjection(CameraProperty::Handle camera, Transform const& transform);
+
+    // TODO: I suspect we might want a different way to process mesh data for other uses instead of having the renderer frontend own it
+    IB_API bool tryGetTriangleSet(Property::Handle rendererProperty, SimdTriangleSet** triangles, uint32_t* triangleCount);
 
     // Can be called from any thread
     struct GatherCellViewDesc

@@ -48,6 +48,7 @@ namespace IB
         IB_API void init();
         IB_API void kill();
         IB_API void frame(FrameState* state);
+        IB_API bool onWindowMessage(IB::WindowMessage message);
         IB_API Entity::Handle getCamera();
 
         IB_API bool isSelected(Entity::Handle entity);
@@ -77,7 +78,6 @@ namespace IB
         };
 
         IB_API void translation(Float3* position, Quaternion rotation, TranslationState* state);
-        IB_API bool onWindowMessage(IB::WindowMessage message);
     }
 }
 

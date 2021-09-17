@@ -40,9 +40,84 @@ namespace IB
         void endFrame();
     }
 
+    // Input
+    namespace
+    {
+        namespace Input
+        {
+            uint32_t PreviousMouseX = 0;
+            uint32_t PreviousMouseY = 0;
+            uint32_t MouseX = 0;
+            uint32_t MouseY = 0;
+            bool MouseButtonStates[WindowMessage::Mouse::Button::Count];
+            uint32_t MouseButtonFrameCounts[WindowMessage::Mouse::Button::Count];
+
+            bool isButtonClicked(WindowMessage::Mouse::Button button)
+            {
+                return MouseButtonStates[button] && MouseButtonFrameCounts[button] == 1;
+            }
+
+            bool isButtonPressed(WindowMessage::Mouse::Button button)
+            {
+                return MouseButtonStates[button];
+            }
+
+            void newFrame()
+            {
+                for (uint32_t i = 0; i < WindowMessage::Mouse::Button::Count; i++)
+                {
+                    if (MouseButtonStates[i])
+                    {
+                        MouseButtonFrameCounts[i]++;
+                    }
+                    else
+                    {
+                        MouseButtonFrameCounts[i] = 0;
+                    }
+                }
+            }
+
+            void endFrame()
+            {
+                PreviousMouseX = MouseX;
+                PreviousMouseY = MouseY;
+            }
+
+            bool onWindowMessage(IB::WindowMessage message)
+            {
+                switch (message.Type)
+                {
+                case IB::WindowMessage::MouseClick:
+                    MouseX = message.Data.MouseClick.X;
+                    MouseY = message.Data.MouseClick.Y;
+                    MouseButtonStates[message.Data.MouseClick.Button] = message.Data.MouseClick.State == WindowMessage::Mouse::Pressed;
+                    return true;
+                case IB::WindowMessage::MouseMove:
+                    MouseX = message.Data.MouseMove.X;
+                    MouseY = message.Data.MouseMove.Y;
+                    return true;
+                }
+
+                return false;
+            }
+        }
+    }
+
     namespace Editor
     {
         Entity::Handle CameraHandle;
+        uint32_t WindowWidth = 0;
+        uint32_t WindowHeight = 0;
+
+        Float3 mouseToWorldPos(Mat4x4 const& invViewProj, uint32_t x, uint32_t y, float depth = 0.0f)
+        {
+            float u = static_cast<float>(x) / static_cast<float>(Editor::WindowWidth)*2.0f - 1.0f;
+            float v = static_cast<float>(y) / static_cast<float>(Editor::WindowHeight)*2.0f - 1.0f;
+
+            Float4 ndcRayStart = Float4{ u, v, depth, 1.0f };
+            Float4 rayStart4 = mul(invViewProj, ndcRayStart);
+            return Float3{ rayStart4.x, rayStart4.y, rayStart4.z } / rayStart4.w;
+        };
 
         struct AssetBrowserState
         {
@@ -144,7 +219,87 @@ namespace IB
         void frame(Editor::FrameState* state)
         {
             newImGuiFrame();
+            Input::newFrame();
             ImGizmo::newFrame(CameraHandle);
+
+            // TODO: Handle scene picking before editor rendering, or maybe both in parallel and select on the next frame?
+            if(Input::isButtonClicked(WindowMessage::Mouse::Left))
+            {
+                CameraProperty::Handle cameraProperty = toCameraHandle(getPropertyFromEntity(CameraHandle, CameraPropertyType));
+                IB_ASSERT(cameraProperty != InvalidProperty, "Camera handle should have a camera property!");
+
+                Mat4x4 invViewProj = Mat4x4::identity();
+                if (cameraProperty != InvalidProperty)
+                {
+                    Transform cameraTransform = {};
+                    Property::Handle transformProperty = getPropertyFromEntity(CameraHandle, TransformPropertyType);
+                    if (transformProperty != InvalidProperty)
+                    {
+                        cameraTransform = getLocalTransform(transformProperty);
+                    }
+
+                    invViewProj = getInvViewProjection(cameraProperty, cameraTransform);
+                }
+
+                Cell::Handle currentCell = InvalidCell;
+                if (Asset::isResourceAssetAvailable(*state->CellResource) && *state->CellResource != InvalidResource)
+                {
+                    currentCell = toCellHandle(Asset::getAssetFromResource(*state->CellResource));
+
+                    Entity::Handle *entities;
+                    uint32_t entityCount;
+                    getEntityList(currentCell, &entities, &entityCount);
+
+                    Float3 rayStartWorld = mouseToWorldPos(invViewProj, Input::MouseX, Input::MouseY, 0.0f);
+                    Float3 rayEndWorld = mouseToWorldPos(invViewProj, Input::MouseX, Input::MouseY, 1.0f);
+
+                    Entity::Handle selectedEntity = InvalidEntity;
+                    for (uint32_t e = 0; e < entityCount && selectedEntity == InvalidEntity; e++)
+                    {
+                        Property::Handle rendererHandle = getPropertyFromEntity(entities[e], RendererPropertyType);
+                        SimdTriangleSet* triangleSet;
+                        uint32_t triangleCount;
+                        if (tryGetTriangleSet(rendererHandle, &triangleSet, &triangleCount))
+                        {
+                            Transform entityToWorldTransform = {};
+                            Property::Handle transformProperty = getPropertyFromEntity(entities[e], TransformPropertyType);
+                            if (transformProperty != InvalidProperty)
+                            {
+                                entityToWorldTransform = getLocalTransform(transformProperty);
+                            }
+
+                            Float3 rayStartEntity = inverseTransformPoint(entityToWorldTransform, rayStartWorld);
+                            Float3 rayEndEntity = inverseTransformPoint(entityToWorldTransform, rayEndWorld);
+
+                            Float3 rayStartToEnd = rayEndEntity - rayStartEntity;
+                            float rayLength = length(rayStartToEnd);
+                            Float3 rayDir = rayStartToEnd / rayLength;
+
+                            SimdFloat3 simdRayStart = splat(rayStartEntity);
+                            SimdFloat3 simdRayDir = splat(rayStartToEnd);
+                            SimdFloat simdRayLength = splat(rayLength);
+
+                            for (uint32_t tr = 0; tr < triangleCount; tr += SimdLaneCount, triangleSet++)
+                            {
+                                uint32_t trianglesInSet = min(triangleCount - tr, SimdLaneCount);
+                                if (doesRayIntersectAnyTriangle(simdRayStart, simdRayDir, SimdZero, simdRayLength, *triangleSet, trianglesInSet))
+                                {
+                                    selectedEntity = entities[e];
+                                    break;
+                                }
+                            }
+                        }
+                    }
+
+                    if (selectedEntity != InvalidEntity)
+                    {
+                        InspectorState.Selected.Asset = toAssetHandle(selectedEntity);
+                        InspectorState.Selected.IsResource = false;
+                        InspectorState.Selected.Type = EntityType;
+                    }
+                }
+            }
+
 
             static bool showEditorInspector = false;
 
@@ -300,6 +455,7 @@ namespace IB
                 ImGui::End();
             }
 
+            Input::endFrame();
             ImGizmo::endFrame();
             ImGui::Render();
         }
@@ -316,6 +472,28 @@ namespace IB
                 return InspectorState.Selected.Type == EntityType && toEntityHandle(InspectorState.Selected.Asset) == entity;
             }
         }
+
+        bool onWindowMessage(IB::WindowMessage message)
+        {
+            if (Input::onWindowMessage(message))
+            {
+                return true;
+            }
+
+            switch (message.Type)
+            {
+            case WindowMessage::Resize:
+                WindowWidth = message.Data.Resize.Width;
+                WindowHeight = message.Data.Resize.Height;
+                return true;
+            case WindowMessage::Create:
+                WindowWidth = message.Data.Create.Width;
+                WindowHeight = message.Data.Create.Height;
+                return true;
+            }
+
+            return false;
+        }
     } // namespace Editor
 
     namespace ImGizmo
@@ -328,27 +506,7 @@ namespace IB
 
             DrawData FrameDrawData;
 
-            uint32_t PreviousMouseX = 0;
-            uint32_t PreviousMouseY = 0;
-            uint32_t MouseX = 0;
-            uint32_t MouseY = 0;
-            bool MouseButtonStates[WindowMessage::Mouse::Button::Count];
-            uint32_t MouseButtonFrameCounts[WindowMessage::Mouse::Button::Count];
-
-            uint32_t WindowWidth = 0;
-            uint32_t WindowHeight = 0;
-
             Entity::Handle FrameCamera;
-
-            bool isButtonClicked(WindowMessage::Mouse::Button button)
-            {
-                return MouseButtonStates[button] && MouseButtonFrameCounts[button] == 1;
-            }
-
-            bool isButtonPressed(WindowMessage::Mouse::Button button)
-            {
-                return MouseButtonStates[button];
-            }
         }
 
         void init()
@@ -498,54 +656,14 @@ namespace IB
 
         }
 
-        bool onWindowMessage(IB::WindowMessage message)
-        {
-            switch (message.Type)
-            {
-            case IB::WindowMessage::MouseClick:
-                MouseX = message.Data.MouseClick.X;
-                MouseY = message.Data.MouseClick.Y;
-                MouseButtonStates[message.Data.MouseClick.Button] = message.Data.MouseClick.State == WindowMessage::Mouse::Pressed;
-                return true;
-            case IB::WindowMessage::MouseMove:
-                MouseX = message.Data.MouseMove.X;
-                MouseY = message.Data.MouseMove.Y;
-                return true;
-            case WindowMessage::Resize:
-                WindowWidth = message.Data.Resize.Width;
-                WindowHeight = message.Data.Resize.Height;
-                return true;
-            case WindowMessage::Create:
-                WindowWidth = message.Data.Create.Width;
-                WindowHeight = message.Data.Create.Height;
-                return true;
-            }
-
-            return false;
-        }
-
         void newFrame(Entity::Handle camera)
         {
             FrameDrawData.Instances.clear();
             FrameCamera = camera;
-
-            for (uint32_t i = 0; i < WindowMessage::Mouse::Button::Count; i++)
-            {
-                if (MouseButtonStates[i])
-                {
-                    MouseButtonFrameCounts[i]++;
-                }
-                else
-                {
-                    MouseButtonFrameCounts[i] = 0;
-                }
-            }
         }
 
         void endFrame()
         {
-            PreviousMouseX = MouseX;
-            PreviousMouseY = MouseY;
         }
 
         DrawData const* getDrawData()
@@ -578,24 +696,16 @@ namespace IB
                 rotate(rotation, Float3{0.0f, 0.0f, 1.0f}),
             };
 
-            if (!isButtonPressed(WindowMessage::Mouse::Left))
+            if (!Input::isButtonPressed(WindowMessage::Mouse::Left))
             {
                 state->ActiveAxis = 3;
             }
             else
             {
-                if (isButtonClicked(WindowMessage::Mouse::Left))
+                if (Input::isButtonClicked(WindowMessage::Mouse::Left))
                 {
-                    float u = static_cast<float>(MouseX) / static_cast<float>(WindowWidth)*2.0f - 1.0f;
-                    float v = static_cast<float>(MouseY) / static_cast<float>(WindowHeight)*2.0f - 1.0f;
-
-                    Float4 ndcRayStart = Float4{ u, v, 0.0f, 1.0f };
-                    Float4 rayStart4 = mul(invViewProj, ndcRayStart);
-                    Float3 rayStart = Float3{ rayStart4.x, rayStart4.y, rayStart4.z } / rayStart4.w;
-
-                    Float4 ndcRayEnd = Float4{ u, v, 1.0f, 1.0f };
-                    Float4 rayEnd4 = mul(invViewProj, ndcRayEnd);
-                    Float3 rayEnd = Float3{ rayEnd4.x, rayEnd4.y, rayEnd4.z } / rayEnd4.w;
+                    Float3 rayStart = Editor::mouseToWorldPos(invViewProj, Input::MouseX, Input::MouseY, 0.0f);
+                    Float3 rayEnd = Editor::mouseToWorldPos(invViewProj, Input::MouseX, Input::MouseY, 1.0f);
 
                     for (uint32_t i = 0; i < 3; i++)
                     {
@@ -608,18 +718,8 @@ namespace IB
                 }
                 else if (state->ActiveAxis < 3)
                 {
-                    auto mouseToWorldPos = [invViewProj](uint32_t x, uint32_t y)
-                    {
-                        float u = static_cast<float>(x) / static_cast<float>(WindowWidth)*2.0f - 1.0f;
-                        float v = static_cast<float>(y) / static_cast<float>(WindowHeight)*2.0f - 1.0f;
-
-                        Float4 ndcRayStart = Float4{ u, v, 0.0f, 1.0f };
-                        Float4 rayStart4 = mul(invViewProj, ndcRayStart);
-                        return Float3{ rayStart4.x, rayStart4.y, rayStart4.z } / rayStart4.w;
-                    };
-
-                    Float3 previousPos = mouseToWorldPos(PreviousMouseX, PreviousMouseY) - cameraTransform.Position;
-                    Float3 nextPos = mouseToWorldPos(MouseX, MouseY) - cameraTransform.Position;
+                    Float3 previousPos = Editor::mouseToWorldPos(invViewProj, Input::PreviousMouseX, Input::PreviousMouseY) - cameraTransform.Position;
+                    Float3 nextPos = Editor::mouseToWorldPos(invViewProj, Input::MouseX, Input::MouseY) - cameraTransform.Position;
 
                     // Intersect our ray with the plane defined by our axies
 
