@@ -102,7 +102,7 @@ namespace IB
             Entity::Handle parentEntity = *reinterpret_cast<Entity::Handle*>(parentData);
             if (isSelected(parentEntity))
             {
-                static ImGizmo::TranslationState translationState;
+                static ImGizmo::TranslationGizmo translationState;
                 ImGizmo::translation(&transform->Position, transform->Rotation, &translationState);
             }
 

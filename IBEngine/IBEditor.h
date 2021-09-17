@@ -72,12 +72,12 @@ namespace IB
         IB_API void kill();
         IB_API DrawData const* getDrawData();
 
-        struct TranslationState
+        struct TranslationGizmo
         {
             uint32_t ActiveAxis = 3;
         };
 
-        IB_API void translation(Float3* position, Quaternion rotation, TranslationState* state);
+        IB_API void translation(Float3* position, Quaternion rotation, TranslationGizmo* state);
     }
 }
 

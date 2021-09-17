@@ -38,6 +38,7 @@ namespace IB
     {
         void newFrame(Entity::Handle camera);
         void endFrame();
+        bool hasFocusedGizmo();
     }
 
     // Input
@@ -222,85 +223,6 @@ namespace IB
             Input::newFrame();
             ImGizmo::newFrame(CameraHandle);
 
-            // TODO: Handle scene picking before editor rendering, or maybe both in parallel and select on the next frame?
-            if(Input::isButtonClicked(WindowMessage::Mouse::Left))
-            {
-                CameraProperty::Handle cameraProperty = toCameraHandle(getPropertyFromEntity(CameraHandle, CameraPropertyType));
-                IB_ASSERT(cameraProperty != InvalidProperty, "Camera handle should have a camera property!");
-
-                Mat4x4 invViewProj = Mat4x4::identity();
-                if (cameraProperty != InvalidProperty)
-                {
-                    Transform cameraTransform = {};
-                    Property::Handle transformProperty = getPropertyFromEntity(CameraHandle, TransformPropertyType);
-                    if (transformProperty != InvalidProperty)
-                    {
-                        cameraTransform = getLocalTransform(transformProperty);
-                    }
-
-                    invViewProj = getInvViewProjection(cameraProperty, cameraTransform);
-                }
-
-                Cell::Handle currentCell = InvalidCell;
-                if (Asset::isResourceAssetAvailable(*state->CellResource) && *state->CellResource != InvalidResource)
-                {
-                    currentCell = toCellHandle(Asset::getAssetFromResource(*state->CellResource));
-
-                    Entity::Handle *entities;
-                    uint32_t entityCount;
-                    getEntityList(currentCell, &entities, &entityCount);
-
-                    Float3 rayStartWorld = mouseToWorldPos(invViewProj, Input::MouseX, Input::MouseY, 0.0f);
-                    Float3 rayEndWorld = mouseToWorldPos(invViewProj, Input::MouseX, Input::MouseY, 1.0f);
-
-                    Entity::Handle selectedEntity = InvalidEntity;
-                    for (uint32_t e = 0; e < entityCount && selectedEntity == InvalidEntity; e++)
-                    {
-                        Property::Handle rendererHandle = getPropertyFromEntity(entities[e], RendererPropertyType);
-                        SimdTriangleSet* triangleSet;
-                        uint32_t triangleCount;
-                        if (tryGetTriangleSet(rendererHandle, &triangleSet, &triangleCount))
-                        {
-                            Transform entityToWorldTransform = {};
-                            Property::Handle transformProperty = getPropertyFromEntity(entities[e], TransformPropertyType);
-                            if (transformProperty != InvalidProperty)
-                            {
-                                entityToWorldTransform = getLocalTransform(transformProperty);
-                            }
-
-                            Float3 rayStartEntity = inverseTransformPoint(entityToWorldTransform, rayStartWorld);
-                            Float3 rayEndEntity = inverseTransformPoint(entityToWorldTransform, rayEndWorld);
-
-                            Float3 rayStartToEnd = rayEndEntity - rayStartEntity;
-                            float rayLength = length(rayStartToEnd);
-                            Float3 rayDir = rayStartToEnd / rayLength;
-
-                            SimdFloat3 simdRayStart = splat(rayStartEntity);
-                            SimdFloat3 simdRayDir = splat(rayStartToEnd);
-                            SimdFloat simdRayLength = splat(rayLength);
-
-                            for (uint32_t tr = 0; tr < triangleCount; tr += SimdLaneCount, triangleSet++)
-                            {
-                                uint32_t trianglesInSet = min(triangleCount - tr, SimdLaneCount);
-                                if (doesRayIntersectAnyTriangle(simdRayStart, simdRayDir, SimdZero, simdRayLength, *triangleSet, trianglesInSet))
-                                {
-                                    selectedEntity = entities[e];
-                                    break;
-                                }
-                            }
-                        }
-                    }
-
-                    if (selectedEntity != InvalidEntity)
-                    {
-                        InspectorState.Selected.Asset = toAssetHandle(selectedEntity);
-                        InspectorState.Selected.IsResource = false;
-                        InspectorState.Selected.Type = EntityType;
-                    }
-                }
-            }
-
-
             static bool showEditorInspector = false;
 
             bool openSavePopup = false;
@@ -455,6 +377,89 @@ namespace IB
                 ImGui::End();
             }
 
+            // The order of events for click handling is:
+            // - ImGui
+            // - ImGizmo
+            // - Editor picking
+            if (Input::isButtonClicked(WindowMessage::Mouse::Left)
+                && !ImGui::GetIO().WantCaptureMouse
+                && !ImGizmo::hasFocusedGizmo())
+            {
+                CameraProperty::Handle cameraProperty = toCameraHandle(getPropertyFromEntity(CameraHandle, CameraPropertyType));
+                IB_ASSERT(cameraProperty != InvalidProperty, "Camera handle should have a camera property!");
+
+                Mat4x4 invViewProj = Mat4x4::identity();
+                if (cameraProperty != InvalidProperty)
+                {
+                    Transform cameraTransform = {};
+                    Property::Handle transformProperty = getPropertyFromEntity(CameraHandle, TransformPropertyType);
+                    if (transformProperty != InvalidProperty)
+                    {
+                        cameraTransform = getLocalTransform(transformProperty);
+                    }
+
+                    invViewProj = getInvViewProjection(cameraProperty, cameraTransform);
+                }
+
+                Cell::Handle currentCell = InvalidCell;
+                if (Asset::isResourceAssetAvailable(*state->CellResource) && *state->CellResource != InvalidResource)
+                {
+                    currentCell = toCellHandle(Asset::getAssetFromResource(*state->CellResource));
+
+                    Entity::Handle *entities;
+                    uint32_t entityCount;
+                    getEntityList(currentCell, &entities, &entityCount);
+
+                    Float3 rayStartWorld = mouseToWorldPos(invViewProj, Input::MouseX, Input::MouseY, 0.0f);
+                    Float3 rayEndWorld = mouseToWorldPos(invViewProj, Input::MouseX, Input::MouseY, 1.0f);
+
+                    Entity::Handle selectedEntity = InvalidEntity;
+                    for (uint32_t e = 0; e < entityCount && selectedEntity == InvalidEntity; e++)
+                    {
+                        Property::Handle rendererHandle = getPropertyFromEntity(entities[e], RendererPropertyType);
+                        SimdTriangleSet* triangleSet;
+                        uint32_t triangleCount;
+                        if (tryGetTriangleSet(rendererHandle, &triangleSet, &triangleCount))
+                        {
+                            Transform entityToWorldTransform = {};
+                            Property::Handle transformProperty = getPropertyFromEntity(entities[e], TransformPropertyType);
+                            if (transformProperty != InvalidProperty)
+                            {
+                                entityToWorldTransform = getLocalTransform(transformProperty);
+                            }
+
+                            Float3 rayStartEntity = inverseTransformPoint(entityToWorldTransform, rayStartWorld);
+                            Float3 rayEndEntity = inverseTransformPoint(entityToWorldTransform, rayEndWorld);
+
+                            Float3 rayStartToEnd = rayEndEntity - rayStartEntity;
+                            float rayLength = length(rayStartToEnd);
+                            Float3 rayDir = rayStartToEnd / rayLength;
+
+                            SimdFloat3 simdRayStart = splat(rayStartEntity);
+                            SimdFloat3 simdRayDir = splat(rayStartToEnd);
+                            SimdFloat simdRayLength = splat(rayLength);
+
+                            for (uint32_t tr = 0; tr < triangleCount; tr += SimdLaneCount, triangleSet++)
+                            {
+                                uint32_t trianglesInSet = min(triangleCount - tr, SimdLaneCount);
+                                if (doesRayIntersectAnyTriangle(simdRayStart, simdRayDir, SimdZero, simdRayLength, *triangleSet, trianglesInSet))
+                                {
+                                    selectedEntity = entities[e];
+                                    break;
+                                }
+                            }
+                        }
+                    }
+
+                    if (selectedEntity != InvalidEntity)
+                    {
+                        InspectorState.Selected.Asset = toAssetHandle(selectedEntity);
+                        InspectorState.Selected.IsResource = false;
+                        InspectorState.Selected.Type = EntityType;
+                    }
+                }
+            }
+
             Input::endFrame();
             ImGizmo::endFrame();
             ImGui::Render();
@@ -507,6 +512,13 @@ namespace IB
             DrawData FrameDrawData;
 
             Entity::Handle FrameCamera;
+
+            void* FocusedGizmo = nullptr;
+
+            bool canFocus()
+            {
+                return !ImGui::GetIO().WantCaptureMouse;
+            }
         }
 
         void init()
@@ -671,7 +683,12 @@ namespace IB
             return &FrameDrawData;
         }
 
-        void translation(Float3* position, Quaternion rotation, TranslationState* state)
+        bool hasFocusedGizmo()
+        {
+            return FocusedGizmo != nullptr;
+        }
+
+        void translation(Float3* position, Quaternion rotation, TranslationGizmo* state)
         {
             Transform cameraTransform = {};
             Property::Handle transformProperty = getPropertyFromEntity(FrameCamera, TransformPropertyType);
@@ -696,54 +713,67 @@ namespace IB
                 rotate(rotation, Float3{0.0f, 0.0f, 1.0f}),
             };
 
-            if (!Input::isButtonPressed(WindowMessage::Mouse::Left))
+            if (canFocus())
             {
-                state->ActiveAxis = 3;
-            }
-            else
-            {
-                if (Input::isButtonClicked(WindowMessage::Mouse::Left))
+                if (!Input::isButtonPressed(WindowMessage::Mouse::Left))
                 {
-                    Float3 rayStart = Editor::mouseToWorldPos(invViewProj, Input::MouseX, Input::MouseY, 0.0f);
-                    Float3 rayEnd = Editor::mouseToWorldPos(invViewProj, Input::MouseX, Input::MouseY, 1.0f);
+                    state->ActiveAxis = 3;
 
-                    for (uint32_t i = 0; i < 3; i++)
-                    {
-                        if (doesLineCylinderIntersect(rayStart, rayEnd, *position, *position + axies[i], 0.1f))
+                        // Clear out our focus if we were active
+                        if (FocusedGizmo == state)
                         {
-                            state->ActiveAxis = i;
-                            break;
+                            FocusedGizmo = nullptr;
+                        }
+                }
+                else
+                {
+                    if (Input::isButtonClicked(WindowMessage::Mouse::Left))
+                    {
+                        Float3 rayStart = Editor::mouseToWorldPos(invViewProj, Input::MouseX, Input::MouseY, 0.0f);
+                        Float3 rayEnd = Editor::mouseToWorldPos(invViewProj, Input::MouseX, Input::MouseY, 1.0f);
+
+                        for (uint32_t i = 0; i < 3; i++)
+                        {
+                            if (doesLineCylinderIntersect(rayStart, rayEnd, *position, *position + axies[i], 0.1f))
+                            {
+                                // Set our gizmo as the active gizmo
+                                FocusedGizmo = state;
+
+                                state->ActiveAxis = i;
+                                break;
+                            }
                         }
                     }
-                }
-                else if (state->ActiveAxis < 3)
-                {
-                    Float3 previousPos = Editor::mouseToWorldPos(invViewProj, Input::PreviousMouseX, Input::PreviousMouseY) - cameraTransform.Position;
-                    Float3 nextPos = Editor::mouseToWorldPos(invViewProj, Input::MouseX, Input::MouseY) - cameraTransform.Position;
-
-                    // Intersect our ray with the plane defined by our axies
-
-                    // Given our current ray direction, pick our axis normal that is most parallel
-                    // This will give us the most perpendicular plane
-                    float angles[] =
+                    else if (state->ActiveAxis < 3)
                     {
-                        fabsf(dot(nextPos, axies[(state->ActiveAxis + 1) % 3])),
-                        fabsf(dot(nextPos, axies[(state->ActiveAxis + 2) % 3]))
-                    };
+                        Float3 previousPos = Editor::mouseToWorldPos(invViewProj, Input::PreviousMouseX, Input::PreviousMouseY) - cameraTransform.Position;
+                        Float3 nextPos = Editor::mouseToWorldPos(invViewProj, Input::MouseX, Input::MouseY) - cameraTransform.Position;
 
-                    uint32_t largest = angles[0] > angles[1] ? 0 : 1;
-                    uint32_t planeNormal = (state->ActiveAxis + largest + 1) % 3;
+                        // Intersect our ray with the plane defined by our axies
 
-                    float planeDistance = dot(*position - cameraTransform.Position, axies[planeNormal]);
+                        // Given our current ray direction, pick our axis normal that is most parallel
+                        // This will give us the most perpendicular plane
+                        float angles[] =
+                        {
+                            fabsf(dot(nextPos, axies[(state->ActiveAxis + 1) % 3])),
+                            fabsf(dot(nextPos, axies[(state->ActiveAxis + 2) % 3]))
+                        };
 
-                    // Cast a ray from our camera origin to our axis plane
-                    previousPos = intersectRayPlane(axies[planeNormal], planeDistance, previousPos, Float3{});
-                    nextPos = intersectRayPlane(axies[planeNormal], planeDistance, nextPos, Float3{});
+                        uint32_t largest = angles[0] > angles[1] ? 0 : 1;
+                        uint32_t planeNormal = (state->ActiveAxis + largest + 1) % 3;
 
-                    // Project our offset along our active axis for our delta
-                    *position += axies[state->ActiveAxis] * dot(nextPos - previousPos, axies[state->ActiveAxis]);
+                        float planeDistance = dot(*position - cameraTransform.Position, axies[planeNormal]);
+
+                        // Cast a ray from our camera origin to our axis plane
+                        previousPos = intersectRayPlane(axies[planeNormal], planeDistance, previousPos, Float3{});
+                        nextPos = intersectRayPlane(axies[planeNormal], planeDistance, nextPos, Float3{});
+
+                        // Project our offset along our active axis for our delta
+                        *position += axies[state->ActiveAxis] * dot(nextPos - previousPos, axies[state->ActiveAxis]);
+                    }
                 }
             }
+            
 
             FrameDrawData.Instances.add(DrawData::Instance{ GizmoMesh, GizmoMaterial, Transform{*position, rotation, 1.0f} });
         }
