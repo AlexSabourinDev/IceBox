@@ -120,12 +120,19 @@ namespace IB
                     ImGui::SetNextItemWidth(-FLT_MIN);
                     ImGui::InputFloat3("#Position", toArray(&transform->Position));
 
-                    static Float3 euler = { 0.0f, 0.0f, 0.0f };
                     ImGui::TableNextColumn();
                     ImGui::Text("Rotation");
 
                     ImGui::TableNextColumn();
                     ImGui::SetNextItemWidth(-FLT_MIN);
+
+                    Float3 euler = toEulerAngles(transform->Rotation) * RadToDeg;
+                    // round our euler angles to the third decimal
+                    euler = round(euler * 1000.0f) / 1000.0f;
+                    euler.x = euler.x == -0.0f ? 0.0f : euler.x; // Sanitize our entries of -0.0f
+                    euler.y = euler.y == -0.0f ? 0.0f : euler.y; // Sanitize our entries of -0.0f
+                    euler.z = euler.z == -0.0f ? 0.0f : euler.z; // Sanitize our entries of -0.0f
+
                     ImGui::InputFloat3("#Rotation", toArray(&euler));
                     transform->Rotation = fromEulerAngles(euler * DegToRad);
 

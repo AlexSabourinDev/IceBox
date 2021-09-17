@@ -161,6 +161,8 @@ namespace IB
     inline Float3 mul(const Mat3x3 &left, Float3 right);
     inline Float3 cross(Float3 left, Float3 right);
     inline Float3 normalize(Float3 value);
+    inline Float3 abs(Float3 value);
+    inline Float3 round(Float3 value);
 
     inline Float3 rotate(Quaternion rotator, Float3 point);
     inline Quaternion operator*(Quaternion left, Quaternion right);
@@ -168,6 +170,7 @@ namespace IB
     inline Quaternion inverse(Quaternion q) { return conjugate(q); }
     inline Quaternion fromAxisAngle(Float3 axis, float angle);
     inline Quaternion fromEulerAngles(Float3 angles);
+    inline Float3 toEulerAngles(Quaternion q);
 
     inline bool doesLineAABBIntersect(Float3 lineStart, Float3 lineEnd, AABB aabb);
     inline bool doesLineCylinderIntersect(Float3 lineStart, Float3 lineEnd, Float3 cylinderStart, Float3 cylinderEnd, float radius);
@@ -354,6 +357,16 @@ namespace IB
         return value / l;
     }
 
+    inline Float3 abs(Float3 value)
+    {
+        return { fabsf(value.x), fabsf(value.y), fabsf(value.z) };
+    }
+
+    inline Float3 round(Float3 value)
+    {
+        return { roundf(value.x), roundf(value.y), roundf(value.z) };
+    }
+
     inline Float3 rotate(Quaternion rotator, Float3 point)
     {
         Quaternion rotatedPoint = rotator * Quaternion{ point.x, point.y, point.z, 0.0f } *conjugate(rotator);
@@ -384,9 +397,62 @@ namespace IB
 
     inline Quaternion fromEulerAngles(Float3 angles)
     {
-        return fromAxisAngle(Float3{ 1.0f, 0.0f, 0.0f }, angles.x)
-            * fromAxisAngle(Float3{ 0.0f, 1.0f, 0.0f }, angles.y)
-            * fromAxisAngle(Float3{ 0.0f, 0.0f, 1.0f }, angles.z);
+        // Source: https://en.wikipedia.org/wiki/Conversion_between_quaternions_and_Euler_angles#Quaternion_to_Euler_angles_conversion
+        // Work in double to maximize precision since we're likely to transition to and from euler angles frequently. Revisit if this becomes an issue.
+
+        double yaw = static_cast<double>(angles.z);
+        double pitch = static_cast<double>(angles.y);
+        double roll = static_cast<double>(angles.x);
+
+        double cy = cos(yaw * 0.5);
+        double sy = sin(yaw * 0.5);
+        double cp = cos(pitch * 0.5);
+        double sp = sin(pitch * 0.5);
+        double cr = cos(roll * 0.5);
+        double sr = sin(roll * 0.5);
+
+        Quaternion q;
+        q.w = static_cast<float>(cr * cp * cy + sr * sp * sy);
+        q.x = static_cast<float>(sr * cp * cy - cr * sp * sy);
+        q.y = static_cast<float>(cr * sp * cy + sr * cp * sy);
+        q.z = static_cast<float>(cr * cp * sy - sr * sp * cy);
+        return q;
+    }
+
+    inline Float3 toEulerAngles(Quaternion q)
+    {
+        Float3 angles = { 0.0f, 0.0f, 0.0f };
+
+        // Work in double to maximize precision since we're likely to transition to and from euler angles frequently. Revisit if this becomes an issue.
+
+        double qw = static_cast<double>(q.w);
+        double qx = static_cast<double>(q.x);
+        double qy = static_cast<double>(q.y);
+        double qz = static_cast<double>(q.z);
+
+        // Source: https://en.wikipedia.org/wiki/Conversion_between_quaternions_and_Euler_angles#Quaternion_to_Euler_angles_conversion
+        // roll (x-axis rotation)
+        double sinr_cosp = 2.0 * (qw * qx + qy * qz);
+        double cosr_cosp = 1.0 - 2.0 * (qx * qx + qy * qy);
+        angles.x = static_cast<float>(atan2(sinr_cosp, cosr_cosp));
+
+        // pitch (y-axis rotation)
+        double sinp = 2.0 * (qw * qy - qz * qx);
+        if (fabs(sinp) >= 1.0f)
+        {
+            angles.y = static_cast<float>(copysign(Pi * 0.5, sinp)); // use 90 degrees if out of range
+        }
+        else
+        {
+            angles.y = static_cast<float>(asin(sinp));
+        }
+
+        // yaw (z-axis rotation)
+        double siny_cosp = 2.0 * (qw * qz + qx * qy);
+        double cosy_cosp = 1.0 - 2.0 * (qy * qy + qz * qz);
+        angles.z = static_cast<float>(atan2(siny_cosp, cosy_cosp));
+
+        return angles;
     }
 
     inline bool doesLineAABBIntersect(Float3 lineStart, Float3 lineEnd, AABB aabb)

@@ -109,6 +109,7 @@ namespace IB
         Entity::Handle CameraHandle;
         uint32_t WindowWidth = 0;
         uint32_t WindowHeight = 0;
+        Entity::Handle SelectedEntity;
 
         Float3 mouseToWorldPos(Mat4x4 const& invViewProj, uint32_t x, uint32_t y, float depth = 0.0f)
         {
@@ -124,20 +125,6 @@ namespace IB
         {
             FileInfo LoadResourceInfo;
         };
-
-        struct
-        {
-            struct
-            {
-                union
-                {
-                    Asset::Handle Asset = InvalidAsset;
-                    Resource::Handle Resource;
-                };
-                bool IsResource = false;
-                Asset::FourCC Type;
-            } Selected;
-        } InspectorState;
 
         struct AssetEditor
         {
@@ -294,9 +281,6 @@ namespace IB
                                     *reinterpret_cast<Resource::Handle *>(data) = resource;
                                 }
                             }, state->CellResource);
-                        InspectorState.Selected.Resource = *state->CellResource;
-                        InspectorState.Selected.IsResource = true;
-                        InspectorState.Selected.Type = CellType;
 
                         ImGui::CloseCurrentPopup();
                     }
@@ -327,15 +311,13 @@ namespace IB
                         ImGui::TreeNodeEx(getEntityName(entities[i]), ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen);
                         if (ImGui::IsItemClicked())
                         {
-                            InspectorState.Selected.Asset = toAssetHandle(entities[i]);
-                            InspectorState.Selected.IsResource = false;
-                            InspectorState.Selected.Type = EntityType;
+                            SelectedEntity = entities[i];
                         }
                     }
 
                     if (ImGui::BeginPopupContextWindow())
                     {
-                        if (ImGui::Button("Create Entity"))
+                        if (ImGui::MenuItem("Create Entity"))
                         {
                             addEntityToCell(currentCell, createEntity());
                             ImGui::CloseCurrentPopup();
@@ -348,22 +330,9 @@ namespace IB
 
             if (ImGui::Begin("Inspector"))
             {
-                Asset::Handle assetHandle = InvalidAsset;
-                if (InspectorState.Selected.IsResource)
+                if (SelectedEntity != InvalidEntity)
                 {
-                    if (Asset::isResourceAssetAvailable(InspectorState.Selected.Resource))
-                    {
-                        assetHandle = Asset::getAssetFromResource(InspectorState.Selected.Resource);
-                    }
-                }
-                else
-                {
-                    assetHandle = InspectorState.Selected.Asset;
-                }
-
-                if (assetHandle != InvalidAsset)
-                {
-                    drawAssetEditor(InspectorState.Selected.Type, assetHandle);
+                    drawAssetEditor(EntityType, toAssetHandle(SelectedEntity));
                 }
             }
             ImGui::End();
@@ -451,12 +420,7 @@ namespace IB
                         }
                     }
 
-                    if (selectedEntity != InvalidEntity)
-                    {
-                        InspectorState.Selected.Asset = toAssetHandle(selectedEntity);
-                        InspectorState.Selected.IsResource = false;
-                        InspectorState.Selected.Type = EntityType;
-                    }
+                    SelectedEntity = selectedEntity;
                 }
             }
 
@@ -467,15 +431,7 @@ namespace IB
 
         bool isSelected(Entity::Handle entity)
         {
-            if (InspectorState.Selected.IsResource)
-            {
-                // TODO: we probably still want this to work with entity resources
-                return false;
-            }
-            else
-            {
-                return InspectorState.Selected.Type == EntityType && toEntityHandle(InspectorState.Selected.Asset) == entity;
-            }
+            return SelectedEntity == entity;
         }
 
         bool onWindowMessage(IB::WindowMessage message)
