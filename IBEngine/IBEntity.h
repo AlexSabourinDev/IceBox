@@ -53,6 +53,21 @@ namespace IB
     IB_API Entity::Handle createEntity(char const* name = "");
     IB_API void destroyEntity(Entity::Handle entity);
     IB_API void addPropertyToEntity(Entity::Handle entity, Asset::FourCC type, Property::Handle propertyHandle);
+
+    namespace Editor
+    {
+        struct PropertyEditorState
+        {
+            Entity::Handle EntityHandle;
+            bool DestroyProperty = false;
+        };
+
+        bool propertyHeader(char const* name, bool* shouldDestroyProperty);
+    }
+
+    // Doesn't destroy the property.
+    // Call Asset::unloadAssetThreadsafe to properly clean it up.
+    IB_API void removePropertyFromEntity(Entity::Handle entity, Asset::FourCC type);
     IB_API Property::Handle getPropertyFromEntity(Entity::Handle entity, Asset::FourCC type);
     IB_API char const* getEntityName(Entity::Handle entity);
     IB_API void setEntityName(Entity::Handle entityHandle, char const* name);

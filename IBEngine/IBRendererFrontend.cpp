@@ -268,7 +268,7 @@ namespace IB
 
     namespace
     {
-        void UpdateCameraProjection(IB::CameraProperty::Data* cameraProperty)
+        void updateCameraProjection(IB::CameraProperty::Data* cameraProperty)
         {
             float fov = 1.0f / tanf(cameraProperty->Camera.FOV * IB::DegToRad * 0.5f);
             const float f = cameraProperty->Camera.Far;
@@ -301,6 +301,8 @@ namespace IB
             IB::Asset::Handle create() override
             {
                 IB::CameraProperty::Data& camera = CameraProperties.add();
+                updateCameraProjection(&camera);
+
                 return IB::Asset::toHandle(reinterpret_cast<uint64_t>(&camera));
             }
 
@@ -315,7 +317,7 @@ namespace IB
                 IB::CameraProperty::Data& cameraProperty = *toCameraProperty(context->LoadingAsset);
                 IB::Serialization::Delta::fromBinary(&context->Stream, &cameraProperty.Camera, baseCamera);
 
-                UpdateCameraProjection(&cameraProperty);
+                updateCameraProjection(&cameraProperty);
 
                 return IB::Asset::complete(IB::Asset::toHandle(reinterpret_cast<uint64_t>(&cameraProperty)));
             }
@@ -345,7 +347,7 @@ namespace IB
     {
         CameraProperty::Data& cameraProperty = CameraProperties.add();
         cameraProperty.Camera = camera;
-        UpdateCameraProjection(&cameraProperty);
+        updateCameraProjection(&cameraProperty);
         return Property::toHandle(reinterpret_cast<uint64_t>(&cameraProperty));
     }
 
@@ -386,11 +388,13 @@ namespace IB
 
     namespace Editor
     {
-        void cameraEditor(Asset::Handle asset, void*)
+        void cameraEditor(Asset::Handle asset, void* parentData)
         {
-            CameraProperty::Data *cameraProperty = toCameraProperty(asset);
-            if (ImGui::TreeNode("Camera"))
+            PropertyEditorState* editorState = reinterpret_cast<PropertyEditorState*>(parentData);
+
+            if (propertyHeader("Camera", &editorState->DestroyProperty))
             {
+                CameraProperty::Data *cameraProperty = toCameraProperty(asset);
                 if (ImGui::BeginTable("Inspector Table", 2))
                 {
                     ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed);
@@ -421,7 +425,7 @@ namespace IB
 
                     if (changed)
                     {
-                        UpdateCameraProjection(cameraProperty);
+                        updateCameraProjection(cameraProperty);
                     }
 
                     ImGui::EndTable();
@@ -566,11 +570,13 @@ namespace IB
 
     namespace Editor
     {
-        void rendererEditor(Asset::Handle asset, void*)
+        void rendererEditor(Asset::Handle asset, void* parentData)
         {
-            RendererProperty *renderer = toRendererProperty(asset);
-            if (ImGui::TreeNode("Renderer"))
+            PropertyEditorState* editorState = reinterpret_cast<PropertyEditorState*>(parentData);
+
+            if (propertyHeader("Renderer", &editorState->DestroyProperty))
             {
+                RendererProperty *renderer = toRendererProperty(asset);
                 if (ImGui::BeginTable("Inspector Table", 2))
                 {
                     ImGui::TableNextColumn();

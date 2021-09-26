@@ -577,7 +577,10 @@ namespace IB
 
     void debugBreak()
     {
-        DebugBreak();
+        if (IsDebuggerPresent())
+        {
+            DebugBreak();
+        }
     }
 
     File::Handle openFile(char const *filepath, uint32_t options)

@@ -99,14 +99,16 @@ namespace IB
         void transformEditor(Asset::Handle asset, void* parentData)
         {
             Transform* transform = reinterpret_cast<Transform*>(Asset::toValue(asset));
-            Entity::Handle parentEntity = *reinterpret_cast<Entity::Handle*>(parentData);
+
+            PropertyEditorState* editorState = reinterpret_cast<PropertyEditorState*>(parentData);
+            Entity::Handle parentEntity = editorState->EntityHandle;
             if (isSelected(parentEntity))
             {
                 static ImGizmo::TranslationGizmo translationState;
                 ImGizmo::translation(&transform->Position, transform->Rotation, &translationState);
             }
 
-            if (ImGui::TreeNode("Transform"))
+            if (propertyHeader("Transform", &editorState->DestroyProperty))
             {
                 if (ImGui::BeginTable("Inspector Table", 2))
                 {
@@ -146,7 +148,6 @@ namespace IB
                     ImGui::EndTable();
                 }
                 ImGui::TreePop();
-
             }
         }
     }
@@ -371,6 +372,20 @@ namespace IB
         entity->Properties.add(type, propertyHandle);
     }
 
+    void removePropertyFromEntity(Entity::Handle entity, Asset::FourCC type)
+    {
+        Entity::Data* entityData = Entity::toData(entity);
+        for (uint32_t i = 0; i < entityData->Properties.count(); i++)
+        {
+            if (entityData->Properties[i].Type == type)
+            {
+                entityData->Properties[i] = entityData->Properties[entityData->Properties.count() - 1];
+                entityData->Properties.remove();
+                break;
+            }
+        }
+    }
+
     Property::Handle getPropertyFromEntity(Entity::Handle entityHandle, Asset::FourCC type)
     {
         return findProperty(Entity::toData(entityHandle), type);
@@ -402,6 +417,21 @@ namespace IB
 
     namespace Editor
     {
+        bool propertyHeader(char const* name, bool* shouldDestroyProperty)
+        {
+            ImGui::AlignTextToFramePadding();
+            bool propertyTreeOpen = ImGui::TreeNodeEx(name, ImGuiTreeNodeFlags_AllowItemOverlap);
+            ImGui::SameLine();
+            ImGui::PushID(name);
+            if (ImGui::Button("-"))
+            {
+                *shouldDestroyProperty = true;
+            }
+            ImGui::PopID();
+
+            return propertyTreeOpen;
+        }
+
         void entityEditor(Asset::Handle asset, void*)
         {
             Entity::Data* entity = Entity::toData(asset);
@@ -424,17 +454,54 @@ namespace IB
             }
 
             ImGui::Text("Properties");
+            ImGui::SameLine();
+            if (ImGui::Button("+"))
+            {
+                ImGui::OpenPopup("AddPropertyPopup");
+            }
             ImGui::Separator();
 
-            if (ImGui::Button("Add Transform"))
+            struct ExposedProperty
             {
-                addPropertyToEntity(toEntityHandle(asset), TransformPropertyType, createTransformProperty());
+                Asset::FourCC Type;
+                char const* Name;
+            };
+
+            ExposedProperty constexpr exposedProperties[] =
+            {
+                { Asset::toFourCC("TFRM"), "Transform" },
+                { Asset::toFourCC("RNDR"), "Renderer" },
+                { Asset::toFourCC("CMRA"), "Camera" },
+            };
+            uint32_t constexpr exposedPropertyCount = 3;
+
+            if (ImGui::BeginPopup("AddPropertyPopup"))
+            {
+                for (uint32_t i = 0; i < exposedPropertyCount; i++)
+                {
+                    if (ImGui::MenuItem(exposedProperties[i].Name))
+                    {
+                        Asset::FourCC type = exposedProperties[i].Type;
+                        addPropertyToEntity(toEntityHandle(asset), type, toPropertyHandle(Asset::createAsset(type)));
+                        ImGui::CloseCurrentPopup();
+                    }
+                }
+
+                ImGui::EndPopup();
             }
 
             Entity::Handle entityHandle = toEntityHandle(asset);
             for (uint32_t i = 0; i < entity->Properties.count(); i++)
             {
-                Editor::drawAssetEditor(entity->Properties[i].Type, toAssetHandle(entity->Properties[i].Handle), &entityHandle);
+                PropertyEditorState editorState = { entityHandle };
+                Editor::drawAssetEditor(entity->Properties[i].Type, toAssetHandle(entity->Properties[i].Handle), &editorState);
+            
+                if (editorState.DestroyProperty)
+                {
+                    removePropertyFromEntity(entityHandle, entity->Properties[i].Type);
+                    Asset::unloadAssetThreadSafe(entity->Properties[i].Type, toAssetHandle(entity->Properties[i].Handle));
+                    i--; // Move back one, we've removed our property from our entity
+                }
             }
         }
     }
