@@ -142,7 +142,7 @@ namespace IB
     inline Mat4x4 mul(Mat4x4 const&left, Mat3x4 const&right);
     inline Mat4x4 mul(Mat3x4 const&left, Mat4x4 const&right);
 
-    inline Float4 mul(const Mat4x4 &left, Float4 right);
+    inline Float4 mul(Mat4x4 const&left, Float4 right);
 
     inline Float4 operator/(Float4 left, float right);
 
@@ -156,9 +156,12 @@ namespace IB
     inline Float3 min(Float3 left, Float3 right);
     inline Float3 max(Float3 left, Float3 right);
     inline float length(Float3 value);
+    inline float lengthSqr(Float3 value);
+    inline float distance(Float3 from, Float3 to);
+    inline float distanceSqr(Float3 from, Float3 to);
     inline float dot(Float3 left, Float3 right);
     inline float* toArray(Float3* value) { return &value->x; };
-    inline Float3 mul(const Mat3x3 &left, Float3 right);
+    inline Float3 mul(Mat3x3 const&left, Float3 right);
     inline Float3 cross(Float3 left, Float3 right);
     inline Float3 normalize(Float3 value);
     inline Float3 abs(Float3 value);
@@ -177,22 +180,18 @@ namespace IB
     inline Float3 intersectRayPlane(IB::Float3 planeNormal, float planeDistance, IB::Float3 rayDir, IB::Float3 rayOrigin);
     inline AABB consume(AABB aabb, Float3 p);
 
-    inline Mat3x4 toMatrix(const Transform& transform);
-    inline Mat3x4 toInvMatrix(const Transform& transform);
-    inline Float3 transformDirection(const Transform& transform, Float3 direction);
-    inline Float3 inverseTransformDirection(const Transform& transform, Float3 direction);
+    inline Mat3x4 toMatrix(Transform const& transform);
+    inline Mat3x4 toInvMatrix(Transform const& transform);
+    inline Float3 transformDirection(Transform const& transform, Float3 direction);
+    inline Float3 inverseTransformDirection(Transform const& transform, Float3 direction);
 
-    inline Float3 transformPoint(const Transform& transform, Float3 direction);
-    inline Float3 inverseTransformPoint(const Transform& transform, Float3 direction);
+    inline Float3 transformPoint(Transform const& transform, Float3 direction);
+    inline Float3 inverseTransformPoint(Transform const& transform, Float3 direction);
 
-    inline bool doesRayIntersectTriangle(Float3 rayO, Float3 rayD, float rayMin, float rayMax, const Triangle& triangle);
+    inline bool doesRayIntersectTriangle(Float3 rayO, Float3 rayD, float rayMin, float rayMax, Triangle const& triangle);
 
     // Implementation
-    inline Mat4x4 toMat4x4(Mat3x4 const& matrix)
-    {
-        return Mat4x4{ matrix[0], matrix[1], matrix[2], {0.0f, 0.0f, 0.0f, 1.0f} };
-    }
-
+    inline Mat4x4 toMat4x4(Mat3x4 const& matrix) { return Mat4x4{ matrix[0], matrix[1], matrix[2], {0.0f, 0.0f, 0.0f, 1.0f} }; }
     inline Mat3x4 toMat3x4(Mat3x3 const& matrix, Float3 column)
     {
         return Mat3x4{ {
@@ -202,7 +201,7 @@ namespace IB
         } };
     }
 
-    inline Mat4x4 mul(const Mat4x4 &left, const Mat4x4 &right)
+    inline Mat4x4 mul(Mat4x4 const& left, Mat4x4 const& right)
     {
         Mat4x4 out = {};
 
@@ -231,17 +230,10 @@ namespace IB
         return out;
     }
 
-    inline Mat4x4 mul(const Mat4x4 &left, const Mat3x4 &right)
-    {
-        return mul(left, toMat4x4(right));
-    }
+    inline Mat4x4 mul(Mat4x4 const& left, Mat3x4 const& right) { return mul(left, toMat4x4(right)); }
+    inline Mat4x4 mul(Mat3x4 const& left, Mat4x4 const& right) { return mul(toMat4x4(left), right); }
 
-    inline Mat4x4 mul(const Mat3x4 &left, const Mat4x4 &right)
-    {
-        return mul(toMat4x4(left), right);
-    }
-
-    inline Float4 mul(const Mat4x4 &left, Float4 right)
+    inline Float4 mul(Mat4x4 const& left, Float4 right)
     {
         Float4 out = {};
         for (uint32_t row = 0; row < 4; row++)
@@ -267,62 +259,22 @@ namespace IB
         return *this;
     }
 
-    inline Float3 operator+(Float3 left, Float3 right)
-    {
-        return Float3{ left.x + right.x, left.y + right.y, left.z + right.z };
-    }
+    inline Float3 operator+(Float3 left, Float3 right) { return Float3{ left.x + right.x, left.y + right.y, left.z + right.z }; }
+    inline Float3 operator-(Float3 left, Float3 right) { return Float3{ left.x - right.x, left.y - right.y, left.z - right.z }; }
+    inline Float3 operator/(Float3 left, float right) { return Float3{ left.x / right, left.y / right, left.z / right }; }
+    inline Float3 operator*(Float3 left, float right) { return Float3{ left.x * right, left.y * right, left.z * right }; }
+    inline Float3 operator*(float left, Float3 right) { return right * left; }
+    inline Float3 rcp(Float3 value) { return Float3{ 1.0f / value.x, 1.0f / value.y, 1.0f / value.z }; }
+    inline Float3 mul(Float3 left, Float3 right) { return Float3{ left.x * right.x, left.y * right.y, left.z * right.z }; }
+    inline Float3 min(Float3 left, Float3 right) { return Float3{ fminf(left.x, right.x), fminf(left.y, right.y), fminf(left.z, right.z) }; }
+    inline Float3 max(Float3 left, Float3 right) { return Float3{ fmaxf(left.x, right.x), fmaxf(left.y, right.y), fmaxf(left.z, right.z) }; }
+    inline float length(Float3 value) { return sqrtf(value.x * value.x + value.y * value.y + value.z * value.z); }
+    inline float lengthSqr(Float3 value) { return (value.x * value.x + value.y * value.y + value.z * value.z); }
+    inline float distance(Float3 from, Float3 to) { return length(to - from); }
+    inline float distanceSqr(Float3 from, Float3 to) { return lengthSqr(to - from); }
+    inline float dot(Float3 left, Float3 right) { return left.x * right.x + left.y * right.y + left.z * right.z; }
 
-    inline Float3 operator-(Float3 left, Float3 right)
-    {
-        return Float3{ left.x - right.x, left.y - right.y, left.z - right.z };
-    }
-
-    inline Float3 operator/(Float3 left, float right)
-    {
-        return Float3{ left.x / right, left.y / right, left.z / right };
-    }
-
-    inline Float3 operator*(Float3 left, float right)
-    {
-        return Float3{ left.x * right, left.y * right, left.z * right };
-    }
-
-    inline Float3 operator*(float left, Float3 right)
-    {
-        return right * left;
-    }
-
-    inline Float3 rcp(Float3 value)
-    {
-        return Float3{ 1.0f / value.x, 1.0f / value.y, 1.0f / value.z };
-    }
-
-    inline Float3 mul(Float3 left, Float3 right)
-    {
-        return Float3{ left.x * right.x, left.y * right.y, left.z * right.z };
-    }
-
-    inline Float3 min(Float3 left, Float3 right)
-    {
-        return Float3{ fminf(left.x, right.x), fminf(left.y, right.y), fminf(left.z, right.z) };
-    }
-
-    inline Float3 max(Float3 left, Float3 right)
-    {
-        return Float3{ fmaxf(left.x, right.x), fmaxf(left.y, right.y), fmaxf(left.z, right.z) };
-    }
-
-    inline float length(Float3 value)
-    {
-        return sqrtf(value.x * value.x + value.y * value.y + value.z * value.z);
-    }
-
-    inline float dot(Float3 left, Float3 right)
-    {
-        return left.x * right.x + left.y * right.y + left.z * right.z;
-    }
-
-    inline Float3 mul(const Mat3x3 &left, Float3 right)
+    inline Float3 mul(Mat3x3 const&left, Float3 right)
     {
         Float3 out = {};
         for (uint32_t row = 0; row < 3; row++)
@@ -357,15 +309,8 @@ namespace IB
         return value / l;
     }
 
-    inline Float3 abs(Float3 value)
-    {
-        return { fabsf(value.x), fabsf(value.y), fabsf(value.z) };
-    }
-
-    inline Float3 round(Float3 value)
-    {
-        return { roundf(value.x), roundf(value.y), roundf(value.z) };
-    }
+    inline Float3 abs(Float3 value) { return { fabsf(value.x), fabsf(value.y), fabsf(value.z) }; }
+    inline Float3 round(Float3 value) { return { roundf(value.x), roundf(value.y), roundf(value.z) }; }
 
     inline Float3 rotate(Quaternion rotator, Float3 point)
     {
@@ -384,10 +329,7 @@ namespace IB
         };
     }
 
-    inline Quaternion conjugate(Quaternion q)
-    {
-        return Quaternion{ -q.x, -q.y, -q.z, q.w };
-    }
+    inline Quaternion conjugate(Quaternion q) { return Quaternion{ -q.x, -q.y, -q.z, q.w }; }
 
     inline Quaternion fromAxisAngle(Float3 axis, float angle)
     {
@@ -577,7 +519,7 @@ namespace IB
         return rayDir * t + rayOrigin;
     };
 
-    inline Mat3x4 toMatrix(const Transform& transform)
+    inline Mat3x4 toMatrix(Transform const& transform)
     {
         Float3 right = rotate(transform.Rotation, Float3{ transform.Scale, 0.0f, 0.0f });
         Float3 forward = rotate(transform.Rotation, Float3{ 0.0f, transform.Scale, 0.0f });
@@ -590,7 +532,7 @@ namespace IB
         };
     }
 
-    inline Mat3x4 toInvMatrix(const Transform& transform)
+    inline Mat3x4 toInvMatrix(Transform const& transform)
     {
         // Given that our original transformation is:
         // P1 = P0 * S * R + T
@@ -614,22 +556,22 @@ namespace IB
         return toMat3x4(inverseScaleRotation, -inversePosition);
     }
 
-    inline Float3 transformDirection(const Transform& transform, Float3 direction)
+    inline Float3 transformDirection(Transform const& transform, Float3 direction)
     {
         return rotate(transform.Rotation, direction * transform.Scale);
     }
 
-    inline Float3 inverseTransformDirection(const Transform& transform, Float3 direction)
+    inline Float3 inverseTransformDirection(Transform const& transform, Float3 direction)
     {
         return rotate(inverse(transform.Rotation), direction) / transform.Scale;
     }
 
-    inline Float3 transformPoint(const Transform& transform, Float3 point)
+    inline Float3 transformPoint(Transform const& transform, Float3 point)
     {
         return rotate(transform.Rotation, point * transform.Scale) + transform.Position;
     }
 
-    inline Float3 inverseTransformPoint(const Transform& transform, Float3 point)
+    inline Float3 inverseTransformPoint(Transform const& transform, Float3 point)
     {
         return rotate(inverse(transform.Rotation), point - transform.Position) / transform.Scale;
     }
@@ -697,6 +639,7 @@ namespace IB
     inline SimdFloat splat(float value);
     inline SimdFloat splatBitwise(int32_t value);
     inline SimdFloat simdSet(float const (&values)[SimdLaneCount]);
+    inline void simdGet(SimdFloat value, float (&values)[SimdLaneCount]);
     inline SimdFloat operator+(SimdFloat left, SimdFloat right);
     inline SimdFloat operator-(SimdFloat left, SimdFloat right);
     inline SimdFloat operator*(SimdFloat left, SimdFloat right);
@@ -711,20 +654,49 @@ namespace IB
     inline SimdFloat bitNot(SimdFloat value);
     inline bool any(SimdFloat comparison, uint32_t mask = 0xFFFFFFFF);
     inline bool all(SimdFloat comparison, uint32_t mask = 0xFFFFFFFF);
+    inline uint32_t count(SimdFloat comparison, uint32_t mask = 0xFFFFFFFF);
+    inline SimdFloat pack(SimdFloat value, SimdFloat comparison, uint32_t mask = 0xFFFFFFFF);
 
     inline SimdFloat3 splat(Float3 value);
     // valueCount must be less than or equal to 4
     inline SimdFloat3 simdSet(Float3 (&values)[SimdLaneCount]);
-    inline SimdFloat3 operator-(const SimdFloat3& left, const SimdFloat3& right);
-    inline SimdFloat3 cross(const SimdFloat3& left, const SimdFloat3& right);
-    inline SimdFloat dot(const SimdFloat3& left, const SimdFloat3& right);
+    inline void simdGet(SimdFloat3 const& value, Float3(&values)[SimdLaneCount]);
+    inline SimdFloat3 operator-(SimdFloat3 const& left, SimdFloat3 const& right);
+    inline SimdFloat3 operator*(SimdFloat3 const& left, SimdFloat right);
+    inline SimdFloat3 operator+(SimdFloat3 const& left, SimdFloat3 const& right);
+    inline SimdFloat3 cross(SimdFloat3 const& left, SimdFloat3 const& right);
+    inline SimdFloat dot(SimdFloat3 const& left, SimdFloat3 const& right);
 
-    inline bool doesRayIntersectAnyTriangle(SimdFloat3 rayO, SimdFloat3 rayD, SimdFloat rayMin, SimdFloat rayMax, const SimdTriangleSet& triangleSet, uint32_t trianglesInSet);
+    inline SimdFloat3 barycentric(SimdFloat3 const (&points)[3], SimdFloat u, SimdFloat v, SimdFloat w);
+
+    // Pack all our values to the right based on our result mask
+    inline SimdFloat3 pack(SimdFloat3 const& value, SimdFloat comparison, uint32_t mask = 0xFFFFFFFF);
+
+    struct SimdRayTriangleResult
+    {
+        Float3 Points[SimdLaneCount];
+        float RayT[SimdLaneCount];
+        uint32_t Count = 0;
+    };
+    inline SimdRayTriangleResult rayTriangleIntersection(SimdFloat3 rayO, SimdFloat3 rayD, SimdFloat rayMin, SimdFloat rayMax, SimdTriangleSet const& triangleSet, uint32_t trianglesInSet);
 
     static const SimdFloat SimdEpsilon = splat(FLT_EPSILON);
     static const SimdFloat SimdZero = splat(0.0f);
     static const SimdFloat SimdOne = splat(1.0f);
     static const SimdFloat SimdAllMask = splatBitwise(-1); // Create a mask of all bits set
+
+#define _MM_SHUFFLE_EPI8(i3,i2,i1,i0) _mm_set_epi8(i3*4+3,i3*4+2,i3*4+1,i3*4,i2*4+3,i2*4+2,i2*4+1,i2*4,i1*4+3,i1*4+2,i1*4+1,i1*4,i0*4+3,i0*4+2,i0*4+1,i0*4)
+    static __m128i const SimdPackMasks[] =
+    {
+        // 0000,              0001,                 0010,                 0011,
+        _MM_SHUFFLE_EPI8(0,0,0,0), _MM_SHUFFLE_EPI8(0,0,0,0), _MM_SHUFFLE_EPI8(0,0,0,1), _MM_SHUFFLE_EPI8(0,0,1,0),
+        // 0100,              0101,                 0110,                 0111,
+        _MM_SHUFFLE_EPI8(0,0,0,2), _MM_SHUFFLE_EPI8(0,0,2,0), _MM_SHUFFLE_EPI8(0,0,2,1), _MM_SHUFFLE_EPI8(0,2,1,0),
+        // 1000,              1001,                 1010,                 1011,
+        _MM_SHUFFLE_EPI8(0,0,0,3), _MM_SHUFFLE_EPI8(0,0,3,0), _MM_SHUFFLE_EPI8(0,0,3,1), _MM_SHUFFLE_EPI8(0,3,1,0),
+        // 1100,              1101,                 1110,                 1111,
+        _MM_SHUFFLE_EPI8(0,0,3,2), _MM_SHUFFLE_EPI8(0,3,2,0), _MM_SHUFFLE_EPI8(0,3,2,1), _MM_SHUFFLE_EPI8(3,2,1,0),
+    };
 
     // Implementation
 
@@ -758,8 +730,20 @@ namespace IB
         return (_mm_movemask_ps(comparison.Values) & mask) == mask;
     }
 
+    inline uint32_t count(SimdFloat comparison, uint32_t mask)
+    {
+        return _mm_popcnt_u32(_mm_movemask_ps(comparison.Values) & mask);
+    }
+
+    inline void simdGet(SimdFloat value, float (&values)[SimdLaneCount])
+    {
+        _mm_store_ps(values, value.Values);
+    }
+
     inline SimdFloat3 splat(Float3 value) { return SimdFloat3{ splat(value.x), splat(value.y), splat(value.z) }; }
-    inline SimdFloat3 operator-(const SimdFloat3& left, const SimdFloat3& right) { return SimdFloat3{ left.x-right.x, left.y - right.y, left.z - right.z }; }
+    inline SimdFloat3 operator-(SimdFloat3 const& left, SimdFloat3 const& right) { return SimdFloat3{ left.x-right.x, left.y - right.y, left.z - right.z }; }
+    inline SimdFloat3 operator*(SimdFloat3 const& left, SimdFloat right) { return SimdFloat3{ left.x * right, left.y * right, left.z * right }; }
+    inline SimdFloat3 operator+(SimdFloat3 const& left, SimdFloat3 const& right) { return SimdFloat3{ left.x + right.x, left.y + right.y, left.z + right.z }; }
 
     inline SimdFloat3 simdSet(Float3(&values)[SimdLaneCount])
     {
@@ -781,7 +765,25 @@ namespace IB
         };
     }
 
-    inline SimdFloat3 cross(const SimdFloat3& left, const SimdFloat3& right)
+    inline void simdGet(SimdFloat3 const& value, Float3(&values)[SimdLaneCount])
+    {
+        float x[SimdLaneCount] = {};
+        float y[SimdLaneCount] = {};
+        float z[SimdLaneCount] = {};
+
+        simdGet(value.x, x);
+        simdGet(value.y, y);
+        simdGet(value.z, z);
+
+        for (uint32_t i = 0; i < SimdLaneCount; i++)
+        {
+            values[i].x = x[i];
+            values[i].y = y[i];
+            values[i].z = z[i];
+        }
+    }
+
+    inline SimdFloat3 cross(SimdFloat3 const& left, SimdFloat3 const& right)
     {
         return SimdFloat3
         {
@@ -791,12 +793,35 @@ namespace IB
         };
     }
 
-    inline SimdFloat dot(const SimdFloat3& left, const SimdFloat3& right)
+    inline SimdFloat dot(SimdFloat3 const& left, SimdFloat3 const& right)
     {
         return SimdFloat{ left.x * right.x + left.y * right.y + left.z * right.z };
     }
 
-    inline bool doesRayIntersectAnyTriangle(SimdFloat3 rayO, SimdFloat3 rayD, SimdFloat rayMin, SimdFloat rayMax, const SimdTriangleSet& triangleSet, uint32_t trianglesInSet)
+    SimdFloat3 barycentric(SimdFloat3 const (&points)[3], SimdFloat u, SimdFloat v, SimdFloat w)
+    {
+        return points[0] * u + points[1] * v + points[2] * w;
+    }
+
+    inline SimdFloat3 pack(SimdFloat3 const& value, SimdFloat comparison, uint32_t mask)
+    {
+        uint32_t resultBits = _mm_movemask_ps(comparison.Values) & mask;
+        __m128i const shuffle = SimdPackMasks[resultBits];
+
+        return SimdFloat3{
+            _mm_castsi128_ps(_mm_shuffle_epi8(_mm_castps_si128(value.x.Values), shuffle)),
+            _mm_castsi128_ps(_mm_shuffle_epi8(_mm_castps_si128(value.y.Values), shuffle)),
+            _mm_castsi128_ps(_mm_shuffle_epi8(_mm_castps_si128(value.z.Values), shuffle)) };
+    }
+
+    inline SimdFloat pack(SimdFloat value, SimdFloat comparison, uint32_t mask)
+    {
+        uint32_t resultBits = _mm_movemask_ps(comparison.Values) & mask;
+        __m128i const shuffle = SimdPackMasks[resultBits];
+        return SimdFloat{ _mm_castsi128_ps(_mm_shuffle_epi8(_mm_castps_si128(value.Values), shuffle)) };
+    }
+
+    inline SimdRayTriangleResult rayTriangleIntersection(SimdFloat3 rayO, SimdFloat3 rayD, SimdFloat rayMin, SimdFloat rayMax, const SimdTriangleSet& triangleSet, uint32_t trianglesInSet)
     {
         // Source: https://www.scratchapixel.com/lessons/3d-basic-rendering/ray-tracing-rendering-a-triangle/moller-trumbore-ray-triangle-intersection
         SimdFloat3 e1 = triangleSet.Vertices[1] - triangleSet.Vertices[0];
@@ -810,7 +835,7 @@ namespace IB
         // If none of our lanes pass, early out
         if (all(bitNot(resultMask), triangleMask))
         {
-            return false;
+            return {};
         }
 
         SimdFloat invD = rcp(d);
@@ -823,7 +848,7 @@ namespace IB
         // If all of our triangles fail, then end early
         if (all(bitNot(resultMask), triangleMask))
         {
-            return false;
+            return {};
         }
 
         SimdFloat3 q = cross(tv, e1);
@@ -837,7 +862,7 @@ namespace IB
         // If all of our triangles fail, then end early
         if (all(bitNot(resultMask), triangleMask))
         {
-            return false;
+            return {};
         }
 
         SimdFloat t = dot(e2, q) * invD;
@@ -847,9 +872,22 @@ namespace IB
         // If any of our triangles have made it this far, pass
         if (any(resultMask, triangleMask))
         {
-            return true;
+            SimdFloat u = SimdOne - v - w;
+            SimdFloat3 intersectionPositions = barycentric(triangleSet.Vertices, u, v, w);
+
+            // TODO: Pack into a function
+
+            uint32_t resultBits = _mm_movemask_ps(resultMask.Values) & triangleMask;
+            __m128i const shuffle = SimdPackMasks[resultBits];
+
+            SimdRayTriangleResult results;
+            results.Count = count(resultMask, triangleMask);
+            simdGet(pack(intersectionPositions, resultMask, triangleMask), results.Points);
+            simdGet(pack(t, resultMask, triangleMask), results.RayT);
+
+            return results;
         }
 
-        return false;
+        return {};
     }
 } // namespace IB

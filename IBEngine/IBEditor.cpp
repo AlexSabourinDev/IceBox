@@ -357,10 +357,10 @@ namespace IB
                 CameraProperty::Handle cameraProperty = toCameraHandle(getPropertyFromEntity(CameraHandle, CameraPropertyType));
                 IB_ASSERT(cameraProperty != InvalidProperty, "Camera handle should have a camera property!");
 
+                Transform cameraTransform = {};
                 Mat4x4 invViewProj = Mat4x4::identity();
                 if (cameraProperty != InvalidProperty)
                 {
-                    Transform cameraTransform = {};
                     Property::Handle transformProperty = getPropertyFromEntity(CameraHandle, TransformPropertyType);
                     if (transformProperty != InvalidProperty)
                     {
@@ -382,8 +382,10 @@ namespace IB
                     Float3 rayStartWorld = mouseToWorldPos(invViewProj, Input::MouseX, Input::MouseY, 0.0f);
                     Float3 rayEndWorld = mouseToWorldPos(invViewProj, Input::MouseX, Input::MouseY, 1.0f);
 
-                    Entity::Handle selectedEntity = InvalidEntity;
-                    for (uint32_t e = 0; e < entityCount && selectedEntity == InvalidEntity; e++)
+                    float closestDistance = FLT_MAX;
+                    Entity::Handle closestEntity = InvalidEntity;
+
+                    for (uint32_t e = 0; e < entityCount; e++)
                     {
                         Property::Handle rendererHandle = getPropertyFromEntity(entities[e], RendererPropertyType);
                         SimdTriangleSet* triangleSet;
@@ -405,22 +407,28 @@ namespace IB
                             Float3 rayDir = rayStartToEnd / rayLength;
 
                             SimdFloat3 simdRayStart = splat(rayStartEntity);
-                            SimdFloat3 simdRayDir = splat(rayStartToEnd);
+                            SimdFloat3 simdRayDir = splat(rayDir);
                             SimdFloat simdRayLength = splat(rayLength);
 
                             for (uint32_t tr = 0; tr < triangleCount; tr += SimdLaneCount, triangleSet++)
                             {
                                 uint32_t trianglesInSet = min(triangleCount - tr, SimdLaneCount);
-                                if (doesRayIntersectAnyTriangle(simdRayStart, simdRayDir, SimdZero, simdRayLength, *triangleSet, trianglesInSet))
+                                SimdRayTriangleResult rayTriangleResult = rayTriangleIntersection(simdRayStart, simdRayDir, SimdZero, simdRayLength, *triangleSet, trianglesInSet);
+                                for (uint32_t p = 0; p < rayTriangleResult.Count; p++)
                                 {
-                                    selectedEntity = entities[e];
-                                    break;
+                                    Float3 worldPoint = transformPoint(entityToWorldTransform, rayTriangleResult.Points[p]);
+                                    float distance = distanceSqr(worldPoint, cameraTransform.Position);
+                                    if (distance < closestDistance)
+                                    {
+                                        closestDistance = distance;
+                                        closestEntity = entities[e];
+                                    }
                                 }
                             }
                         }
                     }
 
-                    SelectedEntity = selectedEntity;
+                    SelectedEntity = closestEntity;
                 }
             }
 
