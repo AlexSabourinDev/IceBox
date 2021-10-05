@@ -14,6 +14,22 @@ namespace IB
     template<typename T>
     inline T min(T left, T right) { return left < right ? left : right; }
 
+    struct Float2
+    {
+        float x, y;
+    };
+
+    struct Uint2
+    {
+        uint32_t x, y;
+    };
+
+    struct Int2
+    {
+        int32_t x, y;
+        explicit operator Float2() const { return Float2{ static_cast<float>(x), static_cast<float>(y) }; }
+    };
+
     struct Float3
     {
         float &operator[](uint32_t i) { return (&x)[i]; }
@@ -134,6 +150,14 @@ namespace IB
 
     inline float rcp(float value) { return 1.0f / value; }
 
+    inline Float2 operator*(Float2 left, float right);
+    inline Float2 operator+(Float2 left, Float2 right);
+    inline Float2 operator-(Float2 left, Float2 right);
+    inline Float2 operator/(Float2 left, Float2 right);
+
+    inline Int2 operator+(Int2 left, Int2 right);
+    inline Int2 operator-(Int2 left, Int2 right);
+
     // Right will be applied first, left will be applied second
     // When multiplying a vector by this new matrix
     inline Mat3x4 toMat3x4(Mat3x3 const& matrix, Float3 column);
@@ -164,6 +188,7 @@ namespace IB
     inline Float3 mul(Mat3x3 const&left, Float3 right);
     inline Float3 cross(Float3 left, Float3 right);
     inline Float3 normalize(Float3 value);
+    inline Float3 normalize(Float3 value, float length);
     inline Float3 abs(Float3 value);
     inline Float3 round(Float3 value);
 
@@ -173,6 +198,7 @@ namespace IB
     inline Quaternion inverse(Quaternion q) { return conjugate(q); }
     inline Quaternion fromAxisAngle(Float3 axis, float angle);
     inline Quaternion fromEulerAngles(Float3 angles);
+    inline Quaternion normalize(Quaternion rotation);
     inline Float3 toEulerAngles(Quaternion q);
 
     inline bool doesLineAABBIntersect(Float3 lineStart, Float3 lineEnd, AABB aabb);
@@ -191,6 +217,14 @@ namespace IB
     inline bool doesRayIntersectTriangle(Float3 rayO, Float3 rayD, float rayMin, float rayMax, Triangle const& triangle);
 
     // Implementation
+    inline Float2 operator*(Float2 left, float right) { return Float2{ left.x * right, left.y * right }; }
+    inline Float2 operator+(Float2 left, Float2 right) { return Float2{ left.x + right.x, left.y + right.y }; }
+    inline Float2 operator-(Float2 left, Float2 right) { return Float2{ left.x - right.x, left.y - right.y }; }
+    inline Float2 operator/(Float2 left, Float2 right) { return Float2{ left.x / right.x, left.y / right.y }; }
+
+    inline Int2 operator+(Int2 left, Int2 right) { return Int2{ left.x + right.x, left.y + right.y }; }
+    inline Int2 operator-(Int2 left, Int2 right) { return Int2{ left.x - right.x, left.y - right.y }; }
+
     inline Mat4x4 toMat4x4(Mat3x4 const& matrix) { return Mat4x4{ matrix[0], matrix[1], matrix[2], {0.0f, 0.0f, 0.0f, 1.0f} }; }
     inline Mat3x4 toMat3x4(Mat3x3 const& matrix, Float3 column)
     {
@@ -301,12 +335,17 @@ namespace IB
     inline Float3 normalize(Float3 value)
     {
         float l = length(value);
-        if (l == 0.0f)
+        return normalize(value, l);
+    }
+
+    inline Float3 normalize(Float3 value, float length)
+    {
+        if (length == 0.0f)
         {
             return { 0.0f, 0.0f, 0.0f };
         }
 
-        return value / l;
+        return value / length;
     }
 
     inline Float3 abs(Float3 value) { return { fabsf(value.x), fabsf(value.y), fabsf(value.z) }; }
@@ -327,6 +366,12 @@ namespace IB
             left.w * right.z + left.x * right.y - left.y * right.x + left.z * right.w,
             left.w * right.w - left.x * right.x - left.y * right.y - left.z * right.z
         };
+    }
+
+    inline Quaternion normalize(Quaternion rotation)
+    {
+        float l = sqrtf(rotation.x * rotation.x + rotation.y * rotation.y + rotation.z * rotation.z + rotation.w * rotation.w);
+        return Quaternion{ rotation.x / l, rotation.y / l, rotation.z / l, rotation.w / l };
     }
 
     inline Quaternion conjugate(Quaternion q) { return Quaternion{ -q.x, -q.y, -q.z, q.w }; }

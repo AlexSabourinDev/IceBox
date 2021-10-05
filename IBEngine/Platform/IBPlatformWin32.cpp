@@ -90,15 +90,15 @@ namespace
             {
             case WM_LBUTTONDOWN:
             case WM_LBUTTONUP:
-                message.Data.MouseClick.Button = IB::WindowMessage::Mouse::Left;
+                message.Data.MouseClick.Button = IB::Mouse::Left;
                 break;
             case WM_MBUTTONDOWN:
             case WM_MBUTTONUP:
-                message.Data.MouseClick.Button = IB::WindowMessage::Mouse::Middle;
+                message.Data.MouseClick.Button = IB::Mouse::Middle;
                 break;
             case WM_RBUTTONDOWN:
             case WM_RBUTTONUP:
-                message.Data.MouseClick.Button = IB::WindowMessage::Mouse::Right;
+                message.Data.MouseClick.Button = IB::Mouse::Right;
                 break;
             }
 
@@ -107,12 +107,12 @@ namespace
             case WM_LBUTTONUP:
             case WM_MBUTTONUP:
             case WM_RBUTTONUP:
-                message.Data.MouseClick.State = IB::WindowMessage::Mouse::Released;
+                message.Data.MouseClick.State = IB::Mouse::Released;
                 break;
             case WM_LBUTTONDOWN:
             case WM_MBUTTONDOWN:
             case WM_RBUTTONDOWN:
-                message.Data.MouseClick.State = IB::WindowMessage::Mouse::Pressed;
+                message.Data.MouseClick.State = IB::Mouse::Pressed;
                 break;
             }
             messageHandled = activeWindow->OnWindowMessage(activeWindow->State, message, &platformData);
@@ -138,42 +138,42 @@ namespace
                 message.Type = IB::WindowMessage::Key;
 
                 uint32_t conversionMapping[0xFF] = {};
-                conversionMapping[VK_LEFT] = IB::WindowMessage::Key::Code::Left;
-                conversionMapping[VK_RIGHT] = IB::WindowMessage::Key::Code::Right;
-                conversionMapping[VK_UP] = IB::WindowMessage::Key::Code::Up;
-                conversionMapping[VK_DOWN] = IB::WindowMessage::Key::Code::Down;
-                conversionMapping[VK_SHIFT] = IB::WindowMessage::Key::Code::Shift;
-                conversionMapping[VK_CONTROL] = IB::WindowMessage::Key::Code::Control;
-                conversionMapping[VK_RETURN] = IB::WindowMessage::Key::Code::Return;
-                conversionMapping[VK_SPACE] = IB::WindowMessage::Key::Code::Space;
-                conversionMapping[VK_ESCAPE] = IB::WindowMessage::Key::Code::Escape;
+                conversionMapping[VK_LEFT] = IB::Key::Code::Left;
+                conversionMapping[VK_RIGHT] = IB::Key::Code::Right;
+                conversionMapping[VK_UP] = IB::Key::Code::Up;
+                conversionMapping[VK_DOWN] = IB::Key::Code::Down;
+                conversionMapping[VK_SHIFT] = IB::Key::Code::Shift;
+                conversionMapping[VK_CONTROL] = IB::Key::Code::Control;
+                conversionMapping[VK_RETURN] = IB::Key::Code::Return;
+                conversionMapping[VK_SPACE] = IB::Key::Code::Space;
+                conversionMapping[VK_ESCAPE] = IB::Key::Code::Escape;
                 for (uint32_t i = 0; i < 10; i++)
                 {
-                    conversionMapping['0' + i] = IB::WindowMessage::Key::Code::Num0 + i;
+                    conversionMapping['0' + i] = IB::Key::Code::Num0 + i;
                 }
 
                 for (uint32_t i = 0; i < 26; i++)
                 {
-                    conversionMapping['A' + i] = IB::WindowMessage::Key::Code::A + i;
+                    conversionMapping['A' + i] = IB::Key::Code::A + i;
                 }
 
-                message.Data.Key.Code = static_cast<IB::WindowMessage::Key::Code>(conversionMapping[wParam]);
+                message.Data.Key.Code = static_cast<IB::Key::Code>(conversionMapping[wParam]);
 
                 switch (msg)
                 {
                 case WM_SYSKEYDOWN:
                 case WM_KEYDOWN:
-                    message.Data.Key.State = IB::WindowMessage::Key::Pressed;
+                    message.Data.Key.State = IB::Key::Pressed;
                     break;
                 case WM_SYSKEYUP:
                 case WM_KEYUP:
                 default:
-                    message.Data.Key.State = IB::WindowMessage::Key::Released;
+                    message.Data.Key.State = IB::Key::Released;
                     break;
                 }
 
                 message.Data.Key.Alt = (msg == WM_SYSKEYDOWN);
-                if (message.Data.Key.State == IB::WindowMessage::Key::Pressed)
+                if (message.Data.Key.State == IB::Key::Pressed)
                 {
                     bool isFirstDown = (lParam & (1 << 30)) == 0; // 30th bit represents if the key was down before this message was sent.
                     if (isFirstDown)

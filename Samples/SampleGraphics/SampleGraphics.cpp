@@ -52,8 +52,8 @@ int main()
             IB::sendQuitMessage();
             return true;
         case IB::WindowMessage::MouseClick:
-            if (message.Data.MouseClick.State == IB::WindowMessage::Mouse::Pressed &&
-                message.Data.MouseClick.Button == IB::WindowMessage::Mouse::Left)
+            if (message.Data.MouseClick.State == IB::Mouse::Pressed &&
+                message.Data.MouseClick.Button == IB::Mouse::Left)
             {
                 sampleState->PreviousMouseX = message.Data.MouseClick.X;
                 sampleState->PreviousMouseY = message.Data.MouseClick.Y;
@@ -93,7 +93,7 @@ int main()
                     }
                 }
             }
-            else if (message.Data.MouseClick.State == IB::WindowMessage::Mouse::Released)
+            else if (message.Data.MouseClick.State == IB::Mouse::Released)
             {
                 sampleState->ActiveAxis = 3;
             }

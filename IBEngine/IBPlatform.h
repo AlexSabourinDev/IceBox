@@ -20,53 +20,62 @@ namespace IB
     }
 #endif // _MSC_VER
 
+    struct Mouse
+    {
+        enum Button
+        {
+            Left,
+            Right,
+            Middle,
+            Count
+        };
+
+        enum State
+        {
+            Pressed,
+            Released
+        };
+    };
+
+    struct Key
+    {
+        enum Code
+        {
+            Unknown = 0x00,
+            Left = 0x01,
+            Right = 0x02,
+            Up = 0x03,
+            Down = 0x04,
+            Shift = 0x05,
+            Control = 0x06,
+            Escape = 0x07,
+            Return = 0x0D,
+            Space = ' ',
+            Num0 = '0',
+            Num9 = '9',
+            A = 'A',
+            B, C, D,
+            E, F, G,
+            H, I, J,
+            K, L, M,
+            N, O, P,
+            Q, R, S,
+            T, U, V,
+            W, X, Y,
+            Z = 'Z',
+            Count = 0xFF
+        };
+
+        enum State
+        {
+            Pressed,
+            Released,
+        };
+    };
+
     // Windowing API
     struct WindowMessage
     {
-        struct Key
-        {
-            enum Code
-            {
-                Unknown = 0x00,
-                Left = 0x01,
-                Right = 0x02,
-                Up = 0x03,
-                Down = 0x04,
-                Shift = 0x05,
-                Control = 0x06,
-                Escape = 0x07,
-                Return = 0x0D,
-                Space = ' ',
-                Num0 = '0',
-                Num9 = '9',
-                A = 'A',
-                Z = 'Z',
-            };
-
-            enum State
-            {
-                Pressed,
-                Released,
-            };
-        };
-
-        struct Mouse
-        {
-            enum Button
-            {
-                Left,
-                Right,
-                Middle,
-                Count
-            };
-
-            enum State
-            {
-                Pressed,
-                Released
-            };
-        };
-
         enum
         {
             Unknown,

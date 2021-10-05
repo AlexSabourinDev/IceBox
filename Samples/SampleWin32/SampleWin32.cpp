@@ -16,14 +16,14 @@ int main()
         }
         else if (message.Type == IB::WindowMessage::Key)
         {
-            if (message.Data.Key.Code != IB::WindowMessage::Key::Unknown)
+            if (message.Data.Key.Code != IB::Key::Unknown)
             {
                 if (message.Data.Key.Alt)
                 {
                     char logMessage[8] = {'A','l','t','-'};
                     logMessage[4] = message.Data.Key.Code;
                     logMessage[5] = ' ';
-                    logMessage[6] = message.Data.Key.State == IB::WindowMessage::Key::Pressed ? 'v' : '^';
+                    logMessage[6] = message.Data.Key.State == IB::Key::Pressed ? 'v' : '^';
                     IB_LOG(IB::LogLevel::Log, "Sample", logMessage);
                 }
                 else
@@ -31,7 +31,7 @@ int main()
                     char logMessage[4] = {};
                     logMessage[0] = message.Data.Key.Code;
                     logMessage[1] = ' ';
-                    logMessage[2] = message.Data.Key.State == IB::WindowMessage::Key::Pressed ? 'v' : '^';
+                    logMessage[2] = message.Data.Key.State == IB::Key::Pressed ? 'v' : '^';
                     IB_LOG(IB::LogLevel::Log, "Sample", logMessage);
                 }
             }
@@ -39,7 +39,7 @@ int main()
         }
         else if (message.Type == IB::WindowMessage::MouseClick)
         {
-            if (message.Data.MouseClick.State == IB::WindowMessage::Mouse::Pressed)
+            if (message.Data.MouseClick.State == IB::Mouse::Pressed)
             {
                 IB_LOG(IB::LogLevel::Log, "Sample", "Mouse Down");
             }
@@ -50,13 +50,13 @@ int main()
 
             switch (message.Data.MouseClick.Button)
             {
-            case IB::WindowMessage::Mouse::Left:
+            case IB::Mouse::Left:
                 IB_LOG(IB::LogLevel::Log, "Sample", "Mouse Left");
                 break;
-            case IB::WindowMessage::Mouse::Right:
+            case IB::Mouse::Right:
                 IB_LOG(IB::LogLevel::Log, "Sample", "Mouse Right");
                 break;
-            case IB::WindowMessage::Mouse::Middle:
+            case IB::Mouse::Middle:
                 IB_LOG(IB::LogLevel::Log, "Sample", "Mouse Middle");
                 break;
             }
