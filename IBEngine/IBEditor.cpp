@@ -236,6 +236,7 @@ namespace IB
             ImGizmo::newFrame(CameraHandle);
 
             static bool showEditorInspector = false;
+            static bool showSettings = false;
 
             bool openSavePopup = false;
             if (ImGui::BeginMainMenuBar())
@@ -251,7 +252,8 @@ namespace IB
 
                 if (ImGui::BeginMenu("View"))
                 {
-                    ImGui::MenuItem("Toggle Editor Inspector", nullptr, &showEditorInspector);
+                    ImGui::MenuItem("Editor Inspector", nullptr, &showEditorInspector);
+                    ImGui::MenuItem("Editor Settings", nullptr, &showSettings);
                     ImGui::EndMenu();
                 }
 
@@ -268,7 +270,7 @@ namespace IB
                 }
             }
 
-            if (ImGui::BeginPopupModal("Save?"))
+            if (ImGui::BeginPopupModal("Save?", nullptr, ImGuiWindowFlags_NoResize))
             {
                 if (ImGui::Button("Yes", ImVec2(120, 0)))
                 {
@@ -289,7 +291,7 @@ namespace IB
                 static AssetBrowserState assetBrowserState = {};
                 assetBrowserFileTree("../Assets/", "Compiled", &assetBrowserState);
 
-                if (ImGui::BeginPopupModal("Load Cell?"))
+                if (ImGui::BeginPopupModal("Load Cell?", nullptr, ImGuiWindowFlags_NoResize))
                 {
                     if (ImGui::Button("OK", ImVec2(120, 0)))
                     {
@@ -371,14 +373,59 @@ namespace IB
                 ImGui::End();
             }
 
+            struct EditorSettings
+            {
+                float CameraPanSpeed = 180.0f * 0.5f;
+                float CameraSpeed = 0.25f;
+                float CameraSlowSpeed = 0.05f;
+            };
+
+            static EditorSettings settings;
+            if (showSettings)
+            {
+                if (ImGui::Begin("Editor Settings", &showSettings))
+                {
+                    if (ImGui::BeginTable("Inspector Table", 2))
+                    {
+                        ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed);
+                        ImGui::TableSetupColumn("Data", ImGuiTableColumnFlags_None);
+
+                        ImGui::TableNextColumn();
+                        ImGui::Text("Camera Pan Speed (Degrees)");
+
+                        ImGui::TableNextColumn();
+                        ImGui::SetNextItemWidth(-FLT_MIN);
+                        ImGui::InputFloat("#CameraPanSpeed", &settings.CameraPanSpeed);
+
+                        ImGui::TableNextColumn();
+                        ImGui::Text("Camera Speed (m/s)");
+
+                        ImGui::TableNextColumn();
+                        ImGui::SetNextItemWidth(-FLT_MIN);
+                        ImGui::InputFloat("#CameraSpeed", &settings.CameraSpeed);
+
+                        ImGui::TableNextColumn();
+                        ImGui::Text("Camera Slow  Speed (m/s)");
+
+                        ImGui::TableNextColumn();
+                        ImGui::SetNextItemWidth(-FLT_MIN);
+                        ImGui::InputFloat("#CameraSlowSpeed", &settings.CameraSlowSpeed);
+
+                        ImGui::EndTable();
+                    }
+                }
+                ImGui::End();
+            }
+
             // The order of events for click handling is:
             // - ImGui
             // - ImGizmo
-            // - Editor picking
+            // - Editor render window functionality
 
             const bool canWindowConsumeInput = !ImGui::GetIO().WantCaptureMouse && !ImGizmo::hasFocusedGizmo();
             if (canWindowConsumeInput)
             {
+                // Camera flycam
                 if (Input::isButtonPressed(Mouse::Right))
                 {
                     Property::Handle transformProperty = getPropertyFromEntity(CameraHandle, TransformPropertyType);
@@ -386,7 +433,7 @@ namespace IB
                     {
                         Transform cameraTransform = getLocalTransform(transformProperty);
 
-                        constexpr float rotationSpeed = Pi * 0.5f;
+                        float const rotationSpeed = settings.CameraPanSpeed * DegToRad;
                         Float2 mouseDelta = static_cast<Float2>(Input::MousePos - Input::PreviousMousePos) / Float2{ static_cast<float>(WindowWidth), static_cast<float>(WindowHeight) };
                         mouseDelta = mouseDelta * 2.0f;
                         Float3 eulerAngles = toEulerAngles(cameraTransform.Rotation * fromEulerAngles(Float3{ -mouseDelta.y, 0.0f, -mouseDelta.x } * rotationSpeed));
@@ -416,9 +463,7 @@ namespace IB
                         if (cameraDirectionLength > 0.0f)
                         {
                             cameraDirection = normalize(cameraDirection, cameraDirectionLength);
-                            constexpr float defaultCameraSpeed = 0.25f;
-                            constexpr float slowCameraSpeed = 0.05f;
-                            float const cameraSpeed = Input::isButtonPressed(Key::Shift) ? slowCameraSpeed : defaultCameraSpeed;
+                            float const cameraSpeed = Input::isButtonPressed(Key::Shift) ? settings.CameraSlowSpeed : settings.CameraSpeed;
 
                             cameraTransform.Position += rotate(cameraTransform.Rotation, cameraDirection * cameraSpeed);
                         }
