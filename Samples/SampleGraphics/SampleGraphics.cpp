@@ -122,9 +122,9 @@ int main()
 
                     IB::Float3 normals[3] = 
                     {
-                        {-1.0f, 0.0f, 0.0f},
-                        {0.0f, -1.0f, 0.0f},
-                        {0.0f, 0.0f, -1.0f},
+                        {1.0f, 0.0f, 0.0f},
+                        {0.0f, 1.0f, 0.0f},
+                        {0.0f, 0.0f, 1.0f},
                     };
                     // Given our current ray direction, pick our axis normal that is most parallel
                     // This will give us the most perpendicular plane
@@ -137,7 +137,7 @@ int main()
                     uint32_t largest = angles[0] > angles[1] ? 0 : 1;
                     uint32_t planeAxis = (sampleState->ActiveAxis + largest + 1) % 3;
 
-                    float distance = sampleState->MeshPos[planeAxis];
+                    float distance = dot(sampleState->MeshPos, normals[planeAxis]);
 
                     previousPos = intersectRayPlane(normals[planeAxis], distance, previousPos, previousRayDir);
                     nextPos = intersectRayPlane(normals[planeAxis], distance, nextPos, nextRayDir);

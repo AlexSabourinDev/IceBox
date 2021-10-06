@@ -579,11 +579,16 @@ namespace
         } Cleanup;
     };
 
+    struct ForwardMaterial
+    {
+        uint32_t AlbedoTint;
+        uint32_t AlbedoIndex;
+    };
+
     struct ForwardPass
     {
         static constexpr uint32_t SubpassCount = 2;
 
-        VkDescriptorSetLayout ShaderInstanceLayout;
         VkDescriptorSetLayout ShaderLayout;
 
         VkPipelineLayout PipelineLayout;
@@ -591,15 +596,10 @@ namespace
 
         VkDescriptorSet ShaderDescriptor;
         VkSampler Sampler;
+        VkBuffer MaterialBuffer;
+        Allocation MaterialBufferAllocation;
 
         VkRenderPass RenderPass;
-
-        struct
-        {
-            VkDescriptorSet ShaderDescriptor;
-            VkBuffer FShaderData;
-            Allocation Allocation;
-        } Instances[MaxMaterialInstanceCount];
 
         struct
         {
@@ -1378,9 +1378,15 @@ namespace IB
                 fragBinding1.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
                 fragBinding1.descriptorCount = MaxImageCount;
 
-                VkDescriptorSetLayoutBinding layoutBindings[] = {vertexBinding0, fragBinding0, fragBinding1};
+                VkDescriptorSetLayoutBinding fragBinding2 = {};
+                fragBinding2.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+                fragBinding2.binding = 3;
+                fragBinding2.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+                fragBinding2.descriptorCount = 1;
 
-                VkDescriptorBindingFlagsEXT bindFlags[] = {0, 0, VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT_EXT};
+                VkDescriptorSetLayoutBinding layoutBindings[] = {vertexBinding0, fragBinding0, fragBinding1, fragBinding2 };
+
+                VkDescriptorBindingFlagsEXT bindFlags[] = {0, 0, VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT_EXT, 0};
                 VkDescriptorSetLayoutBindingFlagsCreateInfoEXT extendedInfo = {};
                 extendedInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO_EXT;
                 extendedInfo.bindingCount = arrayCount(bindFlags);
@@ -1394,36 +1400,17 @@ namespace IB
                 IB_VKCHECK(vkCreateDescriptorSetLayout(RendererContext.LogicalDevice, &createLayout, NoAllocator, &ForwardPass.ShaderLayout));
             }
 
-            // Per material instance descriptor layouts
             {
-                VkDescriptorSetLayoutBinding layoutBinding = {};
-                layoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-                layoutBinding.binding = 0;
-                layoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-                layoutBinding.descriptorCount = 1;
+                VkPushConstantRange pushConstant = {};
+                pushConstant.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+                pushConstant.offset = 0;
+                pushConstant.size = 256;
 
-                VkDescriptorSetLayoutBinding layoutBindings[] = {layoutBinding};
-
-                VkDescriptorSetLayoutCreateInfo createLayout = {};
-                createLayout.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-                createLayout.bindingCount = arrayCount(layoutBindings);
-                createLayout.pBindings = layoutBindings;
-
-                IB_VKCHECK(vkCreateDescriptorSetLayout(RendererContext.LogicalDevice, &createLayout, NoAllocator, &ForwardPass.ShaderInstanceLayout));
-            }
-
-            {
-                VkPushConstantRange vertPushConstant = {};
-                vertPushConstant.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-                vertPushConstant.offset = 0;
-                vertPushConstant.size = 256;
-
-                VkPushConstantRange pushConstantRanges[] = {vertPushConstant};
+                VkPushConstantRange pushConstantRanges[] = { pushConstant };
 
                 VkDescriptorSetLayout layouts[] =
                     {
                         ForwardPass.ShaderLayout,
-                        ForwardPass.ShaderInstanceLayout,
                     };
 
                 VkPipelineLayoutCreateInfo pipelineLayoutCreate = {};
@@ -1462,6 +1449,34 @@ namespace IB
             request.Category = AllocationCategory::Mesh;
 
             Allocation *allocation = &RendererContext.Geometry.Allocation;
+            *allocation = allocateDeviceMemory(&Allocator, request);
+
+            IB_VKCHECK(vkBindBufferMemory(RendererContext.LogicalDevice, *buffer, allocation->Memory, allocation->Offset));
+        }
+
+        {
+            VkBufferCreateInfo bufferCreate = {};
+            bufferCreate.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+            bufferCreate.size = MaxMaterialInstanceCount * sizeof(ForwardMaterial);
+            bufferCreate.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT; // buffers created through create buffer can always be transfered to
+
+            VkBuffer *buffer = &ForwardPass.MaterialBuffer;
+            IB_VKCHECK(vkCreateBuffer(RendererContext.LogicalDevice, &bufferCreate, NoAllocator, buffer));
+
+            VkMemoryRequirements memoryRequirements;
+            vkGetBufferMemoryRequirements(RendererContext.LogicalDevice, *buffer, &memoryRequirements);
+
+            AllocationRequest request;
+            request.Alignment = memoryRequirements.alignment;
+            request.Size = MaxMaterialInstanceCount * sizeof(ForwardMaterial);
+            request.LogicalDevice = RendererContext.LogicalDevice;
+            request.PhysicalDevice = RendererContext.PhysicalDevice;
+            request.RequiredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+            request.PreferedFlags = 0;
+            request.TypeBits = memoryRequirements.memoryTypeBits;
+            request.Category = AllocationCategory::Misc;
+
+            Allocation *allocation = &ForwardPass.MaterialBufferAllocation;
             *allocation = allocateDeviceMemory(&Allocator, request);
 
             IB_VKCHECK(vkBindBufferMemory(RendererContext.LogicalDevice, *buffer, allocation->Memory, allocation->Offset));
@@ -1524,7 +1539,20 @@ namespace IB
             writeSamplerSet.descriptorCount = 1;
             writeSamplerSet.pImageInfo = &samplerInfo;
 
-            VkWriteDescriptorSet writeDescriptorSets[] = {writeSamplerSet, writeGeometry};
+            VkDescriptorBufferInfo materialBufferInfo = {};
+            materialBufferInfo.buffer = ForwardPass.MaterialBuffer;
+            materialBufferInfo.offset = 0;
+            materialBufferInfo.range = MaxMaterialInstanceCount * sizeof(ForwardMaterial);
+
+            VkWriteDescriptorSet writeMaterials = {};
+            writeMaterials.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            writeMaterials.dstSet = ForwardPass.ShaderDescriptor;
+            writeMaterials.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+            writeMaterials.dstBinding = 3;
+            writeMaterials.descriptorCount = 1;
+            writeMaterials.pBufferInfo = &materialBufferInfo;
+
+            VkWriteDescriptorSet writeDescriptorSets[] = {writeSamplerSet, writeGeometry, writeMaterials };
             vkUpdateDescriptorSets(RendererContext.LogicalDevice, arrayCount(writeDescriptorSets), writeDescriptorSets, 0, NULL);
         }
 
@@ -1620,7 +1648,6 @@ namespace IB
             freeDeviceMemory(&Allocator, RendererContext.Textures.Images[i].Allocation);
         }
 
-        vkDestroyDescriptorSetLayout(RendererContext.LogicalDevice, ForwardPass.ShaderInstanceLayout, NoAllocator);
         vkDestroyDescriptorSetLayout(RendererContext.LogicalDevice, ForwardPass.ShaderLayout, NoAllocator);
 
         vkDestroyPipelineLayout(RendererContext.LogicalDevice, ForwardPass.PipelineLayout, NoAllocator);
@@ -1631,12 +1658,8 @@ namespace IB
         }
 
         vkDestroySampler(RendererContext.LogicalDevice, ForwardPass.Sampler, NoAllocator);
-
-        for (uint32_t i = 0; i < ForwardPass.InstanceCount; i++)
-        {
-            vkDestroyBuffer(RendererContext.LogicalDevice, ForwardPass.Instances[i].FShaderData, NoAllocator);
-            freeDeviceMemory(&Allocator, ForwardPass.Instances[i].Allocation);
-        }
+        vkDestroyBuffer(RendererContext.LogicalDevice, ForwardPass.MaterialBuffer, NoAllocator);
+        freeDeviceMemory(&Allocator, ForwardPass.MaterialBufferAllocation);
 
         for (uint32_t i = 0; i < Queue::Count; i++)
         {
@@ -2111,44 +2134,12 @@ namespace IB
 
     Material::Handle createMaterial(ForwardDesc const &desc)
     {
-        struct
-        {
-            uint32_t albedoTint;
-            uint32_t albedoIndex;
-        } matData;
-        matData.albedoTint = desc.AlbedoTint;
-        matData.albedoIndex = desc.AlbedoImage - 1;
+        ForwardMaterial matData = {};
+        matData.AlbedoTint = desc.AlbedoTint;
+        matData.AlbedoIndex = desc.AlbedoImage - 1;
 
         uint32_t instanceIndex = ForwardPass.InstanceCount++;
-        VkBuffer dataBuffer;
-        {
-            VkBufferCreateInfo bufferCreate = {};
-            bufferCreate.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-            bufferCreate.size = sizeof(matData);
-            bufferCreate.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT; // buffers created through create buffer can always be transfered to
-
-            VkBuffer *buffer = &ForwardPass.Instances[instanceIndex].FShaderData;
-            IB_VKCHECK(vkCreateBuffer(RendererContext.LogicalDevice, &bufferCreate, NoAllocator, buffer));
-
-            VkMemoryRequirements memoryRequirements;
-            vkGetBufferMemoryRequirements(RendererContext.LogicalDevice, *buffer, &memoryRequirements);
-
-            AllocationRequest request;
-            request.Alignment = memoryRequirements.alignment;
-            request.Size = sizeof(matData);
-            request.LogicalDevice = RendererContext.LogicalDevice;
-            request.PhysicalDevice = RendererContext.PhysicalDevice;
-            request.RequiredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-            request.PreferedFlags = 0;
-            request.TypeBits = memoryRequirements.memoryTypeBits;
-            request.Category = AllocationCategory::Misc;
-
-            Allocation *allocation = &ForwardPass.Instances[instanceIndex].Allocation;
-            *allocation = allocateDeviceMemory(&Allocator, request);
-
-            IB_VKCHECK(vkBindBufferMemory(RendererContext.LogicalDevice, *buffer, allocation->Memory, allocation->Offset));
-            dataBuffer = *buffer;
-        }
+        IB_ASSERT(instanceIndex < MaxMaterialInstanceCount, "Too many materials!");
 
         VkBuffer srcBuffer;
         Allocation allocation;
@@ -2178,7 +2169,7 @@ namespace IB
 
             {
                 void *memory = mapAllocation(RendererContext.LogicalDevice, &Allocator, allocation);
-                memcpy((uint8_t *)memory, &matData, sizeof(matData));
+                memcpy(reinterpret_cast<uint8_t *>(memory), &matData, sizeof(ForwardMaterial));
                 unmapAllocation(&Allocator, allocation);
             }
         }
@@ -2202,9 +2193,9 @@ namespace IB
 
             VkBufferCopy copy = {};
             copy.srcOffset = 0;
-            copy.dstOffset = 0;
-            copy.size = sizeof(matData);
-            vkCmdCopyBuffer(commandBuffer, srcBuffer, dataBuffer, 1, &copy);
+            copy.dstOffset = instanceIndex * sizeof(ForwardMaterial);
+            copy.size = sizeof(ForwardMaterial);
+            vkCmdCopyBuffer(commandBuffer, srcBuffer, ForwardPass.MaterialBuffer, 1, &copy);
 
             IB_VKCHECK(vkEndCommandBuffer(commandBuffer));
 
@@ -2222,33 +2213,12 @@ namespace IB
             freeDeviceMemory(&Allocator, allocation);
         }
 
-        VkDescriptorSetAllocateInfo descriptorSetAlloc = {};
-        descriptorSetAlloc.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-        descriptorSetAlloc.descriptorPool = RendererContext.DescriptorPool;
-        descriptorSetAlloc.descriptorSetCount = 1;
-        descriptorSetAlloc.pSetLayouts = &ForwardPass.ShaderInstanceLayout;
-
-        IB_VKCHECK(vkAllocateDescriptorSets(
-            RendererContext.LogicalDevice, &descriptorSetAlloc,
-            &ForwardPass.Instances[instanceIndex].ShaderDescriptor));
-
-        VkDescriptorBufferInfo bufferInfo = {};
-        bufferInfo.buffer = dataBuffer;
-        bufferInfo.offset = 0;
-        bufferInfo.range = sizeof(matData);
-
-        VkWriteDescriptorSet writeMaterial = {};
-        writeMaterial.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writeMaterial.dstSet = ForwardPass.Instances[instanceIndex].ShaderDescriptor;
-        writeMaterial.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        writeMaterial.dstBinding = 0;
-        writeMaterial.descriptorCount = 1;
-        writeMaterial.pBufferInfo = &bufferInfo;
-
-        VkWriteDescriptorSet writeDescriptorSets[] = {writeMaterial};
-        vkUpdateDescriptorSets(RendererContext.LogicalDevice, arrayCount(writeDescriptorSets), writeDescriptorSets, 0, NULL);
-
         return Material::toHandle(instanceIndex + 1);
+    }
+
+    Light::Handle createLight(DirectionalLightDesc const& /*desc*/)
+    {
+        return InvalidLight;
     }
 
     void newImGuiFrame()
@@ -2376,11 +2346,6 @@ namespace IB
                         {
                             vkCmdBindPipeline(currentCommands, VK_PIPELINE_BIND_POINT_GRAPHICS, ForwardPass.Pipelines[passIndex]);
 
-                            VkDescriptorSet instanceSet = ForwardPass.Instances[materialIndex].ShaderDescriptor;
-                            vkCmdBindDescriptorSets(
-                                currentCommands, VK_PIPELINE_BIND_POINT_GRAPHICS, ForwardPass.PipelineLayout,
-                                1, 1, &instanceSet, 0, VK_NULL_HANDLE);
-
                             for (uint32_t mesh = 0; mesh < batch->MeshCount && batch->Meshes[mesh].Mesh > 0; mesh++)
                             {
                                 uint32_t meshIndex = batch->Meshes[mesh].Mesh - 1;
@@ -2393,14 +2358,16 @@ namespace IB
                                         Mat4x4 VP;
                                         Mat3x4 M;
                                         uint32_t VertexOffset;
-                                    } vertPushConstant;
+                                        uint32_t MaterialIndex;
+                                    } pushConstant;
 
-                                    vertPushConstant.VP = view.ViewProj;
-                                    vertPushConstant.M = batch->Meshes[mesh].Transforms[inst];
-                                    vertPushConstant.VertexOffset = RendererContext.Geometry.Meshes[meshIndex].VertexOffset / sizeof(Vertex);
+                                    pushConstant.VP = view.ViewProj;
+                                    pushConstant.M = batch->Meshes[mesh].Transforms[inst];
+                                    pushConstant.VertexOffset = RendererContext.Geometry.Meshes[meshIndex].VertexOffset / sizeof(Vertex);
+                                    pushConstant.MaterialIndex = materialIndex;
 
                                     vkCmdPushConstants(currentCommands, ForwardPass.PipelineLayout,
-                                                       VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(vertPushConstant), &vertPushConstant);
+                                                       VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(pushConstant), &pushConstant);
 
                                     vkCmdDrawIndexed(currentCommands, RendererContext.Geometry.Meshes[meshIndex].IndexCount, 1, 0, 0, 0);
                                 }

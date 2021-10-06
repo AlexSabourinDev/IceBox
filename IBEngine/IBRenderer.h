@@ -135,6 +135,22 @@ namespace IB
 
     constexpr Material::Handle InvalidMaterial = Material::toHandle(0);
 
+    struct DirectionalLightDesc
+    {
+        Float3 Direction = Float3{ 0.0f, 0.0f, -1.0f };
+        float Radiance = 1.0f;
+        uint32_t Tint = 0xFFFFFFFF;
+    };
+
+    namespace Light
+    {
+        enum Handle : uint32_t;
+        constexpr Handle toHandle(uint32_t value) { return static_cast<Handle>(value); }
+        constexpr uint32_t toValue(Handle handle) { return static_cast<uint32_t>(handle); }
+    };
+
+    constexpr Light::Handle InvalidLight = Light::toHandle(0);
+
     struct ViewDesc
     {
         struct MeshInstances
@@ -185,6 +201,7 @@ namespace IB
     IB_API Mesh::Handle createMesh(MeshDesc const &desc);
     IB_API Image::Handle createImage(ImageDesc const &desc);
     IB_API Material::Handle createMaterial(ForwardDesc const &desc);
+    IB_API Light::Handle createLight(DirectionalLightDesc const& desc);
 
     IB_API void newImGuiFrame();
     IB_API bool imGuiPlatformMessage(WindowMessagePlatformData const* platformData);

@@ -18,6 +18,7 @@ struct PerDrawBuffer
 	row_major float4x4 VP;
 	row_major float3x4 M;
 	uint VertexOffset;
+    uint MaterialIndex;
 };
 
 [[vk::push_constant]]
@@ -49,19 +50,19 @@ V2F vertexMain(VertexInput input)
 	return output;
 }
 
-struct MaterialData
+struct Material
 {
 	uint Tint;
 	uint TextureIndex;
 };
 
-[[vk::binding(0, 1)]]
-ConstantBuffer<MaterialData> Material;
-
 [[vk::binding(1, 0)]]
 SamplerState TextureSampler;
 [[vk::binding(2, 0)]]
 Texture2D Textures[];
+
+[[vk::binding(3, 0)]]
+StructuredBuffer<Material> Materials;
 
 float4 fromRGBA(uint tint)
 {
@@ -74,6 +75,7 @@ float4 fromRGBA(uint tint)
 
 float4 fragMain(V2F input) : SV_TARGET
 {
-    float4 tint = float4(fromRGBA(Material.Tint).rgb, 1.0f);
-	return Textures[Material.TextureIndex].Sample(TextureSampler, input.UV) * input.Color * tint;
+    Material material = Materials[PerDraw.MaterialIndex];
+    float4 tint = float4(fromRGBA(material.Tint).rgb, 1.0f);
+	return Textures[material.TextureIndex].Sample(TextureSampler, input.UV) * input.Color * tint;
 }
