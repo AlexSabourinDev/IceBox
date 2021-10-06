@@ -438,9 +438,7 @@ namespace IB
                         float const rotationSpeed = settings.CameraPanSpeed * DegToRad;
                         Float2 mouseDelta = static_cast<Float2>(Input::MousePos - Input::PreviousMousePos) / Float2{ static_cast<float>(WindowWidth), static_cast<float>(WindowHeight) };
                         mouseDelta = mouseDelta * 2.0f;
-                        Float3 eulerAngles = toEulerAngles(cameraTransform.Rotation * fromEulerAngles(Float3{ -mouseDelta.y, 0.0f, -mouseDelta.x } * rotationSpeed));
-                        eulerAngles.y = 0.0f; // Make sure to lock our rotation on our forward axis
-                        cameraTransform.Rotation = fromEulerAngles(eulerAngles);
+                        cameraTransform.Rotation = fromAxisAngle(Float3{ 0.0f, 0.0f, 1.0f }, -mouseDelta.x * rotationSpeed) * cameraTransform.Rotation * fromAxisAngle(Float3{1.0f, 0.0f, 0.0f}, -mouseDelta.y * rotationSpeed);
 
                         Float3 cameraDirection = {};
                         if (Input::isButtonPressed(Key::W))
