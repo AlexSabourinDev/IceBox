@@ -197,6 +197,11 @@ int main()
     matDesc.AlbedoImage = albedoImage;
     IB::Material::Handle someMaterial = IB::createMaterial(matDesc);
 
+    IB::DirectionalLightDesc lightDesc = {};
+    lightDesc.Direction = IB::fromPolar(0.0f, 3.0f * IB::Pi/4.0f);
+    lightDesc.Radiance = IB::Pi;
+    IB::Light::Handle directionalLight = IB::createLight(lightDesc);
+
     uint8_t whiteImageTexels[] = {255, 255, 255, 255};
 
     IB::ImageDesc whiteImageDesc = {};
@@ -432,6 +437,7 @@ int main()
 
             IB::ViewDesc viewDesc = {};
             viewDesc.ViewProj = sampleState.ViewProj;
+            viewDesc.DirectionalLight = directionalLight;
             viewDesc.Forward.Passes[IB::ViewDesc::ForwardPass::Default] = worldPass;
 
             IB::ViewDesc::MeshInstances gizmoInstance = {};

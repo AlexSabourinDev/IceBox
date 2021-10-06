@@ -149,7 +149,7 @@ namespace IB
         constexpr uint32_t toValue(Handle handle) { return static_cast<uint32_t>(handle); }
     };
 
-    constexpr Light::Handle InvalidLight = Light::toHandle(0);
+    constexpr Light::Handle InvalidLight = Light::toHandle(UINT32_MAX);
 
     struct ViewDesc
     {
@@ -168,6 +168,7 @@ namespace IB
         };
 
         Mat4x4 ViewProj = Mat4x4::identity();
+        Light::Handle DirectionalLight = InvalidLight;
 
         struct ForwardPass
         {

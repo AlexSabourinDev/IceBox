@@ -493,11 +493,9 @@ namespace
         };
     };
 
-    constexpr uint32_t MaxMeshCount = 1000;
     constexpr uint32_t MaxImageCount = 100;
     constexpr uint32_t MaxSamplerCount = 1000;
     constexpr uint32_t FrameBufferCount = 2;
-    constexpr uint32_t MaxMaterialInstanceCount = 100;
     constexpr uint32_t MaxPhysicalImageCount = 10;
     constexpr uint32_t MaxPipelineCleanups = 10;
     struct Context
@@ -543,23 +541,6 @@ namespace
         {
             struct
             {
-                uint32_t VertexOffset = 0;
-                uint32_t VertexSize = 0;
-                uint32_t IndexOffset = 0;
-                uint32_t IndexCount = 0;
-            } Meshes[MaxMeshCount];
-            uint32_t MeshCount = 0;
-            uint32_t NextOffset = 0;
-
-            VkBuffer MeshDataBuffers;
-            uint32_t AllocationSize = 0;
-            Allocation Allocation;
-        } Geometry;
-
-        struct
-        {
-            struct
-            {
                 VkImage Image;
                 VkImageView ImageView;
                 Allocation Allocation;
@@ -579,12 +560,31 @@ namespace
         } Cleanup;
     };
 
+    constexpr uint32_t MaxMeshCount = 1000;
+    constexpr uint32_t MeshBufferSize = 1024 * 1024 * 10;
+    struct Geometry
+    {
+        struct
+        {
+            uint32_t VertexOffset = 0;
+            uint32_t VertexSize = 0;
+            uint32_t IndexOffset = 0;
+            uint32_t IndexCount = 0;
+        } Meshes[MaxMeshCount];
+        uint32_t MeshCount = 0;
+        uint32_t NextOffset = 0;
+
+        VkBuffer MeshDataBuffers;
+        Allocation Allocation;
+    };
+
     struct ForwardMaterial
     {
         uint32_t AlbedoTint;
         uint32_t AlbedoIndex;
     };
 
+    constexpr uint32_t MaxMaterialInstanceCount = 100;
     struct ForwardPass
     {
         static constexpr uint32_t SubpassCount = 2;
@@ -626,10 +626,26 @@ namespace
         } FrameBuffer[FrameBufferCount];
     };
 
+    constexpr uint32_t MaxLightCount = 32;
+    struct DirectionalLight
+    {
+        IB::Float4 DirectionAndRadiance;
+        uint32_t Tint;
+    };
+
+    struct Lighting
+    {
+        VkBuffer LightBuffer;
+        Allocation LightBufferAllocation;
+        uint32_t InstanceCount = 0;
+    };
+
     VulkanAllocator Allocator;
     Context RendererContext;
     ForwardPass ForwardPass;
+    Geometry Geometry;
     ImGuiPass ImGuiPass;
+    Lighting Lighting;
 
     // TODO: Reference to Windows, if we want multiplatform we'll have to change this.
     const char *InstanceExtensions[] = {VK_KHR_SURFACE_EXTENSION_NAME, VK_KHR_WIN32_SURFACE_EXTENSION_NAME};
@@ -1384,13 +1400,20 @@ namespace IB
                 fragBinding2.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
                 fragBinding2.descriptorCount = 1;
 
-                VkDescriptorSetLayoutBinding layoutBindings[] = {vertexBinding0, fragBinding0, fragBinding1, fragBinding2 };
+                VkDescriptorSetLayoutBinding fragBinding3 = {};
+                fragBinding3.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+                fragBinding3.binding = 4;
+                fragBinding3.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+                fragBinding3.descriptorCount = 1;
 
-                VkDescriptorBindingFlagsEXT bindFlags[] = {0, 0, VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT_EXT, 0};
+                VkDescriptorSetLayoutBinding layoutBindings[] = {vertexBinding0, fragBinding0, fragBinding1, fragBinding2, fragBinding3 };
+
+                VkDescriptorBindingFlagsEXT bindFlags[] = {0, 0, VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT_EXT, 0, 0};
                 VkDescriptorSetLayoutBindingFlagsCreateInfoEXT extendedInfo = {};
                 extendedInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO_EXT;
                 extendedInfo.bindingCount = arrayCount(bindFlags);
                 extendedInfo.pBindingFlags = bindFlags;
+                static_assert(arrayCount(bindFlags) == arrayCount(layoutBindings), "Binding counts must match!");
 
                 VkDescriptorSetLayoutCreateInfo createLayout = {};
                 createLayout.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
@@ -1424,15 +1447,14 @@ namespace IB
             }
         }
 
-        constexpr uint32_t meshBufferSize = 1024 * 1024 * 10;
+        // Mesh buffer
         {
             VkBufferCreateInfo bufferCreate = {};
             bufferCreate.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-            bufferCreate.size = meshBufferSize;
+            bufferCreate.size = MeshBufferSize;
             bufferCreate.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT; // buffers created through create buffer can always be transfered to
 
-            VkBuffer *buffer = &RendererContext.Geometry.MeshDataBuffers;
-            RendererContext.Geometry.AllocationSize = meshBufferSize;
+            VkBuffer *buffer = &Geometry.MeshDataBuffers;
             IB_VKCHECK(vkCreateBuffer(RendererContext.LogicalDevice, &bufferCreate, NoAllocator, buffer));
 
             VkMemoryRequirements memoryRequirements;
@@ -1440,7 +1462,7 @@ namespace IB
 
             AllocationRequest request;
             request.Alignment = memoryRequirements.alignment;
-            request.Size = meshBufferSize;
+            request.Size = MeshBufferSize;
             request.LogicalDevice = RendererContext.LogicalDevice;
             request.PhysicalDevice = RendererContext.PhysicalDevice;
             request.RequiredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
@@ -1448,12 +1470,13 @@ namespace IB
             request.TypeBits = memoryRequirements.memoryTypeBits;
             request.Category = AllocationCategory::Mesh;
 
-            Allocation *allocation = &RendererContext.Geometry.Allocation;
+            Allocation *allocation = &Geometry.Allocation;
             *allocation = allocateDeviceMemory(&Allocator, request);
 
             IB_VKCHECK(vkBindBufferMemory(RendererContext.LogicalDevice, *buffer, allocation->Memory, allocation->Offset));
         }
 
+        // Material buffer
         {
             VkBufferCreateInfo bufferCreate = {};
             bufferCreate.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
@@ -1477,6 +1500,35 @@ namespace IB
             request.Category = AllocationCategory::Misc;
 
             Allocation *allocation = &ForwardPass.MaterialBufferAllocation;
+            *allocation = allocateDeviceMemory(&Allocator, request);
+
+            IB_VKCHECK(vkBindBufferMemory(RendererContext.LogicalDevice, *buffer, allocation->Memory, allocation->Offset));
+        }
+
+        // Lights buffer
+        {
+            VkBufferCreateInfo bufferCreate = {};
+            bufferCreate.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+            bufferCreate.size = MaxLightCount * sizeof(DirectionalLight);
+            bufferCreate.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT; // buffers created through create buffer can always be transfered to
+
+            VkBuffer *buffer = &Lighting.LightBuffer;
+            IB_VKCHECK(vkCreateBuffer(RendererContext.LogicalDevice, &bufferCreate, NoAllocator, buffer));
+
+            VkMemoryRequirements memoryRequirements;
+            vkGetBufferMemoryRequirements(RendererContext.LogicalDevice, *buffer, &memoryRequirements);
+
+            AllocationRequest request;
+            request.Alignment = memoryRequirements.alignment;
+            request.Size = MaxLightCount * sizeof(DirectionalLight);
+            request.LogicalDevice = RendererContext.LogicalDevice;
+            request.PhysicalDevice = RendererContext.PhysicalDevice;
+            request.RequiredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+            request.PreferedFlags = 0;
+            request.TypeBits = memoryRequirements.memoryTypeBits;
+            request.Category = AllocationCategory::Misc;
+
+            Allocation *allocation = &Lighting.LightBufferAllocation;
             *allocation = allocateDeviceMemory(&Allocator, request);
 
             IB_VKCHECK(vkBindBufferMemory(RendererContext.LogicalDevice, *buffer, allocation->Memory, allocation->Offset));
@@ -1516,9 +1568,9 @@ namespace IB
                 &ForwardPass.ShaderDescriptor));
 
             VkDescriptorBufferInfo meshBufferInfo = {};
-            meshBufferInfo.buffer = RendererContext.Geometry.MeshDataBuffers;
+            meshBufferInfo.buffer = Geometry.MeshDataBuffers;
             meshBufferInfo.offset = 0;
-            meshBufferInfo.range = RendererContext.Geometry.AllocationSize;
+            meshBufferInfo.range = MeshBufferSize;
 
             VkWriteDescriptorSet writeGeometry = {};
             writeGeometry.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -1552,7 +1604,20 @@ namespace IB
             writeMaterials.descriptorCount = 1;
             writeMaterials.pBufferInfo = &materialBufferInfo;
 
-            VkWriteDescriptorSet writeDescriptorSets[] = {writeSamplerSet, writeGeometry, writeMaterials };
+            VkDescriptorBufferInfo lightBufferInfo = {};
+            lightBufferInfo.buffer = Lighting.LightBuffer;
+            lightBufferInfo.offset = 0;
+            lightBufferInfo.range = MaxLightCount * sizeof(DirectionalLight);
+
+            VkWriteDescriptorSet writeLights = {};
+            writeLights.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            writeLights.dstSet = ForwardPass.ShaderDescriptor;
+            writeLights.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+            writeLights.dstBinding = 4;
+            writeLights.descriptorCount = 1;
+            writeLights.pBufferInfo = &lightBufferInfo;
+
+            VkWriteDescriptorSet writeDescriptorSets[] = {writeSamplerSet, writeGeometry, writeMaterials, writeLights };
             vkUpdateDescriptorSets(RendererContext.LogicalDevice, arrayCount(writeDescriptorSets), writeDescriptorSets, 0, NULL);
         }
 
@@ -1638,8 +1703,8 @@ namespace IB
             freeDeviceMemory(&Allocator, ForwardPass.FrameBuffer[fb].DebugDepthImageAllocation);
         }
 
-        vkDestroyBuffer(RendererContext.LogicalDevice, RendererContext.Geometry.MeshDataBuffers, NoAllocator);
-        freeDeviceMemory(&Allocator, RendererContext.Geometry.Allocation);
+        vkDestroyBuffer(RendererContext.LogicalDevice, Geometry.MeshDataBuffers, NoAllocator);
+        freeDeviceMemory(&Allocator, Geometry.Allocation);
 
         for (uint32_t i = 0; i < RendererContext.Textures.ImageCount; i++)
         {
@@ -1660,6 +1725,9 @@ namespace IB
         vkDestroySampler(RendererContext.LogicalDevice, ForwardPass.Sampler, NoAllocator);
         vkDestroyBuffer(RendererContext.LogicalDevice, ForwardPass.MaterialBuffer, NoAllocator);
         freeDeviceMemory(&Allocator, ForwardPass.MaterialBufferAllocation);
+
+        vkDestroyBuffer(RendererContext.LogicalDevice, Lighting.LightBuffer, NoAllocator);
+        freeDeviceMemory(&Allocator, Lighting.LightBufferAllocation);
 
         for (uint32_t i = 0; i < Queue::Count; i++)
         {
@@ -1848,19 +1916,19 @@ namespace IB
 
     Mesh::Handle createMesh(MeshDesc const &desc)
     {
-        uint32_t meshIndex = RendererContext.Geometry.MeshCount++;
+        uint32_t meshIndex = Geometry.MeshCount++;
 
         uint32_t vertexSize = desc.Vertices.Count * sizeof(Vertex);
         uint32_t indexSize = desc.Indices.Count * sizeof(uint16_t);
         {
-            RendererContext.Geometry.Meshes[meshIndex].VertexSize = vertexSize;
-            RendererContext.Geometry.Meshes[meshIndex].VertexOffset = RendererContext.Geometry.NextOffset;
-            RendererContext.Geometry.Meshes[meshIndex].IndexOffset = vertexSize + RendererContext.Geometry.NextOffset;
-            RendererContext.Geometry.Meshes[meshIndex].IndexCount = desc.Indices.Count;
+            Geometry.Meshes[meshIndex].VertexSize = vertexSize;
+            Geometry.Meshes[meshIndex].VertexOffset = Geometry.NextOffset;
+            Geometry.Meshes[meshIndex].IndexOffset = vertexSize + Geometry.NextOffset;
+            Geometry.Meshes[meshIndex].IndexCount = desc.Indices.Count;
 
-            RendererContext.Geometry.NextOffset += vertexSize + indexSize;
-            uint32_t alignmentBump = RendererContext.Geometry.NextOffset % sizeof(Vertex);
-            RendererContext.Geometry.NextOffset += alignmentBump == 0 ? 0 : sizeof(Vertex) - alignmentBump;
+            Geometry.NextOffset += vertexSize + indexSize;
+            uint32_t alignmentBump = Geometry.NextOffset % sizeof(Vertex);
+            Geometry.NextOffset += alignmentBump == 0 ? 0 : sizeof(Vertex) - alignmentBump;
         }
 
         VkBuffer srcBuffer;
@@ -1916,10 +1984,10 @@ namespace IB
 
             VkBufferCopy meshCopy = {};
             meshCopy.srcOffset = 0;
-            meshCopy.dstOffset = RendererContext.Geometry.Meshes[meshIndex].VertexOffset;
+            meshCopy.dstOffset = Geometry.Meshes[meshIndex].VertexOffset;
             meshCopy.size = vertexSize + indexSize;
 
-            vkCmdCopyBuffer(commandBuffer, srcBuffer, RendererContext.Geometry.MeshDataBuffers, 1, &meshCopy);
+            vkCmdCopyBuffer(commandBuffer, srcBuffer, Geometry.MeshDataBuffers, 1, &meshCopy);
 
             IB_VKCHECK(vkEndCommandBuffer(commandBuffer));
             VkSubmitInfo submitInfo = {};
@@ -2216,9 +2284,88 @@ namespace IB
         return Material::toHandle(instanceIndex + 1);
     }
 
-    Light::Handle createLight(DirectionalLightDesc const& /*desc*/)
+    Light::Handle createLight(DirectionalLightDesc const& desc)
     {
-        return InvalidLight;
+        DirectionalLight lightData = {};
+        lightData.DirectionAndRadiance = Float4{ desc.Direction.x, desc.Direction.y, desc.Direction.z, desc.Radiance };
+        lightData.Tint = desc.Tint;
+
+        uint32_t instanceIndex = Lighting.InstanceCount++;
+        IB_ASSERT(instanceIndex < MaxLightCount, "Too many lights!");
+
+        VkBuffer srcBuffer;
+        Allocation allocation;
+        {
+            VkBufferCreateInfo bufferCreate = {};
+            bufferCreate.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+            bufferCreate.size = sizeof(lightData);
+            bufferCreate.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+
+            IB_VKCHECK(vkCreateBuffer(RendererContext.LogicalDevice, &bufferCreate, NoAllocator, &srcBuffer));
+
+            VkMemoryRequirements memoryRequirements;
+            vkGetBufferMemoryRequirements(RendererContext.LogicalDevice, srcBuffer, &memoryRequirements);
+
+            AllocationRequest request;
+            request.Alignment = memoryRequirements.alignment;
+            request.Size = sizeof(lightData);
+            request.LogicalDevice = RendererContext.LogicalDevice;
+            request.PhysicalDevice = RendererContext.PhysicalDevice;
+            request.RequiredFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+            request.PreferedFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+            request.TypeBits = memoryRequirements.memoryTypeBits;
+            request.Category = AllocationCategory::TransferSource;
+
+            allocation = allocateDeviceMemory(&Allocator, request);
+            IB_VKCHECK(vkBindBufferMemory(RendererContext.LogicalDevice, srcBuffer, allocation.Memory, allocation.Offset));
+
+            {
+                void *memory = mapAllocation(RendererContext.LogicalDevice, &Allocator, allocation);
+                memcpy(reinterpret_cast<uint8_t *>(memory), &lightData, sizeof(lightData));
+                unmapAllocation(&Allocator, allocation);
+            }
+        }
+
+        // TODO: We can likely store this in a cleanup structure when we request the dependency
+        {
+            VkCommandBufferAllocateInfo commandBufferAllocateInfo = {};
+            commandBufferAllocateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+            commandBufferAllocateInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+            commandBufferAllocateInfo.commandBufferCount = 1;
+            commandBufferAllocateInfo.commandPool = RendererContext.Present.Queues[Queue::Transfer].CommandPool;
+
+            VkCommandBuffer commandBuffer;
+            IB_VKCHECK(vkAllocateCommandBuffers(RendererContext.LogicalDevice, &commandBufferAllocateInfo, &commandBuffer));
+
+            VkCommandBufferBeginInfo beginBufferInfo = {};
+            beginBufferInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+            beginBufferInfo.flags |= VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+            IB_VKCHECK(vkBeginCommandBuffer(commandBuffer, &beginBufferInfo));
+
+            VkBufferCopy copy = {};
+            copy.srcOffset = 0;
+            copy.dstOffset = instanceIndex * sizeof(DirectionalLight);
+            copy.size = sizeof(DirectionalLight);
+            vkCmdCopyBuffer(commandBuffer, srcBuffer, Lighting.LightBuffer, 1, &copy);
+
+            IB_VKCHECK(vkEndCommandBuffer(commandBuffer));
+
+            VkSubmitInfo submitInfo = {};
+            submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+            submitInfo.commandBufferCount = 1;
+            submitInfo.pCommandBuffers = &commandBuffer;
+
+            IB_VKCHECK(vkQueueSubmit(RendererContext.Present.Queues[Queue::Transfer].Queue, 1, &submitInfo, RendererContext.Present.ImmediateFence));
+            IB_VKCHECK(vkWaitForFences(RendererContext.LogicalDevice, 1, &RendererContext.Present.ImmediateFence, VK_TRUE, UINT64_MAX));
+            IB_VKCHECK(vkResetFences(RendererContext.LogicalDevice, 1, &RendererContext.Present.ImmediateFence));
+
+            vkFreeCommandBuffers(RendererContext.LogicalDevice, RendererContext.Present.Queues[Queue::Transfer].CommandPool, 1, &commandBuffer);
+            vkDestroyBuffer(RendererContext.LogicalDevice, srcBuffer, NoAllocator);
+            freeDeviceMemory(&Allocator, allocation);
+        }
+
+        return Light::toHandle(instanceIndex);
     }
 
     void newImGuiFrame()
@@ -2350,7 +2497,7 @@ namespace IB
                             {
                                 uint32_t meshIndex = batch->Meshes[mesh].Mesh - 1;
 
-                                vkCmdBindIndexBuffer(currentCommands, RendererContext.Geometry.MeshDataBuffers, RendererContext.Geometry.Meshes[meshIndex].IndexOffset, VK_INDEX_TYPE_UINT16);
+                                vkCmdBindIndexBuffer(currentCommands, Geometry.MeshDataBuffers, Geometry.Meshes[meshIndex].IndexOffset, VK_INDEX_TYPE_UINT16);
                                 for (uint32_t inst = 0; inst < batch->Meshes[mesh].Count; inst++)
                                 {
                                     struct
@@ -2359,17 +2506,24 @@ namespace IB
                                         Mat3x4 M;
                                         uint32_t VertexOffset;
                                         uint32_t MaterialIndex;
+                                        uint32_t LightIndex = 0xFFFFFFFF;
                                     } pushConstant;
 
                                     pushConstant.VP = view.ViewProj;
                                     pushConstant.M = batch->Meshes[mesh].Transforms[inst];
-                                    pushConstant.VertexOffset = RendererContext.Geometry.Meshes[meshIndex].VertexOffset / sizeof(Vertex);
+                                    pushConstant.VertexOffset = Geometry.Meshes[meshIndex].VertexOffset / sizeof(Vertex);
                                     pushConstant.MaterialIndex = materialIndex;
+
+                                    // No lighting for gizmos
+                                    if (passIndex != ViewDesc::ForwardPass::DebugOverlay)
+                                    {
+                                        pushConstant.LightIndex = view.DirectionalLight;
+                                    }
 
                                     vkCmdPushConstants(currentCommands, ForwardPass.PipelineLayout,
                                                        VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(pushConstant), &pushConstant);
 
-                                    vkCmdDrawIndexed(currentCommands, RendererContext.Geometry.Meshes[meshIndex].IndexCount, 1, 0, 0, 0);
+                                    vkCmdDrawIndexed(currentCommands, Geometry.Meshes[meshIndex].IndexCount, 1, 0, 0, 0);
                                 }
                             }
                         }

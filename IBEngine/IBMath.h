@@ -198,6 +198,9 @@ namespace IB
     inline Float3 abs(Float3 value);
     inline Float3 round(Float3 value);
 
+    // Vertical of 0 is apex, PI/2 is at the horizon
+    inline Float3 fromPolar(float horizontal, float vertical);
+
     inline Float3 rotate(Quaternion rotator, Float3 point);
     inline Quaternion operator*(Quaternion left, Quaternion right);
     inline Quaternion conjugate(Quaternion q);
@@ -361,6 +364,11 @@ namespace IB
 
     inline Float3 abs(Float3 value) { return { fabsf(value.x), fabsf(value.y), fabsf(value.z) }; }
     inline Float3 round(Float3 value) { return { roundf(value.x), roundf(value.y), roundf(value.z) }; }
+
+    inline Float3 fromPolar(float horizontal, float vertical)
+    {
+        return Float3{ cosf(horizontal) * sinf(vertical), sinf(horizontal) * sinf(vertical), cosf(vertical) };
+    }
 
     inline Float3 rotate(Quaternion rotator, Float3 point)
     {
