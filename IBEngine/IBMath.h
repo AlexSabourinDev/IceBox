@@ -396,24 +396,23 @@ namespace IB
     inline Quaternion fromEulerAngles(Float3 angles)
     {
         // Source: https://en.wikipedia.org/wiki/Conversion_between_quaternions_and_Euler_angles#Quaternion_to_Euler_angles_conversion
-        // Work in double to maximize precision since we're likely to transition to and from euler angles frequently. Revisit if this becomes an issue.
 
-        double yaw = static_cast<double>(angles.z);
-        double pitch = static_cast<double>(angles.y);
-        double roll = static_cast<double>(angles.x);
+        float yaw = angles.z;
+        float pitch = angles.y;
+        float roll = angles.x;
 
-        double cy = cos(yaw * 0.5);
-        double sy = sin(yaw * 0.5);
-        double cp = cos(pitch * 0.5);
-        double sp = sin(pitch * 0.5);
-        double cr = cos(roll * 0.5);
-        double sr = sin(roll * 0.5);
+        float cy = cosf(yaw * 0.5f);
+        float sy = sinf(yaw * 0.5f);
+        float cp = cosf(pitch * 0.5f);
+        float sp = sinf(pitch * 0.5f);
+        float cr = cosf(roll * 0.5f);
+        float sr = sinf(roll * 0.5f);
 
         Quaternion q;
-        q.w = static_cast<float>(cr * cp * cy + sr * sp * sy);
-        q.x = static_cast<float>(sr * cp * cy - cr * sp * sy);
-        q.y = static_cast<float>(cr * sp * cy + sr * cp * sy);
-        q.z = static_cast<float>(cr * cp * sy - sr * sp * cy);
+        q.w = cr * cp * cy + sr * sp * sy;
+        q.x = sr * cp * cy - cr * sp * sy;
+        q.y = cr * sp * cy + sr * cp * sy;
+        q.z = cr * cp * sy - sr * sp * cy;
         return q;
     }
 
@@ -421,34 +420,32 @@ namespace IB
     {
         Float3 angles = { 0.0f, 0.0f, 0.0f };
 
-        // Work in double to maximize precision since we're likely to transition to and from euler angles frequently. Revisit if this becomes an issue.
-
-        double qw = static_cast<double>(q.w);
-        double qx = static_cast<double>(q.x);
-        double qy = static_cast<double>(q.y);
-        double qz = static_cast<double>(q.z);
+        float qw = q.w;
+        float qx = q.x;
+        float qy = q.y;
+        float qz = q.z;
 
         // Source: https://en.wikipedia.org/wiki/Conversion_between_quaternions_and_Euler_angles#Quaternion_to_Euler_angles_conversion
         // roll (x-axis rotation)
-        double sinr_cosp = 2.0 * (qw * qx + qy * qz);
-        double cosr_cosp = 1.0 - 2.0 * (qx * qx + qy * qy);
-        angles.x = static_cast<float>(atan2(sinr_cosp, cosr_cosp));
+        float sinr_cosp = 2.0f * (qw * qx + qy * qz);
+        float cosr_cosp = 1.0f - 2.0f * (qx * qx + qy * qy);
+        angles.x = atan2f(sinr_cosp, cosr_cosp);
 
         // pitch (y-axis rotation)
-        double sinp = 2.0 * (qw * qy - qz * qx);
+        float sinp = 2.0f * (qw * qy - qz * qx);
         if (fabs(sinp) >= 1.0f)
         {
-            angles.y = static_cast<float>(copysign(Pi * 0.5, sinp)); // use 90 degrees if out of range
+            angles.y = copysignf(Pi * 0.5f, sinp); // use 90 degrees if out of range
         }
         else
         {
-            angles.y = static_cast<float>(asin(sinp));
+            angles.y = asinf(sinp);
         }
 
         // yaw (z-axis rotation)
-        double siny_cosp = 2.0 * (qw * qz + qx * qy);
-        double cosy_cosp = 1.0 - 2.0 * (qy * qy + qz * qz);
-        angles.z = static_cast<float>(atan2(siny_cosp, cosy_cosp));
+        float siny_cosp = 2.0f * (qw * qz + qx * qy);
+        float cosy_cosp = 1.0f - 2.0f * (qy * qy + qz * qz);
+        angles.z = atan2f(siny_cosp, cosy_cosp);
 
         return angles;
     }
