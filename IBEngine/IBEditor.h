@@ -77,7 +77,27 @@ namespace IB
             uint32_t ActiveAxis = 3;
         };
 
+        struct RotationGizmo
+        {
+            uint32_t ActiveAxis = 3;
+        };
+
+        struct TransformGizmo
+        {
+            enum class Type
+            {
+                Translation,
+                Rotation,
+            };
+
+            TranslationGizmo Translation;
+            RotationGizmo Rotation;
+            Type GizmoType = Type::Translation;
+        };
+
         IB_API void translation(Float3* position, Quaternion rotation, TranslationGizmo* state);
+        IB_API void rotation(Float3 position, Quaternion* rotation, RotationGizmo* state);
+        IB_API void transform(Transform* transform, TransformGizmo* state);
     }
 }
 

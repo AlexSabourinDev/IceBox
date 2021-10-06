@@ -135,6 +135,7 @@ namespace IB
         uint32_t WindowWidth = 0;
         uint32_t WindowHeight = 0;
         Entity::Handle SelectedEntity;
+        bool EditorFocus = false;
 
         Float3 mouseToWorldPos(Mat4x4 const& invViewProj, Int2 mousePos, float depth = 0.0f)
         {
@@ -426,6 +427,7 @@ namespace IB
             if (canWindowConsumeInput)
             {
                 // Camera flycam
+                EditorFocus = Input::isButtonPressed(Mouse::Right);
                 if (Input::isButtonPressed(Mouse::Right))
                 {
                     Property::Handle transformProperty = getPropertyFromEntity(CameraHandle, TransformPropertyType);
@@ -592,7 +594,11 @@ namespace IB
     {
         namespace
         {
-            Mesh::Handle GizmoMesh = InvalidMesh;
+            constexpr float RotationCircleRadius = 1.0f;
+
+            Mesh::Handle TranslationGizmoMesh = InvalidMesh;
+            Mesh::Handle RotationGizmoMesh = InvalidMesh;
+
             Image::Handle GizmoImage = InvalidImage;
             Material::Handle GizmoMaterial = InvalidMaterial;
 
@@ -604,12 +610,17 @@ namespace IB
 
             bool canFocus()
             {
-                return !ImGui::GetIO().WantCaptureMouse;
+                return !ImGui::GetIO().WantCaptureMouse && !Editor::EditorFocus;
             }
         }
 
         void init()
         {
+            static Float4 constexpr gizmoColors[3] = {
+                {1.0f, 0.0f, 0.0f, 0.75f},
+                {0.0f, 1.0f, 0.0f, 0.75f},
+                {0.0f, 0.0f, 1.0f, 0.75f} };
+
             launchJob([]()
             {
                 // Mesh
@@ -636,11 +647,6 @@ namespace IB
 
                     for (uint16_t axis = 0; axis < 3; axis++)
                     {
-                        float colors[3][4] = {
-                            {1.0f, 0.0f, 0.0f, 1.0f},
-                            {0.0f, 1.0f, 0.0f, 1.0f},
-                            {0.0f, 0.0f, 1.0f, 1.0f} };
-
                         Vertex *axisVerts = vertices + axisVertexCount * axis;
                         uint16_t *axisIndices = indices + axisIndexCount * axis;
 
@@ -659,9 +665,9 @@ namespace IB
                             }
 
                             axisVerts[i * 2] = IB::Vertex{ {start[0], start[1], start[2]} };
-                            memcpy(&axisVerts[i * 2].Color, colors[axis], sizeof(float) * 4);
+                            axisVerts[i * 2].Color = gizmoColors[axis];
                             axisVerts[i * 2 + 1] = IB::Vertex{ {end[0], end[1], end[2]} };
-                            memcpy(axisVerts[i * 2 + 1].Color, colors[axis], sizeof(float) * 4);
+                            axisVerts[i * 2 + 1].Color = gizmoColors[axis];
                         }
 
                         axisVerts += cylinderVertexCount;
@@ -674,7 +680,7 @@ namespace IB
                             pos[(axis + 1) % 3] = sinf(angle) * coneRadius;
                             pos[(axis + 2) % 3] = cosf(angle) * coneRadius;
                             axisVerts[i] = IB::Vertex{ {pos[0], pos[1], pos[2]} };
-                            memcpy(axisVerts[i].Color, colors[axis], sizeof(float) * 4);
+                            axisVerts[i].Color = gizmoColors[axis];
                         }
 
                         float pos[3];
@@ -682,11 +688,11 @@ namespace IB
                         pos[(axis + 1) % 3] = 0.0f;
                         pos[(axis + 2) % 3] = 0.0f;
                         axisVerts[coneSegmentCount] = Vertex{ {pos[0], pos[1], pos[2]} };
-                        memcpy(axisVerts[coneSegmentCount].Color, colors[axis], sizeof(float) * 4);
+                        axisVerts[coneSegmentCount].Color = gizmoColors[axis];
 
                         pos[axis] = cylinderLength + coneHeight;
                         axisVerts[coneSegmentCount + 1] = Vertex{ {pos[0], pos[1], pos[2]} };
-                        memcpy(axisVerts[coneSegmentCount + 1].Color, colors[axis], sizeof(float) * 4);
+                        axisVerts[coneSegmentCount + 1].Color = gizmoColors[axis];
 
                         for (uint16_t i = 0; i < cylinderSegments; i++)
                         {
@@ -725,7 +731,7 @@ namespace IB
                     meshDesc.Indices.Data = indices;
                     meshDesc.Indices.Count = axisIndexCount * 3;
 
-                    GizmoMesh = createMesh(meshDesc);
+                    TranslationGizmoMesh = createMesh(meshDesc);
                 }
 
                 {
@@ -745,6 +751,83 @@ namespace IB
                     gizmoMatDesc.AlbedoImage = GizmoImage;
                     GizmoMaterial = IB::createMaterial(gizmoMatDesc);
                 }
+
+                return JobResult::Complete;
+            }, RendererJobQueueIndex);
+
+            // Rotation Gizmo
+            launchJob([]()
+            {
+                constexpr uint32_t circleSegments = 180;
+                constexpr uint32_t circleTriangleCount = circleSegments * 2;
+                constexpr uint32_t circleVertexCount = circleSegments * 4;
+                constexpr uint32_t circleIndexCount = circleTriangleCount * 3;
+                constexpr float circleThickness = 0.15f;
+                constexpr float circleInnerRadius = RotationCircleRadius - circleThickness;
+                Vertex vertices[circleVertexCount * 3];
+                uint16_t indices[circleIndexCount * 3];
+
+                constexpr uint32_t axisIndices[3][2] = 
+                {
+                    {0, 1},
+                    {1, 2},
+                    {0, 2}
+                };
+
+                uint32_t vertexWritePos = 0;
+                uint32_t indexWritePos = 0;
+                for (uint32_t axis = 0; axis < 3; axis++)
+                {
+                    float deltaAngle = 2.0f * Pi / static_cast<float>(circleSegments);
+                    for (uint32_t i = 0; i < circleSegments; i++)
+                    {
+                        float angle0 = deltaAngle * i;
+                        float angle1 = deltaAngle * (i + 1);
+
+                        Float3 quad[4] = {};
+                        quad[0][axisIndices[axis][0]] = cosf(angle0) * circleInnerRadius;
+                        quad[0][axisIndices[axis][1]] = sinf(angle0) * circleInnerRadius;
+
+                        quad[1][axisIndices[axis][0]] = cosf(angle0) * RotationCircleRadius;
+                        quad[1][axisIndices[axis][1]] = sinf(angle0) * RotationCircleRadius;
+
+                        quad[2][axisIndices[axis][0]] = cosf(angle1) * RotationCircleRadius;
+                        quad[2][axisIndices[axis][1]] = sinf(angle1) * RotationCircleRadius;
+
+                        quad[3][axisIndices[axis][0]] = cosf(angle1) * circleInnerRadius;
+                        quad[3][axisIndices[axis][1]] = sinf(angle1) * circleInnerRadius;
+
+                        vertices[vertexWritePos + i * 4 + 0].Pos = Float4{ quad[0].x, quad[0].y, quad[0].z, 0.0f };
+                        vertices[vertexWritePos + i * 4 + 1].Pos = Float4{ quad[1].x, quad[1].y, quad[1].z, 0.0f };
+                        vertices[vertexWritePos + i * 4 + 2].Pos = Float4{ quad[2].x, quad[2].y, quad[2].z, 0.0f };
+                        vertices[vertexWritePos + i * 4 + 3].Pos = Float4{ quad[3].x, quad[3].y, quad[3].z, 0.0f };
+                        vertices[vertexWritePos + i * 4 + 0].Color = gizmoColors[axis];
+                        vertices[vertexWritePos + i * 4 + 1].Color = gizmoColors[axis];
+                        vertices[vertexWritePos + i * 4 + 2].Color = gizmoColors[axis];
+                        vertices[vertexWritePos + i * 4 + 3].Color = gizmoColors[axis];
+                    }
+
+                    for (uint32_t i = 0; i < circleSegments; i++)
+                    {
+                        indices[indexWritePos + i * 6 + 0] = static_cast<uint16_t>(vertexWritePos + i * 4 + 0);
+                        indices[indexWritePos + i * 6 + 1] = static_cast<uint16_t>(vertexWritePos + i * 4 + 1);
+                        indices[indexWritePos + i * 6 + 2] = static_cast<uint16_t>(vertexWritePos + i * 4 + 2);
+                        indices[indexWritePos + i * 6 + 3] = static_cast<uint16_t>(vertexWritePos + i * 4 + 0);
+                        indices[indexWritePos + i * 6 + 4] = static_cast<uint16_t>(vertexWritePos + i * 4 + 2);
+                        indices[indexWritePos + i * 6 + 5] = static_cast<uint16_t>(vertexWritePos + i * 4 + 3);
+                    }
+
+                    vertexWritePos += circleSegments * 4;
+                    indexWritePos += circleSegments * 6;
+                }
+
+                MeshDesc meshDesc = {};
+                meshDesc.Vertices.Data = vertices;
+                meshDesc.Vertices.Count = circleVertexCount * 3;
+                meshDesc.Indices.Data = indices;
+                meshDesc.Indices.Count = circleIndexCount * 3;
+
+                RotationGizmoMesh = createMesh(meshDesc);
 
                 return JobResult::Complete;
             }, RendererJobQueueIndex);
@@ -852,8 +935,8 @@ namespace IB
                         float planeDistance = dot(*position - cameraTransform.Position, axies[planeNormal]);
 
                         // Cast a ray from our camera origin to our axis plane
-                        previousPos = intersectRayPlane(axies[planeNormal], planeDistance, previousPos, Float3{});
-                        nextPos = intersectRayPlane(axies[planeNormal], planeDistance, nextPos, Float3{});
+                        previousPos = intersectRayPlane(axies[planeNormal], planeDistance, Float3{}, previousPos);
+                        nextPos = intersectRayPlane(axies[planeNormal], planeDistance, Float3{}, nextPos);
 
                         // Project our offset along our active axis for our delta
                         *position += axies[state->ActiveAxis] * dot(nextPos - previousPos, axies[state->ActiveAxis]);
@@ -862,7 +945,146 @@ namespace IB
             }
             
 
-            FrameDrawData.Instances.add(DrawData::Instance{ GizmoMesh, GizmoMaterial, Transform{*position, rotation, 1.0f} });
+            FrameDrawData.Instances.add(DrawData::Instance{ TranslationGizmoMesh, GizmoMaterial, Transform{*position, rotation, 1.0f} });
+        }
+
+        void rotation(Float3 position, Quaternion* rotation, RotationGizmo* state)
+        {
+            Transform cameraTransform = {};
+            Property::Handle transformProperty = getPropertyFromEntity(FrameCamera, TransformPropertyType);
+            if (transformProperty != InvalidProperty)
+            {
+                cameraTransform = getLocalTransform(transformProperty);
+            }
+
+            CameraProperty::Handle cameraProperty = toCameraHandle(getPropertyFromEntity(FrameCamera, CameraPropertyType));
+            IB_ASSERT(cameraProperty != InvalidProperty, "Camera handle should have a camera property!");
+
+            Mat4x4 invViewProj = Mat4x4::identity();
+            if (cameraProperty != InvalidProperty)
+            {
+                invViewProj = getInvViewProjection(cameraProperty, cameraTransform);
+            }
+
+            Float3 axies[3] =
+            {
+                rotate(*rotation, Float3{0.0f, 0.0f, 1.0f}),
+                rotate(*rotation, Float3{1.0f, 0.0f, 0.0f}),
+                rotate(*rotation, Float3{0.0f, 1.0f, 0.0f}),
+            };
+
+            Float3 unrotatedAxies[3] =
+            {
+                Float3{0.0f, 0.0f, 1.0f},
+                Float3{1.0f, 0.0f, 0.0f},
+                Float3{0.0f, 1.0f, 0.0f},
+            };
+
+            if (canFocus())
+            {
+                if (!Input::isButtonPressed(Mouse::Left))
+                {
+                    state->ActiveAxis = 3;
+
+                    // Clear out our focus if we were active
+                    if (FocusedGizmo == state)
+                    {
+                        FocusedGizmo = nullptr;
+                    }
+                }
+                else
+                {
+                    if (Input::isButtonClicked(Mouse::Left))
+                    {
+                        Float3 rayStart = Editor::mouseToWorldPos(invViewProj, Input::MousePos, 0.0f);
+                        Float3 rayEnd = Editor::mouseToWorldPos(invViewProj, Input::MousePos, 1.0f);
+
+                        struct PlaneIntersection
+                        {
+                            float Distance;
+                            uint32_t Axis;
+                        };
+
+                        PlaneIntersection intersections[3];
+                        uint32_t intersectionCount = 0;
+
+                        for (uint32_t i = 0; i < 3; i++)
+                        {
+                            Float3 planeIntersection = intersectRayPlane(axies[i], dot(position, axies[i]), rayStart, normalize(rayEnd- rayStart));
+                            if (distanceSqr(position, planeIntersection) < RotationCircleRadius * RotationCircleRadius)
+                            {
+                                intersections[intersectionCount++] = PlaneIntersection{distanceSqr(cameraTransform.Position, planeIntersection), i};
+                            }
+                        }
+
+                        uint32_t closestIntersection = 0;
+                        for (uint32_t i = 1; i < intersectionCount; i++)
+                        {
+                            if (intersections[i].Distance < intersections[closestIntersection].Distance)
+                            {
+                                closestIntersection = i;
+                            }
+                        }
+
+                        if (intersectionCount > 0)
+                        {
+                            // Set our gizmo as the active gizmo
+                            FocusedGizmo = state;
+
+                            state->ActiveAxis = intersections[closestIntersection].Axis;
+                        }
+                    }
+                    else if (state->ActiveAxis < 3)
+                    {
+                        Float3 previousPos = Editor::mouseToWorldPos(invViewProj, Input::PreviousMousePos) - cameraTransform.Position;
+                        Float3 nextPos = Editor::mouseToWorldPos(invViewProj, Input::MousePos) - cameraTransform.Position;
+
+                        Float3 positionViewSpace = position - cameraTransform.Position;
+                        float planeDistance = dot(positionViewSpace, axies[state->ActiveAxis]);
+
+                        // Cast a ray from our camera origin to our axis plane
+                        Float3 previousPosLocal = intersectRayPlane(axies[state->ActiveAxis], planeDistance, Float3{}, previousPos) - positionViewSpace;
+                        Float3 nextPosLocal = intersectRayPlane(axies[state->ActiveAxis], planeDistance, Float3{}, nextPos) - positionViewSpace;
+
+                        float cosAngle = dot(normalize(previousPosLocal), normalize(nextPosLocal));
+                        float rotationAngle = acosf(clamp(cosAngle, -1.0f, 1.0f));
+
+                        // Only handle rotations up to 90 degrees. More than that and our object will snap which looks unnapealing.
+                        if (rotationAngle < Pi * 0.5f)
+                        {
+                            float rotationDirection = sign(dot(cross(previousPosLocal, nextPosLocal), axies[state->ActiveAxis]));
+                            *rotation = (*rotation) * fromAxisAngle(unrotatedAxies[state->ActiveAxis], rotationAngle * rotationDirection);
+                        }
+                    }
+                }
+            }
+
+            FrameDrawData.Instances.add(DrawData::Instance{ RotationGizmoMesh, GizmoMaterial, Transform{position, *rotation, 1.0f} });
+        }
+
+        void transform(Transform* transform, TransformGizmo* state)
+        {
+            if (canFocus())
+            {
+                if (Input::isButtonClicked(Key::Code::W))
+                {
+                    state->GizmoType = TransformGizmo::Type::Translation;
+                }
+                else if (Input::isButtonClicked(Key::Code::E))
+                {
+                    state->GizmoType = TransformGizmo::Type::Rotation;
+                }
+            }
+
+            switch (state->GizmoType)
+            {
+            case TransformGizmo::Type::Translation:
+                translation(&transform->Position, transform->Rotation, &state->Translation);
+                break;
+            case TransformGizmo::Type::Rotation:
+                rotation(transform->Position, &transform->Rotation, &state->Rotation);
+                break;
+            }
         }
     }
 }

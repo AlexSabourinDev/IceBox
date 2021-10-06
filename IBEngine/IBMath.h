@@ -14,6 +14,9 @@ namespace IB
     template<typename T>
     inline T min(T left, T right) { return left < right ? left : right; }
 
+    template<typename T>
+    inline T max(T left, T right) { return left > right ? left : right; }
+
     struct Float2
     {
         float x, y;
@@ -148,7 +151,10 @@ namespace IB
         return lhs.Position != rhs.Position || lhs.Rotation != rhs.Rotation || lhs.Scale != rhs.Scale;
     }
 
-    inline float rcp(float value) { return 1.0f / value; }
+    inline float rcp(float value);
+    inline float clamp(float value, float minimum, float maximum);
+    inline float saturate(float value);
+    inline float sign(float value);
 
     inline Float2 operator*(Float2 left, float right);
     inline Float2 operator+(Float2 left, Float2 right);
@@ -203,7 +209,7 @@ namespace IB
 
     inline bool doesLineAABBIntersect(Float3 lineStart, Float3 lineEnd, AABB aabb);
     inline bool doesLineCylinderIntersect(Float3 lineStart, Float3 lineEnd, Float3 cylinderStart, Float3 cylinderEnd, float radius);
-    inline Float3 intersectRayPlane(IB::Float3 planeNormal, float planeDistance, IB::Float3 rayDir, IB::Float3 rayOrigin);
+    inline Float3 intersectRayPlane(IB::Float3 planeNormal, float planeDistance, IB::Float3 rayOrigin, IB::Float3 rayDir);
     inline AABB consume(AABB aabb, Float3 p);
 
     inline Mat3x4 toMatrix(Transform const& transform);
@@ -217,6 +223,11 @@ namespace IB
     inline bool doesRayIntersectTriangle(Float3 rayO, Float3 rayD, float rayMin, float rayMax, Triangle const& triangle);
 
     // Implementation
+    inline float rcp(float value) { return 1.0f / value; }
+    inline float clamp(float value, float minimum, float maximum) { return max(min(value, maximum), minimum); }
+    inline float saturate(float value) { return clamp(value, 0.0f, 1.0f); }
+    inline float sign(float value) { return copysignf(1.0f, value); }
+
     inline Float2 operator*(Float2 left, float right) { return Float2{ left.x * right, left.y * right }; }
     inline Float2 operator+(Float2 left, Float2 right) { return Float2{ left.x + right.x, left.y + right.y }; }
     inline Float2 operator-(Float2 left, Float2 right) { return Float2{ left.x - right.x, left.y - right.y }; }
@@ -547,7 +558,7 @@ namespace IB
         return dot((e - s)*t + s, (e - s)*t + s) <= radius * radius;
     }
 
-    inline Float3 intersectRayPlane(IB::Float3 planeNormal, float planeDistance, IB::Float3 rayDir, IB::Float3 rayOrigin)
+    inline Float3 intersectRayPlane(IB::Float3 planeNormal, float planeDistance, IB::Float3 rayOrigin, IB::Float3 rayDir)
     {
         // Equation for plane:
         // 0=(p.n)-d

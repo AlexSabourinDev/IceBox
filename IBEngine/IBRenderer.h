@@ -56,9 +56,9 @@ namespace IB
     struct Vertex
     {
         // UV in pos[3], normal[3]
-        float Pos[4];
-        float Normal[4];
-        float Color[4];
+        Float4 Pos;
+        Float4 Normal;
+        Float4 Color;
     };
 
     struct MeshDesc

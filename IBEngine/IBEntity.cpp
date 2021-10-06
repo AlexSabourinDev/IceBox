@@ -104,8 +104,8 @@ namespace IB
             Entity::Handle parentEntity = editorState->EntityHandle;
             if (isSelected(parentEntity))
             {
-                static ImGizmo::TranslationGizmo translationState;
-                ImGizmo::translation(&transform->Position, transform->Rotation, &translationState);
+                static ImGizmo::TransformGizmo transformState;
+                ImGizmo::transform(transform, &transformState);
             }
 
             if (propertyHeader("Transform", &editorState->DestroyProperty))

@@ -139,8 +139,8 @@ int main()
 
                     float distance = sampleState->MeshPos[planeAxis];
 
-                    previousPos = intersectRayPlane(normals[planeAxis], distance, previousRayDir, previousPos);
-                    nextPos = intersectRayPlane(normals[planeAxis], distance, nextRayDir, nextPos);
+                    previousPos = intersectRayPlane(normals[planeAxis], distance, previousPos, previousRayDir);
+                    nextPos = intersectRayPlane(normals[planeAxis], distance, nextPos, nextRayDir);
 
                     float axisDelta = nextPos[sampleState->ActiveAxis] - previousPos[sampleState->ActiveAxis];
                     sampleState->MeshPos[sampleState->ActiveAxis] += axisDelta;
@@ -264,7 +264,7 @@ int main()
 
         for (uint32_t axis = 0; axis < 3; axis++)
         {
-            float colors[3][4] = {
+            IB::Float4 colors[3] = {
                 {1.0f, 0.0f, 0.0f, 1.0f},
                 {0.0f, 1.0f, 0.0f, 1.0f},
                 {0.0f, 0.0f, 1.0f, 1.0f}};
@@ -287,9 +287,9 @@ int main()
                 }
 
                 axisVerts[i * 2] = IB::Vertex{{start[0], start[1], start[2]}};
-                memcpy(&axisVerts[i * 2].Color, colors[axis], sizeof(float) * 4);
+                axisVerts[i * 2].Color = colors[axis];
                 axisVerts[i * 2 + 1] = IB::Vertex{{end[0], end[1], end[2]}};
-                memcpy(axisVerts[i * 2 + 1].Color, colors[axis], sizeof(float) * 4);
+                axisVerts[i * 2 + 1].Color = colors[axis];
             }
 
             axisVerts += cylinderVertexCount;
@@ -302,7 +302,7 @@ int main()
                 pos[(axis + 1) % 3] = sinf(angle) * coneRadius;
                 pos[(axis + 2) % 3] = cosf(angle) * coneRadius;
                 axisVerts[i] = IB::Vertex{{pos[0], pos[1], pos[2]}};
-                memcpy(axisVerts[i].Color, colors[axis], sizeof(float) * 4);
+                axisVerts[i].Color = colors[axis];
             }
 
             float pos[3];
@@ -310,11 +310,11 @@ int main()
             pos[(axis + 1) % 3] = 0.0f;
             pos[(axis + 2) % 3] = 0.0f;
             axisVerts[coneSegmentCount] = IB::Vertex{{pos[0], pos[1], pos[2]}};
-            memcpy(axisVerts[coneSegmentCount].Color, colors[axis], sizeof(float) * 4);
+            axisVerts[coneSegmentCount].Color = colors[axis];
 
             pos[axis] = cylinderLength + coneHeight;
             axisVerts[coneSegmentCount + 1] = IB::Vertex{{pos[0], pos[1], pos[2]}};
-            memcpy(axisVerts[coneSegmentCount + 1].Color, colors[axis], sizeof(float) * 4);
+            axisVerts[coneSegmentCount + 1].Color = colors[axis];
 
             for (uint32_t i = 0; i < cylinderSegments; i++)
             {

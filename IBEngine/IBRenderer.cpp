@@ -1709,6 +1709,9 @@ namespace IB
         rasterizationCreate.polygonMode = VK_POLYGON_MODE_FILL;
         rasterizationCreate.cullMode = VK_CULL_MODE_BACK_BIT;
 
+        VkPipelineRasterizationStateCreateInfo rasterizationCreateNoCull = rasterizationCreate;
+        rasterizationCreateNoCull.cullMode = VK_CULL_MODE_NONE;
+
         VkPipelineColorBlendAttachmentState colorBlendAttachment = {};
         colorBlendAttachment.blendEnable = VK_TRUE;
         colorBlendAttachment.colorBlendOp = VK_BLEND_OP_ADD;
@@ -1800,6 +1803,7 @@ namespace IB
         subpass0Pipeline.subpass = 0;
 
         VkGraphicsPipelineCreateInfo subpass1Pipeline = baseGraphicsPipelineCreate;
+        subpass1Pipeline.pRasterizationState = &rasterizationCreateNoCull;
         subpass1Pipeline.subpass = 1;
 
         VkGraphicsPipelineCreateInfo pipelineCreateInfo[] = {subpass0Pipeline, subpass1Pipeline};
