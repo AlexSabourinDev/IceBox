@@ -560,6 +560,34 @@ namespace
         } Cleanup;
     };
 
+    constexpr uint32_t StagingSize = 10 * 1024 * 1024; // 10MB of staging space
+    struct Staging
+    {
+        VkBuffer Buffer;
+        Allocation Allocation;
+        void* MappedMemory = nullptr;
+        uint32_t WriteOffset = 0;
+    };
+
+    struct StagingBuffer
+    {
+        VkBuffer Buffer;
+        void* Memory;
+        uint32_t Offset;
+    };
+
+    StagingBuffer requestStagingBuffer(Staging* staging, uint32_t size)
+    {
+        IB_ASSERT(staging->WriteOffset + size < StagingSize, "TODO: Handle flushing our staging buffer if we reach the maximum.");
+        StagingBuffer stagingBuffer = {};
+        stagingBuffer.Buffer = staging->Buffer;
+        stagingBuffer.Memory = reinterpret_cast<uint8_t*>(staging->MappedMemory) + staging->WriteOffset;
+        stagingBuffer.Offset = staging->WriteOffset;
+        staging->WriteOffset += size;
+
+        return stagingBuffer;
+    }
+
     constexpr uint32_t MaxMeshCount = 1000;
     constexpr uint32_t MeshBufferSize = 1024 * 1024 * 10;
     struct Geometry
@@ -646,6 +674,7 @@ namespace
     Geometry Geometry;
     ImGuiPass ImGuiPass;
     Lighting Lighting;
+    Staging Staging;
 
     // TODO: Reference to Windows, if we want multiplatform we'll have to change this.
     const char *InstanceExtensions[] = {VK_KHR_SURFACE_EXTENSION_NAME, VK_KHR_WIN32_SURFACE_EXTENSION_NAME};
@@ -1447,6 +1476,34 @@ namespace IB
             }
         }
 
+        // Staging Buffer
+        {
+            VkBufferCreateInfo bufferCreate = {};
+            bufferCreate.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+            bufferCreate.size = StagingSize;
+            bufferCreate.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+
+            IB_VKCHECK(vkCreateBuffer(RendererContext.LogicalDevice, &bufferCreate, NoAllocator, &Staging.Buffer));
+
+            VkMemoryRequirements memoryRequirements;
+            vkGetBufferMemoryRequirements(RendererContext.LogicalDevice, Staging.Buffer, &memoryRequirements);
+
+            AllocationRequest request;
+            request.Alignment = memoryRequirements.alignment;
+            request.Size = StagingSize;
+            request.LogicalDevice = RendererContext.LogicalDevice;
+            request.PhysicalDevice = RendererContext.PhysicalDevice;
+            request.RequiredFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+            request.PreferedFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+            request.TypeBits = memoryRequirements.memoryTypeBits;
+            request.Category = AllocationCategory::TransferSource;
+
+            Staging.Allocation = allocateDeviceMemory(&Allocator, request);
+            IB_VKCHECK(vkBindBufferMemory(RendererContext.LogicalDevice, Staging.Buffer, Staging.Allocation.Memory, Staging.Allocation.Offset));
+
+            Staging.MappedMemory = mapAllocation(RendererContext.LogicalDevice, &Allocator, Staging.Allocation);
+        }
+
         // Mesh buffer
         {
             VkBufferCreateInfo bufferCreate = {};
@@ -1729,6 +1786,9 @@ namespace IB
         vkDestroyBuffer(RendererContext.LogicalDevice, Lighting.LightBuffer, NoAllocator);
         freeDeviceMemory(&Allocator, Lighting.LightBufferAllocation);
 
+        vkDestroyBuffer(RendererContext.LogicalDevice, Staging.Buffer, NoAllocator);
+        freeDeviceMemory(&Allocator, Staging.Allocation);
+
         for (uint32_t i = 0; i < Queue::Count; i++)
         {
             vkDestroyCommandPool(RendererContext.LogicalDevice, RendererContext.Present.Queues[i].CommandPool, NoAllocator);
@@ -1931,39 +1991,10 @@ namespace IB
             Geometry.NextOffset += alignmentBump == 0 ? 0 : sizeof(Vertex) - alignmentBump;
         }
 
-        VkBuffer srcBuffer;
-        Allocation allocation;
-        {
-            VkBufferCreateInfo bufferCreate = {};
-            bufferCreate.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-            bufferCreate.size = indexSize + vertexSize;
-            bufferCreate.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-
-            IB_VKCHECK(vkCreateBuffer(RendererContext.LogicalDevice, &bufferCreate, NoAllocator, &srcBuffer));
-
-            VkMemoryRequirements memoryRequirements;
-            vkGetBufferMemoryRequirements(RendererContext.LogicalDevice, srcBuffer, &memoryRequirements);
-
-            AllocationRequest request;
-            request.Alignment = memoryRequirements.alignment;
-            request.Size = indexSize + vertexSize;
-            request.LogicalDevice = RendererContext.LogicalDevice;
-            request.PhysicalDevice = RendererContext.PhysicalDevice;
-            request.RequiredFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-            request.PreferedFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-            request.TypeBits = memoryRequirements.memoryTypeBits;
-            request.Category = AllocationCategory::TransferSource;
-
-            allocation = allocateDeviceMemory(&Allocator, request);
-            IB_VKCHECK(vkBindBufferMemory(RendererContext.LogicalDevice, srcBuffer, allocation.Memory, allocation.Offset));
-
-            {
-                void *memory = mapAllocation(RendererContext.LogicalDevice, &Allocator, allocation);
-                memcpy((uint8_t *)memory, (uint8_t *)desc.Vertices.Data, vertexSize);
-                memcpy((uint8_t *)memory + vertexSize, (uint8_t *)desc.Indices.Data, indexSize);
-                unmapAllocation(&Allocator, allocation);
-            }
-        }
+        // Staging
+        StagingBuffer staging = requestStagingBuffer(&Staging, indexSize + vertexSize);
+        memcpy(staging.Memory, desc.Vertices.Data, vertexSize);
+        memcpy(reinterpret_cast<uint8_t*>(staging.Memory) + vertexSize, desc.Indices.Data, indexSize);
 
         // TODO: We can likely store this in a cleanup structure when we request the dependency
         {
@@ -1983,11 +2014,11 @@ namespace IB
             IB_VKCHECK(vkBeginCommandBuffer(commandBuffer, &beginBufferInfo));
 
             VkBufferCopy meshCopy = {};
-            meshCopy.srcOffset = 0;
+            meshCopy.srcOffset = staging.Offset;
             meshCopy.dstOffset = Geometry.Meshes[meshIndex].VertexOffset;
             meshCopy.size = vertexSize + indexSize;
 
-            vkCmdCopyBuffer(commandBuffer, srcBuffer, Geometry.MeshDataBuffers, 1, &meshCopy);
+            vkCmdCopyBuffer(commandBuffer, staging.Buffer, Geometry.MeshDataBuffers, 1, &meshCopy);
 
             IB_VKCHECK(vkEndCommandBuffer(commandBuffer));
             VkSubmitInfo submitInfo = {};
@@ -2000,8 +2031,6 @@ namespace IB
             IB_VKCHECK(vkResetFences(RendererContext.LogicalDevice, 1, &RendererContext.Present.ImmediateFence));
 
             vkFreeCommandBuffers(RendererContext.LogicalDevice, RendererContext.Present.Queues[Queue::Transfer].CommandPool, 1, &commandBuffer);
-            vkDestroyBuffer(RendererContext.LogicalDevice, srcBuffer, NoAllocator);
-            freeDeviceMemory(&Allocator, allocation);
         }
 
         return Mesh::toHandle(meshIndex + 1);
@@ -2033,39 +2062,8 @@ namespace IB
         RendererContext.Textures.Images[imageIndex].ImageView = imageAndView.ImageView;
         RendererContext.Textures.Images[imageIndex].Allocation = imageAndView.Allocation;
 
-        VkBuffer srcBuffer;
-        Allocation allocation;
-        {
-            uint32_t bufferSize = desc.Width * desc.Height * formatSize[desc.Format];
-            VkBufferCreateInfo bufferCreate = {};
-            bufferCreate.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-            bufferCreate.size = bufferSize;
-            bufferCreate.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-
-            IB_VKCHECK(vkCreateBuffer(RendererContext.LogicalDevice, &bufferCreate, NoAllocator, &srcBuffer));
-
-            VkMemoryRequirements memoryRequirements;
-            vkGetBufferMemoryRequirements(RendererContext.LogicalDevice, srcBuffer, &memoryRequirements);
-
-            AllocationRequest request;
-            request.Alignment = memoryRequirements.alignment;
-            request.Size = bufferSize;
-            request.LogicalDevice = RendererContext.LogicalDevice;
-            request.PhysicalDevice = RendererContext.PhysicalDevice;
-            request.RequiredFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-            request.PreferedFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-            request.TypeBits = memoryRequirements.memoryTypeBits;
-            request.Category = AllocationCategory::TransferSource;
-
-            allocation = allocateDeviceMemory(&Allocator, request);
-            IB_VKCHECK(vkBindBufferMemory(RendererContext.LogicalDevice, srcBuffer, allocation.Memory, allocation.Offset));
-
-            {
-                void *memory = mapAllocation(RendererContext.LogicalDevice, &Allocator, allocation);
-                memcpy(memory, (uint8_t *)desc.Data, bufferSize);
-                unmapAllocation(&Allocator, allocation);
-            }
-        }
+        StagingBuffer staging = requestStagingBuffer(&Staging, desc.Width * desc.Height * formatSize[desc.Format]);
+        memcpy(staging.Memory, desc.Data, desc.Width * desc.Height * formatSize[desc.Format]);
 
         VkCommandBufferAllocateInfo commandBufferAllocateInfo = {};
         commandBufferAllocateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
@@ -2125,14 +2123,14 @@ namespace IB
             extent.depth = 1;
 
             VkBufferImageCopy copyRegion = {};
-            copyRegion.bufferOffset = 0;
+            copyRegion.bufferOffset = staging.Offset;
             copyRegion.bufferRowLength = 0;
             copyRegion.bufferImageHeight = 0;
             copyRegion.imageSubresource = imageSubresource;
             copyRegion.imageOffset = {};
             copyRegion.imageExtent = extent;
 
-            vkCmdCopyBufferToImage(commandBuffer, srcBuffer, RendererContext.Textures.Images[imageIndex].Image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copyRegion);
+            vkCmdCopyBufferToImage(commandBuffer, staging.Buffer, RendererContext.Textures.Images[imageIndex].Image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copyRegion);
         }
 
         // Image barrier OPTIMAL -> FRAGMEN_SHADER
@@ -2175,8 +2173,6 @@ namespace IB
         IB_VKCHECK(vkResetFences(RendererContext.LogicalDevice, 1, &RendererContext.Present.ImmediateFence));
 
         vkFreeCommandBuffers(RendererContext.LogicalDevice, RendererContext.Present.Queues[Queue::Graphics].CommandPool, 1, &commandBuffer);
-        vkDestroyBuffer(RendererContext.LogicalDevice, srcBuffer, NoAllocator);
-        freeDeviceMemory(&Allocator, allocation);
 
         // Update our shader descriptor
         {
@@ -2209,38 +2205,9 @@ namespace IB
         uint32_t instanceIndex = ForwardPass.InstanceCount++;
         IB_ASSERT(instanceIndex < MaxMaterialInstanceCount, "Too many materials!");
 
-        VkBuffer srcBuffer;
-        Allocation allocation;
-        {
-            VkBufferCreateInfo bufferCreate = {};
-            bufferCreate.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-            bufferCreate.size = sizeof(matData);
-            bufferCreate.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-
-            IB_VKCHECK(vkCreateBuffer(RendererContext.LogicalDevice, &bufferCreate, NoAllocator, &srcBuffer));
-
-            VkMemoryRequirements memoryRequirements;
-            vkGetBufferMemoryRequirements(RendererContext.LogicalDevice, srcBuffer, &memoryRequirements);
-
-            AllocationRequest request;
-            request.Alignment = memoryRequirements.alignment;
-            request.Size = sizeof(matData);
-            request.LogicalDevice = RendererContext.LogicalDevice;
-            request.PhysicalDevice = RendererContext.PhysicalDevice;
-            request.RequiredFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-            request.PreferedFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-            request.TypeBits = memoryRequirements.memoryTypeBits;
-            request.Category = AllocationCategory::TransferSource;
-
-            allocation = allocateDeviceMemory(&Allocator, request);
-            IB_VKCHECK(vkBindBufferMemory(RendererContext.LogicalDevice, srcBuffer, allocation.Memory, allocation.Offset));
-
-            {
-                void *memory = mapAllocation(RendererContext.LogicalDevice, &Allocator, allocation);
-                memcpy(reinterpret_cast<uint8_t *>(memory), &matData, sizeof(ForwardMaterial));
-                unmapAllocation(&Allocator, allocation);
-            }
-        }
+        // Staging
+        StagingBuffer staging = requestStagingBuffer(&Staging, sizeof(ForwardMaterial));
+        memcpy(staging.Memory, &matData, sizeof(ForwardMaterial));
 
         // TODO: We can likely store this in a cleanup structure when we request the dependency
         {
@@ -2260,10 +2227,10 @@ namespace IB
             IB_VKCHECK(vkBeginCommandBuffer(commandBuffer, &beginBufferInfo));
 
             VkBufferCopy copy = {};
-            copy.srcOffset = 0;
+            copy.srcOffset = staging.Offset;
             copy.dstOffset = instanceIndex * sizeof(ForwardMaterial);
             copy.size = sizeof(ForwardMaterial);
-            vkCmdCopyBuffer(commandBuffer, srcBuffer, ForwardPass.MaterialBuffer, 1, &copy);
+            vkCmdCopyBuffer(commandBuffer, staging.Buffer, ForwardPass.MaterialBuffer, 1, &copy);
 
             IB_VKCHECK(vkEndCommandBuffer(commandBuffer));
 
@@ -2277,8 +2244,6 @@ namespace IB
             IB_VKCHECK(vkResetFences(RendererContext.LogicalDevice, 1, &RendererContext.Present.ImmediateFence));
 
             vkFreeCommandBuffers(RendererContext.LogicalDevice, RendererContext.Present.Queues[Queue::Transfer].CommandPool, 1, &commandBuffer);
-            vkDestroyBuffer(RendererContext.LogicalDevice, srcBuffer, NoAllocator);
-            freeDeviceMemory(&Allocator, allocation);
         }
 
         return Material::toHandle(instanceIndex + 1);
@@ -2293,38 +2258,8 @@ namespace IB
         uint32_t instanceIndex = Lighting.InstanceCount++;
         IB_ASSERT(instanceIndex < MaxLightCount, "Too many lights!");
 
-        VkBuffer srcBuffer;
-        Allocation allocation;
-        {
-            VkBufferCreateInfo bufferCreate = {};
-            bufferCreate.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-            bufferCreate.size = sizeof(lightData);
-            bufferCreate.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-
-            IB_VKCHECK(vkCreateBuffer(RendererContext.LogicalDevice, &bufferCreate, NoAllocator, &srcBuffer));
-
-            VkMemoryRequirements memoryRequirements;
-            vkGetBufferMemoryRequirements(RendererContext.LogicalDevice, srcBuffer, &memoryRequirements);
-
-            AllocationRequest request;
-            request.Alignment = memoryRequirements.alignment;
-            request.Size = sizeof(lightData);
-            request.LogicalDevice = RendererContext.LogicalDevice;
-            request.PhysicalDevice = RendererContext.PhysicalDevice;
-            request.RequiredFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-            request.PreferedFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-            request.TypeBits = memoryRequirements.memoryTypeBits;
-            request.Category = AllocationCategory::TransferSource;
-
-            allocation = allocateDeviceMemory(&Allocator, request);
-            IB_VKCHECK(vkBindBufferMemory(RendererContext.LogicalDevice, srcBuffer, allocation.Memory, allocation.Offset));
-
-            {
-                void *memory = mapAllocation(RendererContext.LogicalDevice, &Allocator, allocation);
-                memcpy(reinterpret_cast<uint8_t *>(memory), &lightData, sizeof(lightData));
-                unmapAllocation(&Allocator, allocation);
-            }
-        }
+        StagingBuffer staging = requestStagingBuffer(&Staging, sizeof(lightData));
+        memcpy(staging.Memory, &lightData, sizeof(lightData));
 
         // TODO: We can likely store this in a cleanup structure when we request the dependency
         {
@@ -2344,10 +2279,10 @@ namespace IB
             IB_VKCHECK(vkBeginCommandBuffer(commandBuffer, &beginBufferInfo));
 
             VkBufferCopy copy = {};
-            copy.srcOffset = 0;
+            copy.srcOffset = staging.Offset;
             copy.dstOffset = instanceIndex * sizeof(DirectionalLight);
             copy.size = sizeof(DirectionalLight);
-            vkCmdCopyBuffer(commandBuffer, srcBuffer, Lighting.LightBuffer, 1, &copy);
+            vkCmdCopyBuffer(commandBuffer, staging.Buffer, Lighting.LightBuffer, 1, &copy);
 
             IB_VKCHECK(vkEndCommandBuffer(commandBuffer));
 
@@ -2361,8 +2296,6 @@ namespace IB
             IB_VKCHECK(vkResetFences(RendererContext.LogicalDevice, 1, &RendererContext.Present.ImmediateFence));
 
             vkFreeCommandBuffers(RendererContext.LogicalDevice, RendererContext.Present.Queues[Queue::Transfer].CommandPool, 1, &commandBuffer);
-            vkDestroyBuffer(RendererContext.LogicalDevice, srcBuffer, NoAllocator);
-            freeDeviceMemory(&Allocator, allocation);
         }
 
         return Light::toHandle(instanceIndex);

@@ -137,7 +137,7 @@ namespace IB
 
     struct DirectionalLightDesc
     {
-        Float3 Direction = Float3{ 0.0f, 0.0f, -1.0f };
+        Float3 Direction = { 0.0f, 0.0f, -1.0f };
         float Radiance = 1.0f;
         uint32_t Tint = 0xFFFFFFFF;
     };
