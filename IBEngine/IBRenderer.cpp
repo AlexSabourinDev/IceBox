@@ -603,14 +603,17 @@ namespace
         stagingBuffer.Buffer = staging->Buffer;
         stagingBuffer.Memory = reinterpret_cast<uint8_t*>(staging->MappedMemory) + staging->WriteOffset;
         stagingBuffer.Offset = staging->WriteOffset;
+        IB_ASSERT(staging->ActiveFenceCount < MaxStagingFenceCount, "TODO: Handle flushing if we run out of fences.");
         stagingBuffer.Fence = staging->Fences[staging->ActiveFenceCount++];
         staging->WriteOffset += size;
 
         return stagingBuffer;
     }
 
+    constexpr uint32_t MeshBufferChunkCount = FrameBufferCount;
     constexpr uint32_t MaxMeshCount = 1000;
-    constexpr uint32_t MeshBufferSize = 1024 * 1024 * 10;
+    constexpr uint32_t MeshBufferChunkSize = 1024 * 1024 * 16;
+    constexpr uint32_t MeshBufferSize = MeshBufferChunkSize * MeshBufferChunkCount;
     struct Geometry
     {
         struct
@@ -620,9 +623,14 @@ namespace
             uint32_t IndexOffset = 0;
             uint32_t IndexCount = 0;
         } Meshes[MaxMeshCount];
-        uint32_t MeshCount = 0;
+        bool MeshAllocations[MaxMeshCount] = {}; // Can likely be a bitset if needed
+
         uint32_t NextOffset = 0;
 
+        uint32_t FreeIndices[MaxMeshCount];
+        uint32_t FreeIndexCount = 0;
+
+        // Maintained as a series of chunks
         VkBuffer MeshDataBuffers;
         Allocation Allocation;
     };
@@ -1532,10 +1540,16 @@ namespace IB
 
         // Mesh buffer
         {
+            for (uint32_t i = 0; i < MaxMeshCount; i++)
+            {
+                Geometry.FreeIndices[i] = i;
+            }
+            Geometry.FreeIndexCount = MaxMeshCount;
+
             VkBufferCreateInfo bufferCreate = {};
             bufferCreate.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
             bufferCreate.size = MeshBufferSize;
-            bufferCreate.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT; // buffers created through create buffer can always be transfered to
+            bufferCreate.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT; // buffers created through create buffer can always be transfered to
 
             VkBuffer *buffer = &Geometry.MeshDataBuffers;
             IB_VKCHECK(vkCreateBuffer(RendererContext.LogicalDevice, &bufferCreate, NoAllocator, buffer));
@@ -2008,27 +2022,15 @@ namespace IB
 
     Mesh::Handle createMesh(MeshDesc const &desc)
     {
-        uint32_t meshIndex = Geometry.MeshCount++;
+        IB_ASSERT(Geometry.FreeIndexCount > 0, "We've run out of mesh slots! Perhaps we should use a dynamic array?");
+        uint32_t meshIndex = Geometry.FreeIndices[--Geometry.FreeIndexCount];
 
         uint32_t vertexSize = desc.Vertices.Count * sizeof(Vertex);
         uint32_t indexSize = desc.Indices.Count * sizeof(uint16_t);
-        {
-            Geometry.Meshes[meshIndex].VertexSize = vertexSize;
-            Geometry.Meshes[meshIndex].VertexOffset = Geometry.NextOffset;
-            Geometry.Meshes[meshIndex].IndexOffset = vertexSize + Geometry.NextOffset;
-            Geometry.Meshes[meshIndex].IndexCount = desc.Indices.Count;
 
-            Geometry.NextOffset += vertexSize + indexSize;
-            uint32_t alignmentBump = Geometry.NextOffset % sizeof(Vertex);
-            Geometry.NextOffset += alignmentBump == 0 ? 0 : sizeof(Vertex) - alignmentBump;
-        }
+        VkCommandBuffer commandBuffer;
 
-        // Staging
-        StagingBuffer staging = requestStagingBuffer(&Staging, indexSize + vertexSize);
-        memcpy(staging.Memory, desc.Vertices.Data, vertexSize);
-        memcpy(reinterpret_cast<uint8_t*>(staging.Memory) + vertexSize, desc.Indices.Data, indexSize);
-
-        // TODO: We can likely store this in a cleanup structure when we request the dependency
+        // Begin our command buffer
         {
             VkCommandBufferAllocateInfo commandBufferAllocateInfo = {};
             commandBufferAllocateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
@@ -2036,7 +2038,6 @@ namespace IB
             commandBufferAllocateInfo.commandBufferCount = 1;
             commandBufferAllocateInfo.commandPool = RendererContext.Present.Queues[Queue::Transfer].CommandPool;
 
-            VkCommandBuffer commandBuffer;
             IB_VKCHECK(vkAllocateCommandBuffers(RendererContext.LogicalDevice, &commandBufferAllocateInfo, &commandBuffer));
 
             VkCommandBufferBeginInfo beginBufferInfo = {};
@@ -2044,14 +2045,73 @@ namespace IB
             beginBufferInfo.flags |= VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
 
             IB_VKCHECK(vkBeginCommandBuffer(commandBuffer, &beginBufferInfo));
+        }
 
-            VkBufferCopy meshCopy = {};
-            meshCopy.srcOffset = staging.Offset;
-            meshCopy.dstOffset = Geometry.Meshes[meshIndex].VertexOffset;
-            meshCopy.size = vertexSize + indexSize;
+        uint32_t chunkOffset = Geometry.NextOffset % MeshBufferChunkSize;
+        // We're out of memory. Try to pack the empty space caused by free-ed geometry and try again
+        if (chunkOffset + vertexSize + indexSize > MeshBufferChunkSize)
+        {
+            uint32_t chunkIndex = Geometry.NextOffset / MeshBufferChunkSize;
+            chunkIndex = (chunkIndex + 1) % MeshBufferChunkCount;
+            Geometry.NextOffset = chunkIndex * MeshBufferChunkSize;
 
-            vkCmdCopyBuffer(commandBuffer, staging.Buffer, Geometry.MeshDataBuffers, 1, &meshCopy);
+            VkBufferCopy copyRegions[MaxMeshCount];
+            uint32_t copyCount = 0;
+            for (uint32_t i = 0; i < MaxMeshCount; i++)
+            {
+                if (Geometry.MeshAllocations[i])
+                {
+                    // Vertex and indices are packed together
+                    VkBufferCopy meshCopy = {};
+                    meshCopy.srcOffset = Geometry.Meshes[i].VertexOffset;
+                    meshCopy.dstOffset = Geometry.NextOffset;
+                    meshCopy.size = Geometry.Meshes[i].VertexSize + Geometry.Meshes[i].IndexCount * sizeof(uint16_t);
+                    copyRegions[copyCount++] = meshCopy;
 
+                    // Relocate our mesh data
+                    Geometry.Meshes[i].VertexOffset = Geometry.NextOffset;
+                    Geometry.Meshes[i].IndexOffset = Geometry.NextOffset + Geometry.Meshes[i].VertexSize;
+
+                    Geometry.NextOffset += Geometry.Meshes[i].VertexSize + Geometry.Meshes[i].IndexCount * sizeof(uint16_t);
+                    uint32_t alignmentBump = Geometry.NextOffset % alignof(Vertex);
+                    Geometry.NextOffset += alignmentBump == 0 ? 0 : alignof(Vertex) - alignmentBump;
+                }
+            }
+
+            IB_ASSERT(copyCount > 0, "We should be copying at least a single buffer!");
+            vkCmdCopyBuffer(commandBuffer, Geometry.MeshDataBuffers, Geometry.MeshDataBuffers, copyCount, copyRegions);
+        }
+
+        IB_ASSERT((Geometry.NextOffset % MeshBufferChunkSize) + vertexSize + indexSize <= MeshBufferChunkSize, "After packing we're still out of memory. Our buffer is likely not large enough.");
+
+        // Allocate our mesh
+        {
+            Geometry.Meshes[meshIndex].VertexSize = vertexSize;
+            Geometry.Meshes[meshIndex].VertexOffset = Geometry.NextOffset;
+            Geometry.Meshes[meshIndex].IndexOffset = vertexSize + Geometry.NextOffset;
+            Geometry.Meshes[meshIndex].IndexCount = desc.Indices.Count;
+            IB_ASSERT(Geometry.MeshAllocations[meshIndex] == false, "Mesh already allocated!");
+            Geometry.MeshAllocations[meshIndex] = true;
+
+            Geometry.NextOffset += vertexSize + indexSize;
+            uint32_t alignmentBump = Geometry.NextOffset % alignof(Vertex);
+            Geometry.NextOffset += alignmentBump == 0 ? 0 : alignof(Vertex) - alignmentBump;
+        }
+
+        // Staging
+        StagingBuffer staging = requestStagingBuffer(&Staging, indexSize + vertexSize);
+        memcpy(staging.Memory, desc.Vertices.Data, vertexSize);
+        memcpy(reinterpret_cast<uint8_t*>(staging.Memory) + vertexSize, desc.Indices.Data, indexSize);
+
+        VkBufferCopy meshCopy = {};
+        meshCopy.srcOffset = staging.Offset;
+        meshCopy.dstOffset = Geometry.Meshes[meshIndex].VertexOffset;
+        meshCopy.size = vertexSize + indexSize;
+
+        vkCmdCopyBuffer(commandBuffer, staging.Buffer, Geometry.MeshDataBuffers, 1, &meshCopy);
+
+        // End our command buffer
+        {
             IB_VKCHECK(vkEndCommandBuffer(commandBuffer));
             VkSubmitInfo submitInfo = {};
             submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
@@ -2063,6 +2123,13 @@ namespace IB
         }
 
         return Mesh::toHandle(meshIndex + 1);
+    }
+
+    void destroyMesh(Mesh::Handle mesh)
+    {
+        uint32_t meshIndex = mesh - 1;
+        Geometry.MeshAllocations[meshIndex] = false;
+        Geometry.FreeIndices[Geometry.FreeIndexCount++] = meshIndex;
     }
 
     Image::Handle createImage(ImageDesc const &desc)
@@ -2109,7 +2176,7 @@ namespace IB
 
         IB_VKCHECK(vkBeginCommandBuffer(commandBuffer, &beginBufferInfo));
 
-        // Image barrier UNDEFINED -> OPTIMAL
+        // Image barrier UNDEFINED -> TRANSFER
         {
             VkAccessFlagBits sourceAccessMask = {};
             VkAccessFlagBits dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
@@ -2162,7 +2229,7 @@ namespace IB
             vkCmdCopyBufferToImage(commandBuffer, staging.Buffer, RendererContext.Textures.Images[imageIndex].Image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copyRegion);
         }
 
-        // Image barrier OPTIMAL -> FRAGMEN_SHADER
+        // Image barrier TRANSFER -> FRAGMENT_SHADER
         {
             VkAccessFlagBits sourceAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
             VkAccessFlagBits dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
@@ -2200,7 +2267,7 @@ namespace IB
         IB_VKCHECK(vkQueueSubmit(RendererContext.Present.Queues[Queue::Graphics].Queue, 1, &submitInfo, staging.Fence));
         Staging.Transfers[Queue::Graphics].Commands[Staging.Transfers[Queue::Graphics].ActiveCount++] = commandBuffer;
 
-        // Update our shader descriptor
+        // Queue up our shader descriptor update
         {
             uint32_t descriptorUpdateIndex = Staging.DescriptorUpdates.ActiveCount++;
             VkDescriptorImageInfo* imageInfo = &Staging.DescriptorUpdates.DescriptorInfos[descriptorUpdateIndex];
@@ -2489,7 +2556,7 @@ namespace IB
 
                                     pushConstant.VP = view.ViewProj;
                                     pushConstant.M = batch->Meshes[mesh].Transforms[inst];
-                                    pushConstant.VertexOffset = Geometry.Meshes[meshIndex].VertexOffset / sizeof(Vertex);
+                                    pushConstant.VertexOffset = Geometry.Meshes[meshIndex].VertexOffset;
                                     pushConstant.MaterialIndex = materialIndex;
 
                                     // No lighting for gizmos

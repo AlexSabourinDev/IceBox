@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <math.h>
 #include <float.h>
+#include <immintrin.h>
 
 namespace IB
 {
@@ -17,6 +18,20 @@ namespace IB
     template<typename T>
     inline T max(T left, T right) { return left > right ? left : right; }
 
+    template< typename T, typename T2>
+    inline T bitcast(T2 argument)
+    {
+        static_assert(sizeof(T) == sizeof(T2), "Expecting an exact bitcast");
+        union
+        {
+            T2 Source;
+            T Dest;
+        } typePun;
+
+        typePun.Source = argument;
+        return typePun.Dest;
+    }
+
     struct Float2
     {
         float x, y;
@@ -25,6 +40,11 @@ namespace IB
     struct Uint2
     {
         uint32_t x, y;
+    };
+
+    struct Uint4
+    {
+        uint32_t x, y, z, w;
     };
 
     struct Int2
@@ -60,6 +80,11 @@ namespace IB
         float &operator[](uint32_t i) { return (&x)[i]; }
         float operator[](uint32_t i) const { return (&x)[i]; }
         float x, y, z, w;
+    };
+
+    struct Half4
+    {
+        uint32_t xy, zw;
     };
 
     struct Quaternion
@@ -175,6 +200,8 @@ namespace IB
     inline Float4 mul(Mat4x4 const&left, Float4 right);
 
     inline Float4 operator/(Float4 left, float right);
+    inline uint32_t packRGBA(Float4 color);
+    inline Half4 toHalf4(Float4 value);
 
     inline Float3 operator+(Float3 left, Float3 right);
     inline Float3 operator-(Float3 left, Float3 right);
@@ -299,6 +326,25 @@ namespace IB
     inline Float4 operator/(Float4 left, float right)
     {
         return Float4{ left.x / right, left.y / right, left.z / right, left.w / right };
+    }
+
+    inline uint32_t packRGBA(Float4 color)
+    {
+        return 
+              static_cast<uint8_t>(min(color.x * 255.0f, 255.0f)) << 24
+            | static_cast<uint8_t>(min(color.y * 255.0f, 255.0f)) << 16
+            | static_cast<uint8_t>(min(color.z * 255.0f, 255.0f)) << 8
+            | static_cast<uint8_t>(min(color.w * 255.0f, 255.0f));
+    }
+
+    inline Half4 toHalf4(Float4 value)
+    {
+        __m128 data = _mm_loadu_ps(&value.x);
+        __m128i packedDataSSE = _mm_cvtps_ph(data, _MM_FROUND_RAISE_EXC);
+
+        uint32_t alignas(16) packedData[4];
+        _mm_store_si128(reinterpret_cast<__m128i*>(packedData), packedDataSSE);
+        return Half4{ packedData[0], packedData[1] };
     }
 
     inline Float3& Float3::operator+=(Float3 rhs)
@@ -674,7 +720,6 @@ namespace IB
     }
 }
 
-#include <immintrin.h>
 namespace IB
 {
     // Simd API

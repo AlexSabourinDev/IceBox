@@ -1,18 +1,43 @@
 static float const Pi = 3.1415926535f;
 
+float4 fromRGBA(uint tint)
+{
+    return float4(
+        (float)((tint & 0xFF000000) >> 24) / 255.0f,
+        (float)((tint & 0x00FF0000) >> 16) / 255.0f,
+        (float)((tint & 0x0000FF00) >> 8) / 255.0f,
+        (float)((tint & 0x000000FF) >> 0) / 255.0f);
+}
+
 struct Vertex
 {
     float4 Pos;
     float4 Normal;
-    float4 Color;
 };
+
+Vertex loadVertex(ByteAddressBuffer buffer, uint offset)
+{
+    Vertex v;
+    v.Pos = asfloat(buffer.Load4(offset));
+    v.Normal = asfloat(buffer.Load4(offset + sizeof(float4)));
+    return v;
+}
 
 float2 unpackUV(Vertex v)
 {
-    return float2(v.Pos.w, v.Normal.w);
+    uint packedUV = asuint(v.Pos.w);
+    uint uvX = packedUV & 0xFFFF;
+    uint uvY = packedUV >> 16;
+    return float2(f16tof32(uvX), f16tof32(uvY));
 }
 
-[[vk::binding(0, 0)]] StructuredBuffer<Vertex> MeshData;
+float4 unpackColor(Vertex v)
+{
+    uint packedColor = asuint(v.Normal.w);
+    return fromRGBA(packedColor);
+}
+
+[[vk::binding(0, 0)]] ByteAddressBuffer MeshData;
 
 struct PerDrawBuffer
 {
@@ -41,13 +66,14 @@ struct V2F
 V2F vertexMain(VertexInput input)
 {
     V2F output = (V2F)0;
-    uint index = (PerDraw.VertexOffset + input.VertexID);
     row_major float4x4 M4 = float4x4(PerDraw.M, float4(0.0f, 0.0f, 0.0f, 1.0f));
     row_major float3x3 rotation = (float3x3)M4;
-    output.NDCPos = mul(PerDraw.VP, mul(M4, float4(MeshData[index].Pos.xyz, 1.0f)));
-    output.Normal = mul(MeshData[index].Normal.xyz, rotation);
-    output.UV = unpackUV(MeshData[index]);
-    output.Color = MeshData[index].Color;
+
+    Vertex vertex = loadVertex(MeshData, PerDraw.VertexOffset + sizeof(Vertex) * input.VertexID);
+    output.NDCPos = mul(PerDraw.VP, mul(M4, float4(vertex.Pos.xyz, 1.0f)));
+    output.Normal = mul(vertex.Normal.xyz, rotation);
+    output.UV = unpackUV(vertex);
+    output.Color = unpackColor(vertex);
     return output;
 }
 
@@ -77,15 +103,6 @@ float3 unpackDirection(DirectionalLight light)
 [[vk::binding(2, 0)]] Texture2D Textures[];
 [[vk::binding(3, 0)]] StructuredBuffer<Material> Materials;
 [[vk::binding(4, 0)]] StructuredBuffer<DirectionalLight> Lights;
-
-float4 fromRGBA(uint tint)
-{
-    return float4(
-        (float)((tint & 0xFF000000) >> 24) / 255.0f,
-        (float)((tint & 0x00FF0000) >> 16) / 255.0f,
-        (float)((tint & 0x0000FF00) >> 8) / 255.0f,
-        (float)((tint & 0x000000FF) >> 0) / 255.0f);
-}
 
 float4 fragMain(V2F input) : SV_TARGET
 {

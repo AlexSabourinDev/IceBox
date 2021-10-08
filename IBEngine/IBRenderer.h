@@ -53,12 +53,12 @@ namespace IB
         uint32_t FShaderSize = 0;
     };
 
-    struct Vertex
+    struct alignas(16) Vertex
     {
-        // UV in pos[3], normal[3]
+        // UV in pos[3] as 2 halves
         Float4 Pos;
+        // Color in Normal[3] as uint
         Float4 Normal;
-        Float4 Color;
     };
 
     struct MeshDesc
@@ -200,6 +200,8 @@ namespace IB
     IB_API void initForwardPass(ForwardPassDesc const &desc);
 
     IB_API Mesh::Handle createMesh(MeshDesc const &desc);
+    IB_API void destroyMesh(Mesh::Handle mesh);
+
     IB_API Image::Handle createImage(ImageDesc const &desc);
     IB_API Material::Handle createMaterial(ForwardDesc const &desc);
     IB_API Light::Handle createLight(DirectionalLightDesc const& desc);

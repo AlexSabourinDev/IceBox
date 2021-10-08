@@ -292,9 +292,9 @@ int main()
                 }
 
                 axisVerts[i * 2] = IB::Vertex{{start[0], start[1], start[2]}};
-                axisVerts[i * 2].Color = colors[axis];
+                axisVerts[i * 2].Normal.w = IB::bitcast<float>(IB::packRGBA(colors[axis]));
                 axisVerts[i * 2 + 1] = IB::Vertex{{end[0], end[1], end[2]}};
-                axisVerts[i * 2 + 1].Color = colors[axis];
+                axisVerts[i * 2 + 1].Normal.w = IB::bitcast<float>(IB::packRGBA(colors[axis]));
             }
 
             axisVerts += cylinderVertexCount;
@@ -307,7 +307,7 @@ int main()
                 pos[(axis + 1) % 3] = sinf(angle) * coneRadius;
                 pos[(axis + 2) % 3] = cosf(angle) * coneRadius;
                 axisVerts[i] = IB::Vertex{{pos[0], pos[1], pos[2]}};
-                axisVerts[i].Color = colors[axis];
+                axisVerts[i].Normal.w = IB::bitcast<float>(IB::packRGBA(colors[axis]));
             }
 
             float pos[3];
@@ -315,11 +315,11 @@ int main()
             pos[(axis + 1) % 3] = 0.0f;
             pos[(axis + 2) % 3] = 0.0f;
             axisVerts[coneSegmentCount] = IB::Vertex{{pos[0], pos[1], pos[2]}};
-            axisVerts[coneSegmentCount].Color = colors[axis];
+            axisVerts[coneSegmentCount].Normal.w = IB::bitcast<float>(IB::packRGBA(colors[axis]));
 
             pos[axis] = cylinderLength + coneHeight;
             axisVerts[coneSegmentCount + 1] = IB::Vertex{{pos[0], pos[1], pos[2]}};
-            axisVerts[coneSegmentCount + 1].Color = colors[axis];
+            axisVerts[coneSegmentCount + 1].Normal.w = IB::bitcast<float>(IB::packRGBA(colors[axis]));
 
             for (uint32_t i = 0; i < cylinderSegments; i++)
             {

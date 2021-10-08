@@ -72,7 +72,7 @@ namespace IB
                 }
 
                 stream->Buffer = newMemory;
-                stream->BufferSize += bufferChunkSize;
+                stream->BufferSize = newSize;
             }
 
             memcpy(stream->Buffer + stream->BufferCursor, data, size); // TODO: alignment

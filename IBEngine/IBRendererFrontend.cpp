@@ -144,9 +144,15 @@ namespace
 
         void unloadThreadSafe(IB::Asset::Handle meshAsset) override
         {
-            // TODO: Handle mesh destruction
-
             MeshData* meshData = reinterpret_cast<MeshData*>(IB::Asset::toValue(meshAsset));
+
+            IB::launchJob([meshHandle = meshData->RendererMesh]()
+            {
+                IB::destroyMesh(meshHandle);
+                return IB::JobResult::Complete;
+            },
+                IB::RendererJobQueueIndex);
+
             MeshDataPool.remove(*meshData);
         }
     };

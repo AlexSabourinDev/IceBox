@@ -684,9 +684,9 @@ namespace IB
                         }
 
                         axisVerts[i * 2] = IB::Vertex{ {start[0], start[1], start[2]} };
-                        axisVerts[i * 2].Color = gizmoColors[axis];
+                        axisVerts[i * 2].Normal.w = bitcast<float>(packRGBA(gizmoColors[axis]));
                         axisVerts[i * 2 + 1] = IB::Vertex{ {end[0], end[1], end[2]} };
-                        axisVerts[i * 2 + 1].Color = gizmoColors[axis];
+                        axisVerts[i * 2 + 1].Normal.w = bitcast<float>(packRGBA(gizmoColors[axis]));
                     }
 
                     axisVerts += cylinderVertexCount;
@@ -699,7 +699,7 @@ namespace IB
                         pos[(axis + 1) % 3] = sinf(angle) * coneRadius;
                         pos[(axis + 2) % 3] = cosf(angle) * coneRadius;
                         axisVerts[i] = IB::Vertex{ {pos[0], pos[1], pos[2]} };
-                        axisVerts[i].Color = gizmoColors[axis];
+                        axisVerts[i].Normal.w = bitcast<float>(packRGBA(gizmoColors[axis]));
                     }
 
                     float pos[3];
@@ -707,11 +707,11 @@ namespace IB
                     pos[(axis + 1) % 3] = 0.0f;
                     pos[(axis + 2) % 3] = 0.0f;
                     axisVerts[coneSegmentCount] = Vertex{ {pos[0], pos[1], pos[2]} };
-                    axisVerts[coneSegmentCount].Color = gizmoColors[axis];
+                    axisVerts[coneSegmentCount].Normal.w = bitcast<float>(packRGBA(gizmoColors[axis]));
 
                     pos[axis] = cylinderLength + coneHeight;
                     axisVerts[coneSegmentCount + 1] = Vertex{ {pos[0], pos[1], pos[2]} };
-                    axisVerts[coneSegmentCount + 1].Color = gizmoColors[axis];
+                    axisVerts[coneSegmentCount + 1].Normal.w = bitcast<float>(packRGBA(gizmoColors[axis]));
 
                     for (uint16_t i = 0; i < cylinderSegments; i++)
                     {
@@ -801,10 +801,10 @@ namespace IB
                         vertices[vertexWritePos + i * 4 + 1].Pos = Float4{ quad[1].x, quad[1].y, quad[1].z, 0.0f };
                         vertices[vertexWritePos + i * 4 + 2].Pos = Float4{ quad[2].x, quad[2].y, quad[2].z, 0.0f };
                         vertices[vertexWritePos + i * 4 + 3].Pos = Float4{ quad[3].x, quad[3].y, quad[3].z, 0.0f };
-                        vertices[vertexWritePos + i * 4 + 0].Color = gizmoColors[axis];
-                        vertices[vertexWritePos + i * 4 + 1].Color = gizmoColors[axis];
-                        vertices[vertexWritePos + i * 4 + 2].Color = gizmoColors[axis];
-                        vertices[vertexWritePos + i * 4 + 3].Color = gizmoColors[axis];
+                        vertices[vertexWritePos + i * 4 + 0].Normal.w = bitcast<float>(packRGBA(gizmoColors[axis]));
+                        vertices[vertexWritePos + i * 4 + 1].Normal.w = bitcast<float>(packRGBA(gizmoColors[axis]));
+                        vertices[vertexWritePos + i * 4 + 2].Normal.w = bitcast<float>(packRGBA(gizmoColors[axis]));
+                        vertices[vertexWritePos + i * 4 + 3].Normal.w = bitcast<float>(packRGBA(gizmoColors[axis]));
                     }
 
                     for (uint32_t i = 0; i < circleSegments; i++)
