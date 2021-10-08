@@ -561,12 +561,31 @@ namespace
     };
 
     constexpr uint32_t StagingSize = 10 * 1024 * 1024; // 10MB of staging space
+    constexpr uint32_t MaxStagingFenceCount = 128;
+    constexpr uint32_t MaxTransferCount = 128;
+    constexpr uint32_t MaxDescriptorUpdateCount = 128;
     struct Staging
     {
         VkBuffer Buffer;
         Allocation Allocation;
         void* MappedMemory = nullptr;
         uint32_t WriteOffset = 0;
+
+        VkFence Fences[MaxStagingFenceCount];
+        uint32_t ActiveFenceCount = 0;
+
+        struct
+        {
+            VkCommandBuffer Commands[MaxTransferCount];
+            uint32_t ActiveCount = 0;
+        } Transfers[Queue::Count];
+
+        struct
+        {
+            VkDescriptorImageInfo DescriptorInfos[MaxDescriptorUpdateCount];
+            VkWriteDescriptorSet DescriptorWrites[MaxDescriptorUpdateCount];
+            uint32_t ActiveCount = 0;
+        } DescriptorUpdates;
     };
 
     struct StagingBuffer
@@ -574,6 +593,7 @@ namespace
         VkBuffer Buffer;
         void* Memory;
         uint32_t Offset;
+        VkFence Fence;
     };
 
     StagingBuffer requestStagingBuffer(Staging* staging, uint32_t size)
@@ -583,6 +603,7 @@ namespace
         stagingBuffer.Buffer = staging->Buffer;
         stagingBuffer.Memory = reinterpret_cast<uint8_t*>(staging->MappedMemory) + staging->WriteOffset;
         stagingBuffer.Offset = staging->WriteOffset;
+        stagingBuffer.Fence = staging->Fences[staging->ActiveFenceCount++];
         staging->WriteOffset += size;
 
         return stagingBuffer;
@@ -1183,6 +1204,11 @@ namespace IB
             VkFenceCreateInfo fenceCreateInfo = {};
             fenceCreateInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
             IB_VKCHECK(vkCreateFence(RendererContext.LogicalDevice, &fenceCreateInfo, NoAllocator, &RendererContext.Present.ImmediateFence));
+        
+            for (uint32_t i = 0; i < MaxStagingFenceCount; i++)
+            {
+                IB_VKCHECK(vkCreateFence(RendererContext.LogicalDevice, &fenceCreateInfo, NoAllocator, &Staging.Fences[i]));
+            }
         }
 
         createAllocator(&Allocator);
@@ -1795,6 +1821,12 @@ namespace IB
         }
 
         vkDestroyFence(RendererContext.LogicalDevice, RendererContext.Present.ImmediateFence, NoAllocator);
+
+        for (uint32_t i = 0; i < MaxStagingFenceCount; i++)
+        {
+            vkDestroyFence(RendererContext.LogicalDevice, Staging.Fences[i], NoAllocator);
+        }
+
         vkDestroyRenderPass(RendererContext.LogicalDevice, ForwardPass.RenderPass, NoAllocator);
         vkDestroyRenderPass(RendererContext.LogicalDevice, ImGuiPass.RenderPass, NoAllocator);
         vkDestroySwapchainKHR(RendererContext.LogicalDevice, RendererContext.Present.Swapchain, NoAllocator);
@@ -2026,11 +2058,8 @@ namespace IB
             submitInfo.commandBufferCount = 1;
             submitInfo.pCommandBuffers = &commandBuffer;
 
-            IB_VKCHECK(vkQueueSubmit(RendererContext.Present.Queues[Queue::Transfer].Queue, 1, &submitInfo, RendererContext.Present.ImmediateFence));
-            IB_VKCHECK(vkWaitForFences(RendererContext.LogicalDevice, 1, &RendererContext.Present.ImmediateFence, VK_TRUE, UINT64_MAX));
-            IB_VKCHECK(vkResetFences(RendererContext.LogicalDevice, 1, &RendererContext.Present.ImmediateFence));
-
-            vkFreeCommandBuffers(RendererContext.LogicalDevice, RendererContext.Present.Queues[Queue::Transfer].CommandPool, 1, &commandBuffer);
+            IB_VKCHECK(vkQueueSubmit(RendererContext.Present.Queues[Queue::Transfer].Queue, 1, &submitInfo, staging.Fence));
+            Staging.Transfers[Queue::Transfer].Commands[Staging.Transfers[Queue::Transfer].ActiveCount++] = commandBuffer;
         }
 
         return Mesh::toHandle(meshIndex + 1);
@@ -2168,29 +2197,27 @@ namespace IB
         submitInfo.commandBufferCount = 1;
         submitInfo.pCommandBuffers = &commandBuffer;
 
-        IB_VKCHECK(vkQueueSubmit(RendererContext.Present.Queues[Queue::Graphics].Queue, 1, &submitInfo, RendererContext.Present.ImmediateFence));
-        IB_VKCHECK(vkWaitForFences(RendererContext.LogicalDevice, 1, &RendererContext.Present.ImmediateFence, VK_TRUE, UINT64_MAX));
-        IB_VKCHECK(vkResetFences(RendererContext.LogicalDevice, 1, &RendererContext.Present.ImmediateFence));
-
-        vkFreeCommandBuffers(RendererContext.LogicalDevice, RendererContext.Present.Queues[Queue::Graphics].CommandPool, 1, &commandBuffer);
+        IB_VKCHECK(vkQueueSubmit(RendererContext.Present.Queues[Queue::Graphics].Queue, 1, &submitInfo, staging.Fence));
+        Staging.Transfers[Queue::Graphics].Commands[Staging.Transfers[Queue::Graphics].ActiveCount++] = commandBuffer;
 
         // Update our shader descriptor
         {
-            VkDescriptorImageInfo imageInfo = {};
-            imageInfo.imageView = RendererContext.Textures.Images[imageIndex].ImageView;
-            imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            uint32_t descriptorUpdateIndex = Staging.DescriptorUpdates.ActiveCount++;
+            VkDescriptorImageInfo* imageInfo = &Staging.DescriptorUpdates.DescriptorInfos[descriptorUpdateIndex];
+            VkWriteDescriptorSet* descriptorWrite = &Staging.DescriptorUpdates.DescriptorWrites[descriptorUpdateIndex];
 
-            VkWriteDescriptorSet writeImageSet = {};
-            writeImageSet.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            writeImageSet.dstSet = ForwardPass.ShaderDescriptor;
-            writeImageSet.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
-            writeImageSet.dstBinding = 2;
-            writeImageSet.dstArrayElement = imageIndex;
-            writeImageSet.descriptorCount = 1;
-            writeImageSet.pImageInfo = &imageInfo;
+            *imageInfo = {};
+            imageInfo->imageView = RendererContext.Textures.Images[imageIndex].ImageView;
+            imageInfo->imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
-            VkWriteDescriptorSet writeDescriptorSets[] = {writeImageSet};
-            vkUpdateDescriptorSets(RendererContext.LogicalDevice, arrayCount(writeDescriptorSets), writeDescriptorSets, 0, NULL);
+            *descriptorWrite = {};
+            descriptorWrite->sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            descriptorWrite->dstSet = ForwardPass.ShaderDescriptor;
+            descriptorWrite->descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+            descriptorWrite->dstBinding = 2;
+            descriptorWrite->dstArrayElement = imageIndex;
+            descriptorWrite->descriptorCount = 1;
+            descriptorWrite->pImageInfo = imageInfo;
         }
 
         return Image::toHandle(imageIndex + 1);
@@ -2205,11 +2232,9 @@ namespace IB
         uint32_t instanceIndex = ForwardPass.InstanceCount++;
         IB_ASSERT(instanceIndex < MaxMaterialInstanceCount, "Too many materials!");
 
-        // Staging
         StagingBuffer staging = requestStagingBuffer(&Staging, sizeof(ForwardMaterial));
         memcpy(staging.Memory, &matData, sizeof(ForwardMaterial));
 
-        // TODO: We can likely store this in a cleanup structure when we request the dependency
         {
             VkCommandBufferAllocateInfo commandBufferAllocateInfo = {};
             commandBufferAllocateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
@@ -2239,11 +2264,8 @@ namespace IB
             submitInfo.commandBufferCount = 1;
             submitInfo.pCommandBuffers = &commandBuffer;
 
-            IB_VKCHECK(vkQueueSubmit(RendererContext.Present.Queues[Queue::Transfer].Queue, 1, &submitInfo, RendererContext.Present.ImmediateFence));
-            IB_VKCHECK(vkWaitForFences(RendererContext.LogicalDevice, 1, &RendererContext.Present.ImmediateFence, VK_TRUE, UINT64_MAX));
-            IB_VKCHECK(vkResetFences(RendererContext.LogicalDevice, 1, &RendererContext.Present.ImmediateFence));
-
-            vkFreeCommandBuffers(RendererContext.LogicalDevice, RendererContext.Present.Queues[Queue::Transfer].CommandPool, 1, &commandBuffer);
+            IB_VKCHECK(vkQueueSubmit(RendererContext.Present.Queues[Queue::Transfer].Queue, 1, &submitInfo, staging.Fence));
+            Staging.Transfers[Queue::Transfer].Commands[Staging.Transfers[Queue::Transfer].ActiveCount++];
         }
 
         return Material::toHandle(instanceIndex + 1);
@@ -2261,7 +2283,6 @@ namespace IB
         StagingBuffer staging = requestStagingBuffer(&Staging, sizeof(lightData));
         memcpy(staging.Memory, &lightData, sizeof(lightData));
 
-        // TODO: We can likely store this in a cleanup structure when we request the dependency
         {
             VkCommandBufferAllocateInfo commandBufferAllocateInfo = {};
             commandBufferAllocateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
@@ -2291,11 +2312,8 @@ namespace IB
             submitInfo.commandBufferCount = 1;
             submitInfo.pCommandBuffers = &commandBuffer;
 
-            IB_VKCHECK(vkQueueSubmit(RendererContext.Present.Queues[Queue::Transfer].Queue, 1, &submitInfo, RendererContext.Present.ImmediateFence));
-            IB_VKCHECK(vkWaitForFences(RendererContext.LogicalDevice, 1, &RendererContext.Present.ImmediateFence, VK_TRUE, UINT64_MAX));
-            IB_VKCHECK(vkResetFences(RendererContext.LogicalDevice, 1, &RendererContext.Present.ImmediateFence));
-
-            vkFreeCommandBuffers(RendererContext.LogicalDevice, RendererContext.Present.Queues[Queue::Transfer].CommandPool, 1, &commandBuffer);
+            IB_VKCHECK(vkQueueSubmit(RendererContext.Present.Queues[Queue::Transfer].Queue, 1, &submitInfo, staging.Fence));
+            Staging.Transfers[Queue::Transfer].Commands[Staging.Transfers[Queue::Transfer].ActiveCount++];
         }
 
         return Light::toHandle(instanceIndex);
@@ -2354,6 +2372,33 @@ namespace IB
 
         IB_VKCHECK(vkWaitForFences(RendererContext.LogicalDevice, 1, &RendererContext.Present.FrameBuffer[RendererContext.Present.ActiveFrame].FinishedFence, VK_TRUE, UINT64_MAX));
         IB_VKCHECK(vkResetFences(RendererContext.LogicalDevice, 1, &RendererContext.Present.FrameBuffer[buffer].FinishedFence));
+
+        // Wait for the staging we've queued up before we've submitted this frame to complete before we move on.
+        {
+            if (Staging.ActiveFenceCount > 0)
+            {
+                IB_VKCHECK(vkWaitForFences(RendererContext.LogicalDevice, Staging.ActiveFenceCount, Staging.Fences, VK_TRUE, UINT64_MAX));
+                IB_VKCHECK(vkResetFences(RendererContext.LogicalDevice, Staging.ActiveFenceCount, Staging.Fences));
+                Staging.ActiveFenceCount = 0;
+            }
+
+            for (uint32_t queue = 0; queue < Queue::Count; queue++)
+            {
+                if (Staging.Transfers[queue].ActiveCount > 0)
+                {
+                    vkFreeCommandBuffers(RendererContext.LogicalDevice, RendererContext.Present.Queues[queue].CommandPool, Staging.Transfers[queue].ActiveCount, Staging.Transfers[queue].Commands);
+                    Staging.Transfers[queue].ActiveCount = 0;
+                }
+            }
+
+            if (Staging.DescriptorUpdates.ActiveCount > 0)
+            {
+                vkUpdateDescriptorSets(RendererContext.LogicalDevice, Staging.DescriptorUpdates.ActiveCount, Staging.DescriptorUpdates.DescriptorWrites, 0, NULL);
+                Staging.DescriptorUpdates.ActiveCount = 0;
+            }
+
+            Staging.WriteOffset = 0;
+        }
 
         VkCommandBuffer currentCommands = RendererContext.Present.FrameBuffer[buffer].PrimaryCommandBuffer;
         {
