@@ -68,6 +68,32 @@ namespace
         uint32_t TriangleCount = 0;
     };
 
+    void setCollisionShape(MeshData* meshData, IB::MeshAsset::Desc meshAsset)
+    {
+        uint32_t triangleCount = meshAsset.IndexCount / 3;
+        meshData->Triangles.reserve(triangleCount / IB::SimdLaneCount + 1);
+        for (uint32_t t = 0; t < triangleCount; t += IB::SimdLaneCount)
+        {
+            IB::Float3 p0[IB::SimdLaneCount];
+            IB::Float3 p1[IB::SimdLaneCount];
+            IB::Float3 p2[IB::SimdLaneCount];
+
+            uint32_t triangleSetCount = IB::min(triangleCount, IB::SimdLaneCount);
+            for (uint32_t ti = 0; ti < triangleSetCount; ti++)
+            {
+                uint32_t i0 = meshAsset.Indices[(t + ti) * 3 + 0];
+                uint32_t i1 = meshAsset.Indices[(t + ti) * 3 + 1];
+                uint32_t i2 = meshAsset.Indices[(t + ti) * 3 + 2];
+                p0[ti] = IB::Float3{ meshAsset.Vertices[i0].Pos[0], meshAsset.Vertices[i0].Pos[1], meshAsset.Vertices[i0].Pos[2] };
+                p1[ti] = IB::Float3{ meshAsset.Vertices[i1].Pos[0], meshAsset.Vertices[i1].Pos[1], meshAsset.Vertices[i1].Pos[2] };
+                p2[ti] = IB::Float3{ meshAsset.Vertices[i2].Pos[0], meshAsset.Vertices[i2].Pos[1], meshAsset.Vertices[i2].Pos[2] };
+            }
+
+            meshData->Triangles.add(IB::SimdTriangleSet{ simdSet(p0), simdSet(p1), simdSet(p2) });
+        }
+        meshData->TriangleCount = triangleCount;
+    }
+
     MeshData* toMeshData(IB::Asset::Handle asset) { return reinterpret_cast<MeshData*>(IB::Asset::toValue(asset)); }
     IB::Mesh::Handle toMeshHandle(IB::Asset::Handle asset) { return reinterpret_cast<MeshData*>(IB::Asset::toValue(asset))->RendererMesh; }
 
@@ -87,7 +113,7 @@ namespace
             {
                 MeshData& meshData = MeshDataPool.add();
 
-                IB::MeshAsset meshAsset;
+                IB::MeshAsset::Desc meshAsset;
                 fromBinary(&context->Stream, &meshAsset, context->SaveVersion);
 
                 IB::Job::Handle jobs[2];
@@ -107,29 +133,7 @@ namespace
                 // Store mesh for collision detection
                 jobs[1] = IB::launchJob([meshAsset, &meshData]()
                 {
-                    uint32_t triangleCount = meshAsset.IndexCount / 3;
-                    meshData.Triangles.reserve(triangleCount / IB::SimdLaneCount + 1);
-                    for (uint32_t t = 0; t < triangleCount; t += IB::SimdLaneCount)
-                    {
-                        IB::Float3 p0[IB::SimdLaneCount];
-                        IB::Float3 p1[IB::SimdLaneCount];
-                        IB::Float3 p2[IB::SimdLaneCount];
-
-                        uint32_t triangleSetCount = IB::min(triangleCount, IB::SimdLaneCount);
-                        for (uint32_t ti = 0; ti < triangleSetCount; ti++)
-                        {
-                            uint32_t i0 = meshAsset.Indices[(t + ti) * 3 + 0];
-                            uint32_t i1 = meshAsset.Indices[(t + ti) * 3 + 1];
-                            uint32_t i2 = meshAsset.Indices[(t + ti) * 3 + 2];
-                            p0[ti] = IB::Float3{ meshAsset.Vertices[i0].Pos[0], meshAsset.Vertices[i0].Pos[1], meshAsset.Vertices[i0].Pos[2] };
-                            p1[ti] = IB::Float3{ meshAsset.Vertices[i1].Pos[0], meshAsset.Vertices[i1].Pos[1], meshAsset.Vertices[i1].Pos[2] };
-                            p2[ti] = IB::Float3{ meshAsset.Vertices[i2].Pos[0], meshAsset.Vertices[i2].Pos[1], meshAsset.Vertices[i2].Pos[2] };
-                        }
-
-                        meshData.Triangles.add(IB::SimdTriangleSet{ simdSet(p0), simdSet(p1), simdSet(p2) });
-                    }
-                    meshData.TriangleCount = triangleCount;
-
+                    setCollisionShape(&meshData, meshAsset);
                     return IB::JobResult::Complete;
                 });
 
@@ -721,6 +725,27 @@ namespace IB
         return MaterialAsset::toHandle(reinterpret_cast<uint64_t>(&materialData));
     }
 
+    MeshAsset::Handle createMeshAsset(MeshAsset::Desc meshAsset)
+    {
+        MeshData& meshData = MeshDataPool.add();
+        IB::launchJob([meshAsset, &meshData]()
+        {
+            IB::MeshDesc meshDesc = {};
+            meshDesc.Vertices.Data = meshAsset.Vertices;
+            meshDesc.Vertices.Count = meshAsset.VertexCount;
+            meshDesc.Indices.Data = meshAsset.Indices;
+            meshDesc.Indices.Count = meshAsset.IndexCount;
+            meshData.RendererMesh = createMesh(meshDesc);
+
+            return IB::JobResult::Complete;
+        },
+            IB::RendererJobQueueIndex);
+
+        setCollisionShape(&meshData, meshAsset);
+
+        return MeshAsset::toHandle(reinterpret_cast<uint64_t>(&meshData));
+    }
+
     ViewDesc gatherCellView(GatherCellViewDesc const& gatherDesc)
     {
         // Clone our imgui draw data
@@ -874,22 +899,22 @@ namespace IB
 
     namespace Serialization
     {
-        void toBinary(Serialization::WriteStream *stream, MeshAsset const &mesh)
+        void toBinary(Serialization::WriteStream *stream, MeshAsset::Desc const &mesh)
         {
             Serialization::toBinary(stream, mesh.VertexCount);
             Serialization::toBinary(stream, mesh.IndexCount);
 
-            Serialization::toBinary(stream, mesh.Vertices, mesh.VertexCount * sizeof(Vertex));
-            Serialization::toBinary(stream, mesh.Indices, mesh.IndexCount * sizeof(uint16_t));
+            Serialization::arrayToBinary(stream, mesh.Vertices, mesh.VertexCount);
+            Serialization::arrayToBinary(stream, mesh.Indices, mesh.IndexCount);
         }
 
-        void fromBinary(Serialization::ReadStream *stream, MeshAsset *mesh, uint32_t /*versionNumber*/)
+        void fromBinary(Serialization::ReadStream *stream, MeshAsset::Desc *mesh, uint32_t /*versionNumber*/)
         {
             Serialization::fromBinary(stream, &mesh->VertexCount);
             Serialization::fromBinary(stream, &mesh->IndexCount);
 
-            mesh->Vertices = Serialization::fromBinary<Vertex const *>(stream, mesh->VertexCount * sizeof(Vertex));
-            mesh->Indices = Serialization::fromBinary<uint16_t const *>(stream, mesh->IndexCount * sizeof(uint16_t));
+            mesh->Vertices = Serialization::arrayFromBinary<Vertex>(stream, mesh->VertexCount);
+            mesh->Indices = Serialization::arrayFromBinary<uint16_t>(stream, mesh->IndexCount);
         }
 
         void toBinary(Serialization::WriteStream *stream, ShaderAsset const &shaders)
@@ -897,8 +922,8 @@ namespace IB
             Serialization::toBinary(stream, shaders.VertexShaderSize);
             Serialization::toBinary(stream, shaders.FragShaderSize);
 
-            Serialization::toBinary(stream, shaders.VertexShader, shaders.VertexShaderSize);
-            Serialization::toBinary(stream, shaders.FragShader, shaders.FragShaderSize);
+            Serialization::arrayToBinary(stream, shaders.VertexShader, shaders.VertexShaderSize);
+            Serialization::arrayToBinary(stream, shaders.FragShader, shaders.FragShaderSize);
         }
 
         void fromBinary(Serialization::ReadStream *stream, ShaderAsset *shaders, uint32_t /*versionNumber*/)
@@ -906,8 +931,8 @@ namespace IB
             Serialization::fromBinary(stream, &shaders->VertexShaderSize);
             Serialization::fromBinary(stream, &shaders->FragShaderSize);
 
-            shaders->VertexShader = Serialization::fromBinary<uint8_t const *>(stream, shaders->VertexShaderSize);
-            shaders->FragShader = Serialization::fromBinary<uint8_t const *>(stream, shaders->FragShaderSize);
+            shaders->VertexShader = Serialization::arrayFromBinary<uint8_t>(stream, shaders->VertexShaderSize);
+            shaders->FragShader = Serialization::arrayFromBinary<uint8_t>(stream, shaders->FragShaderSize);
         }
 
         void toBinary(Serialization::WriteStream *stream, MaterialAsset::Desc const &material)
@@ -928,7 +953,7 @@ namespace IB
             Serialization::toBinary(stream, image.Width);
             Serialization::toBinary(stream, image.Height);
 
-            Serialization::toBinary(stream, image.Data, image.Width * image.Height * FormatStride[image.Format]);
+            Serialization::arrayToBinary(stream, image.Data, image.Width * image.Height * FormatStride[image.Format]);
         }
 
         void fromBinary(Serialization::ReadStream *stream, ImageAsset *image, uint32_t /*versionNumber*/)
@@ -936,7 +961,7 @@ namespace IB
             Serialization::fromBinary(stream, &image->Format);
             Serialization::fromBinary(stream, &image->Width);
             Serialization::fromBinary(stream, &image->Height);
-            image->Data = Serialization::fromBinary<uint8_t const *>(stream, image->Width * image->Height * FormatStride[image->Format]);
+            image->Data = Serialization::arrayFromBinary<uint8_t>(stream, image->Width * image->Height * FormatStride[image->Format]);
         }
     }
 } // namespace IB

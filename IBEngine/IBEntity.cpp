@@ -8,6 +8,7 @@
 #include "IBLogging.h"
 #include "IBEditor.h"
 #include "IBMath.h"
+#include "IBJobs.h"
 
 #include <imgui/imgui.h>
 
@@ -190,7 +191,27 @@ namespace IB
 
     namespace
     {
-        const Entity::Data EmptyEntity;
+        Entity::Data const EmptyEntity;
+
+        struct PropertyActivator
+        {
+            Asset::FourCC Type;
+            IPropertyActivator* Activator = nullptr;
+        };
+
+        DynamicArray<PropertyActivator> PropertyActivators;
+
+        IPropertyActivator* getPropertyActivator(Asset::FourCC type)
+        {
+            for (uint32_t i = 0; i < PropertyActivators.count(); i++)
+            {
+                if (PropertyActivators[i].Type == type)
+                {
+                    return PropertyActivators[i].Activator;
+                }
+            }
+            return nullptr;
+        }
 
         ThreadSafePool<Entity::Data> ActiveEntities;
         class EntityAssetStreamer : public IB::Asset::IStreamer
@@ -207,6 +228,7 @@ namespace IB
                 enum State
                 {
                     LoadProperties = 0,
+                    FinalizeLoading,
                     Complete
                 };
 
@@ -291,6 +313,23 @@ namespace IB
                     }
 
                     context->Data = reinterpret_cast<uint64_t>(&entity);
+                    return IB::Asset::wait(loadHandles, handleCount, FinalizeLoading);
+                }
+                else if (context->State == FinalizeLoading)
+                {
+                    IB::Job::Handle loadHandles[IB::Asset::MaxDependencyCount];
+                    uint32_t handleCount = 0;
+
+                    Entity::Data* entity = reinterpret_cast<Entity::Data*>(context->Data);
+                    for (uint32_t i = 0; i < entity->Properties.count(); i++)
+                    {
+                        IPropertyActivator* activator = getPropertyActivator(entity->Properties[i].Type);
+                        if (activator != nullptr)
+                        {
+                            loadHandles[handleCount++] = activator->onLoadAsync(Entity::toHandle(context->Data));
+                        }
+                    }
+
                     return IB::Asset::wait(loadHandles, handleCount, Complete);
                 }
                 else
@@ -339,6 +378,11 @@ namespace IB
     }
 
     // Entity API
+    void addPropertyActivator(Asset::FourCC propertyType, IPropertyActivator* activator)
+    {
+        PropertyActivators.add(PropertyActivator{ propertyType, activator });
+    }
+
     Entity::Handle createEntity(char const* name)
     {
         Entity::Data& entity = ActiveEntities.add();

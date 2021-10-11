@@ -156,6 +156,7 @@ namespace IB
         IB_API Job::Handle releaseResourceAsync(Resource::Handle resource);
         IB_API Job::Handle saveResourceAsync(Resource::Handle resource);
         IB_API Asset::Handle cloneAssetThreadSafe(Asset::Handle asset, FourCC type);
+        IB_API void setResourceAsset(Resource::Handle resourceHandle, Asset::Handle asset);
 
         IB_API Asset::Handle getAssetFromResource(Resource::Handle resourceHandle);
         IB_API char const *getResourcePath(Resource::Handle resourceHandle);

@@ -58,6 +58,12 @@ namespace IB
         IB_API void toBinary(WriteStream *stream, void const *data, size_t size);
 
         template <typename T>
+        void arrayToBinary(WriteStream *stream, T const* data, uint32_t count)
+        {
+            toBinary(stream, data, count * sizeof(T));
+        }
+
+        template <typename T>
         void toBinary(WriteStream *stream, const T& value)
         {
             toBinary(stream, &value, sizeof(T));
@@ -88,16 +94,16 @@ namespace IB
         }
 
         template <typename T>
-        T fromBinary(ReadStream *stream, size_t size)
+        T const* arrayFromBinary(ReadStream *stream, uint32_t count)
         {
-            return reinterpret_cast<T>(fromBinary(stream, size));
+            return reinterpret_cast<T const*>(fromBinary(stream, count * sizeof(T)));
         }
 
         inline void fromBinary(ReadStream *stream, char const **string)
         {
             uint32_t stringSize;
             fromBinary(stream, &stringSize);
-            *string = fromBinary<char const *>(stream, stringSize);
+            *string = arrayFromBinary<char>(stream, stringSize);
         }
 
         namespace Delta

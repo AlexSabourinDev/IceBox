@@ -53,15 +53,24 @@ namespace IB
     } // namespace Serialization
 
     struct Vertex;
-    struct MeshAsset
+    namespace MeshAsset
     {
-        Vertex const *Vertices;
-        uint32_t VertexCount;
+        enum class Handle : uint64_t;
 
-        uint16_t const *Indices;
-        uint32_t IndexCount;
+        struct Desc
+        {
+            Vertex const *Vertices;
+            uint32_t VertexCount;
+
+            uint16_t const *Indices;
+            uint32_t IndexCount;
+        };
+
+        constexpr Handle toHandle(uint64_t value) { return static_cast<Handle>(value); }
+        constexpr uint64_t toValue(Handle handle) { return static_cast<uint64_t>(handle); }
     };
     Asset::FourCC const MeshType = Asset::toFourCC("MESH");
+    inline Asset::Handle toAssetHandle(MeshAsset::Handle handle) { return Asset::toHandle(static_cast<uint64_t>(handle)); };
 
     struct ShaderAsset
     {
@@ -128,6 +137,7 @@ namespace IB
     Asset::FourCC const RendererPropertyType = Asset::toFourCC("RNDR");
     IB_API Property::Handle createRendererProperty(char const* meshPath, char const* materialPath);
     IB_API MaterialAsset::Handle createMaterialAsset(MaterialAsset::Desc asset);
+    IB_API MeshAsset::Handle createMeshAsset(MeshAsset::Desc asset);
 
     struct Camera
     {
@@ -177,8 +187,8 @@ namespace IB
 
     namespace Serialization
     {
-        IB_API void toBinary(Serialization::WriteStream *stream, MeshAsset const &mesh);
-        IB_API void fromBinary(Serialization::ReadStream *stream, MeshAsset *mesh, uint32_t versionNumber);
+        IB_API void toBinary(Serialization::WriteStream *stream, MeshAsset::Desc const &mesh);
+        IB_API void fromBinary(Serialization::ReadStream *stream, MeshAsset::Desc *mesh, uint32_t versionNumber);
 
         IB_API void toBinary(Serialization::WriteStream *stream, ShaderAsset const &shaders);
         IB_API void fromBinary(Serialization::ReadStream *stream, ShaderAsset *shaders, uint32_t versionNumber);

@@ -59,6 +59,7 @@
     </ClInclude>
     <ClInclude Include="IBCollection.h" />
     <ClInclude Include="IBEditor.h" />
+    <ClInclude Include="IBGeometryToolkit.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Platform\IBPlatformWin32.cpp">
@@ -97,6 +98,7 @@
       <Filter>ImGui</Filter>
     </ClCompile>
     <ClCompile Include="IBEditor.cpp" />
+    <ClCompile Include="IBGeometryToolkit.cpp" />
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="..\Assets\Raw\SampleForward.hlsl">

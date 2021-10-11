@@ -109,7 +109,6 @@ namespace IB
                 IB::volatileStore(&context->State, result.Data.Advance.NextState);
                 IB::threadStoreStoreFence(); // Make sure our state value write is visible before our job is written to the job pool.
 
-                IB_ASSERT(result.Data.Advance.DependencyCount > 0, "If we want to advance, we need dependencies.");
                 // Resignal our job once our dependencies are complete.
                 IB::continueJob(context->Handle, result.Data.Advance.Dependencies, result.Data.Advance.DependencyCount); // Job could be signaled before we return
                 return { IB::JobResult::Sleep };
@@ -281,6 +280,14 @@ namespace IB
             volatileStore(&ResourceHashTable[hashTableIndex].Resource, resource);
 
             return Resource::toHandle(pathHash);
+        }
+
+        void setResourceAsset(Resource::Handle resourceHandle, Asset::Handle asset)
+        {
+            uint32_t hashTableIndex = Resource::toValue(resourceHandle) % MaxTableEntries;
+            IB_ASSERT(ResourceHashTable[hashTableIndex].RefCount > 0, "Resource is not loaded!");
+
+            ResourceHashTable[hashTableIndex].Resource->Asset = asset;
         }
 
         IB_API Asset::Handle createAsset(FourCC type)

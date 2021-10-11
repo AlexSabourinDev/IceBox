@@ -26,6 +26,7 @@
     <ClInclude Include="IBEditor.h" />
     <ClInclude Include="IBEngineAPI.h" />
     <ClInclude Include="IBEntity.h" />
+    <ClInclude Include="IBGeometryToolkit.h" />
     <ClInclude Include="IBJobs.h" />
     <ClInclude Include="IBLogging.h" />
     <ClInclude Include="IBMath.h" />
@@ -47,6 +48,7 @@
     <ClCompile Include="IBAsset.cpp" />
     <ClCompile Include="IBEditor.cpp" />
     <ClCompile Include="IBEntity.cpp" />
+    <ClCompile Include="IBGeometryToolkit.cpp" />
     <ClCompile Include="IBJobs.cpp" />
     <ClCompile Include="IBLogging.cpp" />
     <ClCompile Include="IBRenderer.cpp" />

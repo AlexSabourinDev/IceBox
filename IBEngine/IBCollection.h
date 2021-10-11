@@ -57,6 +57,7 @@ namespace IB
             if (count > MaxItemCount)
             {
                 void* newBuffer = memoryAllocate(count * sizeof(T), alignof(T));
+
                 // memcpy is OK here because we're creating an identical
                 // bitwise copy of our object to another memory location.
                 // This is not creating a copy, we're essentially moving our object's location in memory.
@@ -70,9 +71,17 @@ namespace IB
             }
         }
 
+        void setBuffer(T const* sourceBuffer, uint32_t count)
+        {
+            clear();
+            reserve(count);
+            memcpy(Buffer, sourceBuffer, count * sizeof(T));
+            ItemCount = count;
+        }
+
         void clear()
         {
-            for (uint32_t i = 0; i < MaxItemCount; i++)
+            for (uint32_t i = 0; i < ItemCount; i++)
             {
                 data()[i].~T();
             }

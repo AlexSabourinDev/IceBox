@@ -697,9 +697,9 @@ namespace IB
                             end[(axis + 2) % 3] = start[(axis + 2) % 3] = cosf(angle) * cylinderRadius;
                         }
 
-                        axisVerts[i * 2] = IB::Vertex{ {start[0], start[1], start[2]} };
+                        axisVerts[i * 2] = IB::Vertex{ {start[0], start[1], start[2], 0.0f} };
                         axisVerts[i * 2].Normal.w = bitcast<float>(packRGBA(gizmoColors[axis]));
-                        axisVerts[i * 2 + 1] = IB::Vertex{ {end[0], end[1], end[2]} };
+                        axisVerts[i * 2 + 1] = IB::Vertex{ {end[0], end[1], end[2], 0.0f} };
                         axisVerts[i * 2 + 1].Normal.w = bitcast<float>(packRGBA(gizmoColors[axis]));
                     }
 
@@ -712,7 +712,7 @@ namespace IB
                         pos[axis] = cylinderLength;
                         pos[(axis + 1) % 3] = sinf(angle) * coneRadius;
                         pos[(axis + 2) % 3] = cosf(angle) * coneRadius;
-                        axisVerts[i] = IB::Vertex{ {pos[0], pos[1], pos[2]} };
+                        axisVerts[i] = IB::Vertex{ {pos[0], pos[1], pos[2], 0.0f} };
                         axisVerts[i].Normal.w = bitcast<float>(packRGBA(gizmoColors[axis]));
                     }
 
@@ -720,11 +720,11 @@ namespace IB
                     pos[axis] = cylinderLength;
                     pos[(axis + 1) % 3] = 0.0f;
                     pos[(axis + 2) % 3] = 0.0f;
-                    axisVerts[coneSegmentCount] = Vertex{ {pos[0], pos[1], pos[2]} };
+                    axisVerts[coneSegmentCount] = Vertex{ {pos[0], pos[1], pos[2], 0.0f} };
                     axisVerts[coneSegmentCount].Normal.w = bitcast<float>(packRGBA(gizmoColors[axis]));
 
                     pos[axis] = cylinderLength + coneHeight;
-                    axisVerts[coneSegmentCount + 1] = Vertex{ {pos[0], pos[1], pos[2]} };
+                    axisVerts[coneSegmentCount + 1] = Vertex{ {pos[0], pos[1], pos[2], 0.0f} };
                     axisVerts[coneSegmentCount + 1].Normal.w = bitcast<float>(packRGBA(gizmoColors[axis]));
 
                     for (uint16_t i = 0; i < cylinderSegments; i++)

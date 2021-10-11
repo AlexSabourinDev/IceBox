@@ -51,7 +51,7 @@ void processMesh(char const *rawPath, char const *compiledPath)
         return;
     }
 
-    IB::MeshAsset asset = {};
+    IB::MeshAsset::Desc asset = {};
 
     IB_ASSERT(scene->mNumMeshes == 1, "Content processor only supports single mesh scenes right now.");
     for (uint32_t i = 0; i < scene->mNumMeshes; i++)
@@ -65,7 +65,7 @@ void processMesh(char const *rawPath, char const *compiledPath)
             vertices[i].Pos[1] = mesh->mVertices[i].y;
             vertices[i].Pos[2] = mesh->mVertices[i].z;
 
-            IB::Half4 textureCoords = IB::toHalf4({ mesh->mTextureCoords[0][i].x, mesh->mTextureCoords[0][i].y });
+            IB::Half4 textureCoords = IB::toHalf4({ mesh->mTextureCoords[0][i].x, mesh->mTextureCoords[0][i].y, 0.0f, 0.0f });
             vertices[i].Pos[3] = IB::bitcast<float>((textureCoords.y << 16) | textureCoords.x);
 
             vertices[i].Normal[0] = mesh->mNormals[i].x;

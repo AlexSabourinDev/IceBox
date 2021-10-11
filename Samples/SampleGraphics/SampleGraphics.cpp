@@ -219,7 +219,7 @@ int main()
     IB::File::Handle meshFile = IB::openFile("../Assets/Compiled/Box.msh", IB::OpenFileOptions::Read);
     void *meshData = IB::mapFile(meshFile);
 
-    IB::MeshAsset mesh = {};
+    IB::MeshAsset::Desc mesh = {};
     IB::Serialization::ReadStream readStream{reinterpret_cast<uint8_t *>(meshData)};
     fromBinary(&readStream, &versionNumber);
     fromBinary(&readStream, &mesh, versionNumber);
@@ -291,9 +291,9 @@ int main()
                     end[(axis + 2) % 3] = start[(axis + 2) % 3] = cosf(angle) * cylinderRadius;
                 }
 
-                axisVerts[i * 2] = IB::Vertex{{start[0], start[1], start[2]}};
+                axisVerts[i * 2] = IB::Vertex{{start[0], start[1], start[2], 0.0f}};
                 axisVerts[i * 2].Normal.w = IB::bitcast<float>(IB::packRGBA(colors[axis]));
-                axisVerts[i * 2 + 1] = IB::Vertex{{end[0], end[1], end[2]}};
+                axisVerts[i * 2 + 1] = IB::Vertex{{end[0], end[1], end[2], 0.0f}};
                 axisVerts[i * 2 + 1].Normal.w = IB::bitcast<float>(IB::packRGBA(colors[axis]));
             }
 
@@ -306,7 +306,7 @@ int main()
                 pos[axis] = cylinderLength;
                 pos[(axis + 1) % 3] = sinf(angle) * coneRadius;
                 pos[(axis + 2) % 3] = cosf(angle) * coneRadius;
-                axisVerts[i] = IB::Vertex{{pos[0], pos[1], pos[2]}};
+                axisVerts[i] = IB::Vertex{{pos[0], pos[1], pos[2], 0.0f}};
                 axisVerts[i].Normal.w = IB::bitcast<float>(IB::packRGBA(colors[axis]));
             }
 
@@ -314,11 +314,11 @@ int main()
             pos[axis] = cylinderLength;
             pos[(axis + 1) % 3] = 0.0f;
             pos[(axis + 2) % 3] = 0.0f;
-            axisVerts[coneSegmentCount] = IB::Vertex{{pos[0], pos[1], pos[2]}};
+            axisVerts[coneSegmentCount] = IB::Vertex{{pos[0], pos[1], pos[2], 0.0f}};
             axisVerts[coneSegmentCount].Normal.w = IB::bitcast<float>(IB::packRGBA(colors[axis]));
 
             pos[axis] = cylinderLength + coneHeight;
-            axisVerts[coneSegmentCount + 1] = IB::Vertex{{pos[0], pos[1], pos[2]}};
+            axisVerts[coneSegmentCount + 1] = IB::Vertex{{pos[0], pos[1], pos[2], 0.0f}};
             axisVerts[coneSegmentCount + 1].Normal.w = IB::bitcast<float>(IB::packRGBA(colors[axis]));
 
             for (uint32_t i = 0; i < cylinderSegments; i++)

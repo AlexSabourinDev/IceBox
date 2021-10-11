@@ -77,6 +77,10 @@ namespace IB
 
     struct Float4
     {
+        constexpr Float4() = default;
+        constexpr Float4(float ax, float ay, float az, float aw) : x(ax), y(ay), z(az), w(aw) {}
+        constexpr Float4(Float3 xyz, float aw = 0.0f) : x(xyz.x), y(xyz.y), z(xyz.z), w(aw) {}
+
         float &operator[](uint32_t i) { return (&x)[i]; }
         float operator[](uint32_t i) const { return (&x)[i]; }
         float x, y, z, w;
@@ -208,6 +212,7 @@ namespace IB
     inline Float3 operator/(Float3 left, float right);
     inline Float3 operator*(Float3 left, float right);
     inline Float3 operator*(float left, Float3 right);
+    inline Float3 operator*(Float3 left, Float3 right);
     inline Float3 rcp(Float3 value);
     inline Float3 mul(Float3 left, Float3 right);
     inline Float3 min(Float3 left, Float3 right);
@@ -358,6 +363,7 @@ namespace IB
     inline Float3 operator/(Float3 left, float right) { return Float3{ left.x / right, left.y / right, left.z / right }; }
     inline Float3 operator*(Float3 left, float right) { return Float3{ left.x * right, left.y * right, left.z * right }; }
     inline Float3 operator*(float left, Float3 right) { return right * left; }
+    inline Float3 operator*(Float3 left, Float3 right) { return Float3{ left.x * right.x, left.y * right.y, left.z * right.z }; }
     inline Float3 rcp(Float3 value) { return Float3{ 1.0f / value.x, 1.0f / value.y, 1.0f / value.z }; }
     inline Float3 mul(Float3 left, Float3 right) { return Float3{ left.x * right.x, left.y * right.y, left.z * right.z }; }
     inline Float3 min(Float3 left, Float3 right) { return Float3{ fminf(left.x, right.x), fminf(left.y, right.y), fminf(left.z, right.z) }; }
@@ -632,11 +638,11 @@ namespace IB
         Float3 forward = rotate(transform.Rotation, Float3{ 0.0f, transform.Scale, 0.0f });
         Float3 up = rotate(transform.Rotation, Float3{ 0.0f, 0.0f, transform.Scale });
         return Mat3x4
-        {
-            right.x, forward.x, up.x, transform.Position.x,
-            right.y, forward.y, up.y, transform.Position.y,
-            right.z, forward.z, up.z, transform.Position.z,
-        };
+        {{
+            { right.x, forward.x, up.x, transform.Position.x },
+            { right.y, forward.y, up.y, transform.Position.y },
+            { right.z, forward.z, up.z, transform.Position.z }
+        }};
     }
 
     inline Mat3x4 toInvMatrix(Transform const& transform)

@@ -7,6 +7,11 @@ namespace IB
 {
     struct Transform;
 
+    namespace Job
+    {
+        enum class Handle : uint64_t;
+    }
+
     namespace Asset
     {
         enum FourCC : uint32_t;
@@ -46,6 +51,12 @@ namespace IB
     inline Entity::Handle toEntityHandle(Asset::Handle asset) { return Entity::toHandle(Asset::toValue(asset)); }
     inline Asset::Handle toAssetHandle(Entity::Handle entity) { return Asset::toHandle(Entity::toValue(entity)); }
 
+    class IPropertyActivator
+    {
+    public:
+        virtual Job::Handle onLoadAsync(Entity::Handle entity) const = 0;
+    };
+
     IB_API void initEntitySystem();
     IB_API void killEntitySystem();
 
@@ -53,6 +64,8 @@ namespace IB
     IB_API Entity::Handle createEntity(char const* name = "");
     IB_API void destroyEntity(Entity::Handle entity);
     IB_API void addPropertyToEntity(Entity::Handle entity, Asset::FourCC type, Property::Handle propertyHandle);
+
+    IB_API void addPropertyActivator(Asset::FourCC propertyType, IPropertyActivator* activator);
 
     namespace Editor
     {
