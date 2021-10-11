@@ -38,7 +38,7 @@ namespace IB
     struct WindowMessagePlatformData;
     namespace Window
     {
-        enum Handle : uintptr_t;
+        enum class Handle : uintptr_t;
     }
     struct RendererDesc
     {
@@ -78,12 +78,12 @@ namespace IB
 
     namespace Mesh
     {
-        enum Handle : uint32_t;
+        enum class Handle : uint32_t;
         constexpr Handle toHandle(uint32_t value) { return static_cast<Handle>(value); }
         constexpr uint32_t toValue(Handle handle) { return static_cast<uint32_t>(handle); }
     };
 
-    constexpr Mesh::Handle InvalidMesh = Mesh::toHandle(0);
+    constexpr Mesh::Handle InvalidMesh = Mesh::toHandle(UINT32_MAX);
 
 
     namespace ImageFormat
@@ -105,12 +105,12 @@ namespace IB
 
     namespace Image
     {
-        enum Handle : uint32_t;
+        enum class Handle : uint32_t;
         constexpr Handle toHandle(uint32_t value) { return static_cast<Handle>(value); }
         constexpr uint32_t toValue(Handle handle) { return static_cast<uint32_t>(handle); }
     };
 
-    constexpr Image::Handle InvalidImage = Image::toHandle(0);
+    constexpr Image::Handle InvalidImage = Image::toHandle(UINT32_MAX);
 
     constexpr uint32_t toRGBA(float r, float g, float b, float a)
     { 
@@ -128,12 +128,12 @@ namespace IB
 
     namespace Material
     {
-        enum Handle : uint32_t;
+        enum class Handle : uint32_t;
         constexpr Handle toHandle(uint32_t value) { return static_cast<Handle>(value); }
         constexpr uint32_t toValue(Handle handle) { return static_cast<uint32_t>(handle); }
     };
 
-    constexpr Material::Handle InvalidMaterial = Material::toHandle(0);
+    constexpr Material::Handle InvalidMaterial = Material::toHandle(UINT32_MAX);
 
     struct DirectionalLightDesc
     {
@@ -144,7 +144,7 @@ namespace IB
 
     namespace Light
     {
-        enum Handle : uint32_t;
+        enum class Handle : uint32_t;
         constexpr Handle toHandle(uint32_t value) { return static_cast<Handle>(value); }
         constexpr uint32_t toValue(Handle handle) { return static_cast<uint32_t>(handle); }
     };
@@ -155,7 +155,7 @@ namespace IB
     {
         struct MeshInstances
         {
-            Mesh::Handle Mesh;
+            Mesh::Handle Mesh = InvalidMesh;
             Mat3x4 const *Transforms = nullptr;
             uint32_t Count = 0;
         };

@@ -40,7 +40,7 @@ namespace
                     imageDesc.Width = image.Width;
                     imageDesc.Height = image.Height;
                     imageDesc.Data = image.Data;
-                    *imageHandle = IB::createImage(imageDesc);
+                    *imageHandle = IB::Image::toValue(IB::createImage(imageDesc));
 
                     return IB::JobResult::Complete;
                 },
@@ -63,7 +63,7 @@ namespace
 
     struct MeshData
     {
-        IB::Mesh::Handle RendererMesh;
+        IB::Mesh::Handle RendererMesh = IB::InvalidMesh;
         IB::DynamicArray<IB::SimdTriangleSet> Triangles;
         uint32_t TriangleCount = 0;
     };
@@ -782,10 +782,10 @@ namespace IB
             }
 
             CameraProperty::Handle cameraProperty = toCameraHandle(getPropertyFromEntity(gatherDesc.Camera, CameraPropertyType));
-            IB_ASSERT(cameraProperty != InvalidProperty, "Camera handle should have a camera property!");
+            IB_ASSERT(cameraProperty != InvalidCameraProperty, "Camera handle should have a camera property!");
 
             Mat4x4 viewProj = Mat4x4::identity();
-            if (cameraProperty != InvalidProperty)
+            if (cameraProperty != InvalidCameraProperty)
             {
                 viewProj = getViewProjection(cameraProperty, cameraTransform);
             }

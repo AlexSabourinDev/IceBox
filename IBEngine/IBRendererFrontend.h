@@ -12,7 +12,7 @@ namespace IB
 
     namespace Asset
     {
-        enum Handle : uint64_t;
+        enum class Handle : uint64_t;
         constexpr Handle toHandle(uint64_t value);
 
         enum FourCC : uint32_t;
@@ -21,24 +21,24 @@ namespace IB
 
     namespace Property
     {
-        enum Handle : uint64_t;
+        enum class Handle : uint64_t;
         constexpr Handle toHandle(uint64_t value);
         constexpr uint64_t toValue(Handle handle);
     }
 
     namespace Cell
     {
-        enum Handle : uint64_t;
+        enum class Handle : uint64_t;
     }
 
     namespace Entity
     {
-        enum Handle : uint64_t;
+        enum class Handle : uint64_t;
     }
 
     namespace Job
     {
-        enum Handle : uint64_t;
+        enum class Handle : uint64_t;
     }
 
     struct ViewDesc;
@@ -75,7 +75,7 @@ namespace IB
 
     namespace MaterialAsset
     {
-        enum Handle : uint64_t;
+        enum class Handle : uint64_t;
 
         struct Desc
         {
@@ -106,7 +106,7 @@ namespace IB
 
     namespace Window
     {
-        enum Handle : uintptr_t;
+        enum class Handle : uintptr_t;
     }
     struct RendererFrontendDesc
     {
@@ -143,10 +143,11 @@ namespace IB
 
     namespace CameraProperty
     {
-        enum Handle : uint64_t;
+        enum class Handle : uint64_t;
         constexpr Handle toHandle(uint64_t value) { return static_cast<Handle>(value); }
         constexpr uint64_t toValue(Handle handle) { return static_cast<uint64_t>(handle); }
     }
+    constexpr CameraProperty::Handle InvalidCameraProperty = CameraProperty::toHandle(UINT64_MAX);
 
     inline Property::Handle toPropertyHandle(CameraProperty::Handle cameraHandle) { return Property::toHandle(CameraProperty::toValue(cameraHandle)); }
     inline CameraProperty::Handle toCameraHandle(Property::Handle cameraHandle) { return CameraProperty::toHandle(Property::toValue(cameraHandle)); }

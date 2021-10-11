@@ -101,13 +101,6 @@ namespace IB
             Transform* transform = reinterpret_cast<Transform*>(Asset::toValue(asset));
 
             PropertyEditorState* editorState = reinterpret_cast<PropertyEditorState*>(parentData);
-            Entity::Handle parentEntity = editorState->EntityHandle;
-            if (isSelected(parentEntity))
-            {
-                static ImGizmo::TransformGizmo transformState;
-                ImGizmo::transform(transform, &transformState);
-            }
-
             if (propertyHeader("Transform", &editorState->DestroyProperty))
             {
                 if (ImGui::BeginTable("Inspector Table", 2))

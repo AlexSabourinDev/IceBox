@@ -9,28 +9,28 @@ namespace IB
 {
     namespace Mesh
     {
-        enum Handle : uint32_t;
+        enum class Handle : uint32_t;
     }
 
     namespace Material
     {
-        enum Handle : uint32_t;
+        enum class Handle : uint32_t;
     }
 
     namespace Asset
     {
-        enum Handle : uint64_t;
+        enum class Handle : uint64_t;
         enum FourCC : uint32_t;
     }
 
     namespace Resource
     {
-        enum Handle : uint32_t;
+        enum class Handle : uint32_t;
     }
 
     namespace Entity
     {
-        enum Handle : uint64_t;
+        enum class Handle : uint64_t;
     }
 
     struct WindowMessage;

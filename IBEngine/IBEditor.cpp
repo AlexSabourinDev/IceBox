@@ -423,6 +423,20 @@ namespace IB
             // - ImGizmo
             // - Editor render window functionality
 
+            if(SelectedEntity != InvalidEntity)
+            {
+                Property::Handle transformProperty = getPropertyFromEntity(SelectedEntity, TransformPropertyType);
+                if (transformProperty != InvalidProperty)
+                {
+                    Transform selectedTransform = getLocalTransform(transformProperty);
+
+                    static ImGizmo::TransformGizmo transformState;
+                    ImGizmo::transform(&selectedTransform, &transformState);
+
+                    setLocalTransform(transformProperty, selectedTransform);
+                }
+            }
+
             const bool canWindowConsumeInput = !ImGui::GetIO().WantCaptureMouse && !ImGizmo::hasFocusedGizmo();
             if (canWindowConsumeInput)
             {
@@ -476,11 +490,11 @@ namespace IB
                 if (Input::isButtonClicked(Mouse::Left))
                 {
                     CameraProperty::Handle cameraProperty = toCameraHandle(getPropertyFromEntity(CameraHandle, CameraPropertyType));
-                    IB_ASSERT(cameraProperty != InvalidProperty, "Camera handle should have a camera property!");
+                    IB_ASSERT(cameraProperty != InvalidCameraProperty, "Camera handle should have a camera property!");
 
                     Transform cameraTransform = {};
                     Mat4x4 invViewProj = Mat4x4::identity();
-                    if (cameraProperty != InvalidProperty)
+                    if (cameraProperty != InvalidCameraProperty)
                     {
                         Property::Handle transformProperty = getPropertyFromEntity(CameraHandle, TransformPropertyType);
                         if (transformProperty != InvalidProperty)
@@ -868,10 +882,10 @@ namespace IB
             }
 
             CameraProperty::Handle cameraProperty = toCameraHandle(getPropertyFromEntity(FrameCamera, CameraPropertyType));
-            IB_ASSERT(cameraProperty != InvalidProperty, "Camera handle should have a camera property!");
+            IB_ASSERT(cameraProperty != InvalidCameraProperty, "Camera handle should have a camera property!");
 
             Mat4x4 invViewProj = Mat4x4::identity();
-            if (cameraProperty != InvalidProperty)
+            if (cameraProperty != InvalidCameraProperty)
             {
                 invViewProj = getInvViewProjection(cameraProperty, cameraTransform);
             }
@@ -958,10 +972,10 @@ namespace IB
             }
 
             CameraProperty::Handle cameraProperty = toCameraHandle(getPropertyFromEntity(FrameCamera, CameraPropertyType));
-            IB_ASSERT(cameraProperty != InvalidProperty, "Camera handle should have a camera property!");
+            IB_ASSERT(cameraProperty != InvalidCameraProperty, "Camera handle should have a camera property!");
 
             Mat4x4 invViewProj = Mat4x4::identity();
-            if (cameraProperty != InvalidProperty)
+            if (cameraProperty != InvalidCameraProperty)
             {
                 invViewProj = getInvViewProjection(cameraProperty, cameraTransform);
             }

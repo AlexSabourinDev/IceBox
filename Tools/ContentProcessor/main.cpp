@@ -65,7 +65,8 @@ void processMesh(char const *rawPath, char const *compiledPath)
             vertices[i].Pos[1] = mesh->mVertices[i].y;
             vertices[i].Pos[2] = mesh->mVertices[i].z;
 
-            vertices[i].Pos[3] = IB::bitcast<float>(IB::toHalf4({ mesh->mTextureCoords[0][i].x, mesh->mTextureCoords[0][i].y }).xy);
+            IB::Half4 textureCoords = IB::toHalf4({ mesh->mTextureCoords[0][i].x, mesh->mTextureCoords[0][i].y });
+            vertices[i].Pos[3] = IB::bitcast<float>((textureCoords.y << 16) | textureCoords.x);
 
             vertices[i].Normal[0] = mesh->mNormals[i].x;
             vertices[i].Normal[1] = mesh->mNormals[i].y;

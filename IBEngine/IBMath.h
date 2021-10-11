@@ -84,7 +84,7 @@ namespace IB
 
     struct Half4
     {
-        uint32_t xy, zw;
+        uint16_t x, y, z, w;
     };
 
     struct Quaternion
@@ -344,7 +344,7 @@ namespace IB
 
         uint32_t alignas(16) packedData[4];
         _mm_store_si128(reinterpret_cast<__m128i*>(packedData), packedDataSSE);
-        return Half4{ packedData[0], packedData[1] };
+        return Half4{ packedData[0] & 0xFFFF, packedData[0] >> 16, packedData[1] & 0xFFFF, packedData[1] >> 16 };
     }
 
     inline Float3& Float3::operator+=(Float3 rhs)
@@ -760,7 +760,7 @@ namespace IB
     inline SimdFloat bitNot(SimdFloat value);
     inline bool any(SimdFloat comparison, uint32_t mask = 0xFFFFFFFF);
     inline bool all(SimdFloat comparison, uint32_t mask = 0xFFFFFFFF);
-    inline uint32_t count(SimdFloat comparison, uint32_t mask = 0xFFFFFFFF);
+    inline uint32_t trueCount(SimdFloat comparison, uint32_t mask = 0xFFFFFFFF);
     inline SimdFloat pack(SimdFloat value, SimdFloat comparison, uint32_t mask = 0xFFFFFFFF);
 
     inline SimdFloat3 splat(Float3 value);
@@ -836,7 +836,7 @@ namespace IB
         return (_mm_movemask_ps(comparison.Values) & mask) == mask;
     }
 
-    inline uint32_t count(SimdFloat comparison, uint32_t mask)
+    inline uint32_t trueCount(SimdFloat comparison, uint32_t mask)
     {
         return _mm_popcnt_u32(_mm_movemask_ps(comparison.Values) & mask);
     }
@@ -987,7 +987,7 @@ namespace IB
             __m128i const shuffle = SimdPackMasks[resultBits];
 
             SimdRayTriangleResult results;
-            results.Count = count(resultMask, triangleMask);
+            results.Count = trueCount(resultMask, triangleMask);
             simdGet(pack(intersectionPositions, resultMask, triangleMask), results.Points);
             simdGet(pack(t, resultMask, triangleMask), results.RayT);
 

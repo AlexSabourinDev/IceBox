@@ -8,12 +8,12 @@ namespace IB
 {
     namespace Job
     {
-        enum Handle : uint64_t;
+        enum class Handle : uint64_t;
     }
 
     namespace Resource
     {
-        enum Handle : uint32_t {};
+        enum class Handle : uint32_t {};
         constexpr Handle toHandle(uint32_t value) { return static_cast<Handle>(value); }
         constexpr uint32_t toValue(Handle handle) { return static_cast<uint32_t>(handle); }
     }
@@ -30,7 +30,7 @@ namespace IB
         }
 
         // Asset handle
-        enum Handle : uint64_t {};
+        enum class Handle : uint64_t {};
         constexpr Handle toHandle(uint64_t value) { return static_cast<Handle>(value); }
         constexpr uint64_t toValue(Handle handle) { return static_cast<uint64_t>(handle); }
     }

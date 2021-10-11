@@ -9,7 +9,7 @@ namespace IB
 {
     namespace File
     {
-        enum Handle : uintptr_t;
+        enum class Handle : uintptr_t;
     }
 
     namespace Serialization

@@ -126,7 +126,7 @@ namespace IB
     struct WindowMessagePlatformData;
     namespace Window
     {
-        enum Handle : uintptr_t {};
+        enum class Handle : uintptr_t {};
         constexpr Handle toHandle(uintptr_t value) { return static_cast<Handle>(value); }
         constexpr uintptr_t toValue(Handle handle) { return static_cast<uintptr_t>(handle); }
     };
@@ -242,7 +242,7 @@ namespace IB
     // File API
     namespace File
     {
-        enum Handle : uintptr_t {};
+        enum class Handle : uintptr_t {};
         constexpr Handle toHandle(uintptr_t value) { return static_cast<Handle>(value); }
         constexpr uintptr_t toValue(Handle handle) { return static_cast<uintptr_t>(handle); }
     };

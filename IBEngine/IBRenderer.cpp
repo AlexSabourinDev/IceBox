@@ -2048,7 +2048,7 @@ namespace IB
         }
 
         uint32_t chunkOffset = Geometry.NextOffset % MeshBufferChunkSize;
-        // We're out of memory. Try to pack the empty space caused by free-ed geometry and try again
+        // We're out of memory. Try to pack the empty space caused by freed geometry and try again
         if (chunkOffset + vertexSize + indexSize > MeshBufferChunkSize)
         {
             uint32_t chunkIndex = Geometry.NextOffset / MeshBufferChunkSize;
@@ -2078,8 +2078,10 @@ namespace IB
                 }
             }
 
-            IB_ASSERT(copyCount > 0, "We should be copying at least a single buffer!");
-            vkCmdCopyBuffer(commandBuffer, Geometry.MeshDataBuffers, Geometry.MeshDataBuffers, copyCount, copyRegions);
+            if (copyCount > 0)
+            {
+                vkCmdCopyBuffer(commandBuffer, Geometry.MeshDataBuffers, Geometry.MeshDataBuffers, copyCount, copyRegions);
+            }
         }
 
         IB_ASSERT((Geometry.NextOffset % MeshBufferChunkSize) + vertexSize + indexSize <= MeshBufferChunkSize, "After packing we're still out of memory. Our buffer is likely not large enough.");
@@ -2122,12 +2124,12 @@ namespace IB
             Staging.Transfers[Queue::Transfer].Commands[Staging.Transfers[Queue::Transfer].ActiveCount++] = commandBuffer;
         }
 
-        return Mesh::toHandle(meshIndex + 1);
+        return Mesh::toHandle(meshIndex);
     }
 
     void destroyMesh(Mesh::Handle mesh)
     {
-        uint32_t meshIndex = mesh - 1;
+        uint32_t meshIndex = Mesh::toValue(mesh);
         Geometry.MeshAllocations[meshIndex] = false;
         Geometry.FreeIndices[Geometry.FreeIndexCount++] = meshIndex;
     }
@@ -2287,14 +2289,14 @@ namespace IB
             descriptorWrite->pImageInfo = imageInfo;
         }
 
-        return Image::toHandle(imageIndex + 1);
+        return Image::toHandle(imageIndex);
     }
 
     Material::Handle createMaterial(ForwardDesc const &desc)
     {
         ForwardMaterial matData = {};
         matData.AlbedoTint = desc.AlbedoTint;
-        matData.AlbedoIndex = desc.AlbedoImage - 1;
+        matData.AlbedoIndex = Image::toValue(desc.AlbedoImage);
 
         uint32_t instanceIndex = ForwardPass.InstanceCount++;
         IB_ASSERT(instanceIndex < MaxMaterialInstanceCount, "Too many materials!");
@@ -2335,7 +2337,7 @@ namespace IB
             Staging.Transfers[Queue::Transfer].Commands[Staging.Transfers[Queue::Transfer].ActiveCount++];
         }
 
-        return Material::toHandle(instanceIndex + 1);
+        return Material::toHandle(instanceIndex);
     }
 
     Light::Handle createLight(DirectionalLightDesc const& desc)
@@ -2532,15 +2534,15 @@ namespace IB
                     for (uint32_t i = 0; i < pass->BatchCount; i++)
                     {
                         ViewDesc::Batch *batch = &pass->Batches[i];
-                        uint32_t materialIndex = batch->Material - 1;
+                        uint32_t materialIndex = Material::toValue(batch->Material);
 
                         if (ForwardPass.Pipelines[passIndex] != VK_NULL_HANDLE)
                         {
                             vkCmdBindPipeline(currentCommands, VK_PIPELINE_BIND_POINT_GRAPHICS, ForwardPass.Pipelines[passIndex]);
 
-                            for (uint32_t mesh = 0; mesh < batch->MeshCount && batch->Meshes[mesh].Mesh > 0; mesh++)
+                            for (uint32_t mesh = 0; mesh < batch->MeshCount && batch->Meshes[mesh].Mesh != InvalidMesh; mesh++)
                             {
-                                uint32_t meshIndex = batch->Meshes[mesh].Mesh - 1;
+                                uint32_t meshIndex = Mesh::toValue(batch->Meshes[mesh].Mesh);
 
                                 vkCmdBindIndexBuffer(currentCommands, Geometry.MeshDataBuffers, Geometry.Meshes[meshIndex].IndexOffset, VK_INDEX_TYPE_UINT16);
                                 for (uint32_t inst = 0; inst < batch->Meshes[mesh].Count; inst++)
@@ -2562,7 +2564,7 @@ namespace IB
                                     // No lighting for gizmos
                                     if (passIndex != ViewDesc::ForwardPass::DebugOverlay)
                                     {
-                                        pushConstant.LightIndex = view.DirectionalLight;
+                                        pushConstant.LightIndex = Light::toValue(view.DirectionalLight);
                                     }
 
                                     vkCmdPushConstants(currentCommands, ForwardPass.PipelineLayout,

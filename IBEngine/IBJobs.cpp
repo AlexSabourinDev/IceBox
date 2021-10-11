@@ -290,7 +290,7 @@ namespace
         uint32_t validDependencyCount = dependencyCount;
         for (uint32_t dep = 0; dep < dependencyCount; dep++)
         {
-            if (IB::Job::toValue(dependencies[dep]) == IB::InvalidJob)
+            if (dependencies[dep] == IB::InvalidJob)
             {
                 validDependencyCount--;
             }
@@ -316,7 +316,7 @@ namespace
         // Add our job to the wait list of all our dependencies
         for (uint32_t dep = 0; dep < dependencyCount; dep++)
         {
-            if (IB::Job::toValue(dependencies[dep]) == IB::InvalidJob)
+            if (dependencies[dep] == IB::InvalidJob)
             {
                 continue;
             }

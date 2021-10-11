@@ -12,20 +12,20 @@ namespace IB
         enum FourCC : uint32_t;
         constexpr FourCC toFourCC(char const (&text)[5]);
 
-        enum Handle : uint64_t;
+        enum class Handle : uint64_t;
         constexpr Handle toHandle(uint64_t value);
         constexpr uint64_t toValue(Handle handle);
     }
 
     namespace Resource
     {
-        enum Handle : uint32_t;
+        enum class Handle : uint32_t;
         constexpr Handle toHandle(uint32_t value);
     }
 
     namespace Property
     {
-        enum Handle : uint64_t { };
+        enum class Handle : uint64_t { };
         constexpr Handle toHandle(uint64_t value) { return static_cast<Handle>(value); }
         constexpr uint64_t toValue(Handle handle) { return static_cast<uint64_t>(handle); }
     };
@@ -37,7 +37,7 @@ namespace IB
     // Entity API
     namespace Entity
     {
-        enum Handle : uint64_t {};
+        enum class Handle : uint64_t {};
         constexpr Handle toHandle(uint64_t value) { return static_cast<Handle>(value); }
         constexpr uint64_t toValue(Handle handle) { return static_cast<uint64_t>(handle); }
     };
@@ -75,7 +75,7 @@ namespace IB
     // Cell API
     namespace Cell
     {
-        enum Handle : uint64_t {};
+        enum class Handle : uint64_t {};
         constexpr Handle toHandle(uint64_t value) { return static_cast<Handle>(value); }
         constexpr uint64_t toValue(Handle handle) { return static_cast<uint64_t>(handle); }
     };
