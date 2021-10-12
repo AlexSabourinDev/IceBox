@@ -361,6 +361,19 @@ namespace IB
         return Property::toHandle(reinterpret_cast<uint64_t>(&cameraProperty));
     }
 
+    Camera getCamera(CameraProperty::Handle cameraProperty)
+    {
+        CameraProperty::Data* camera = toCameraProperty(cameraProperty);
+        return camera->Camera;
+    }
+
+    void setCamera(CameraProperty::Handle cameraProperty, Camera camera)
+    {
+        CameraProperty::Data* cameraData = toCameraProperty(cameraProperty);
+        cameraData->Camera = camera;
+        updateCameraProjection(cameraData);
+    }
+
     Mat4x4 getViewProjection(CameraProperty::Handle cameraHandle, Transform const& worldTransform)
     {
         CameraProperty::Data* camera = toCameraProperty(cameraHandle);
@@ -589,16 +602,21 @@ namespace IB
                 RendererProperty *renderer = toRendererProperty(asset);
                 if (ImGui::BeginTable("Inspector Table", 2))
                 {
+                    ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed);
+                    ImGui::TableSetupColumn("Data", ImGuiTableColumnFlags_None);
+
                     ImGui::TableNextColumn();
                     ImGui::Text("Mesh");
 
                     ImGui::TableNextColumn();
+                    ImGui::SetNextItemWidth(-FLT_MIN);
                     ImGui::Text(Asset::getResourcePath(renderer->MeshResource));
 
                     ImGui::TableNextColumn();
                     ImGui::Text("Material");
 
                     ImGui::TableNextColumn();
+                    ImGui::SetNextItemWidth(-FLT_MIN);
                     ImGui::Text(Asset::getResourcePath(renderer->MaterialResource));
 
                     ImGui::EndTable();
@@ -725,10 +743,10 @@ namespace IB
         return MaterialAsset::toHandle(reinterpret_cast<uint64_t>(&materialData));
     }
 
-    MeshAsset::Handle createMeshAsset(MeshAsset::Desc meshAsset)
+    Job::Handle createMeshAssetAsync(MeshAsset::Desc meshAsset, MeshAsset::Handle* meshHandle)
     {
         MeshData& meshData = MeshDataPool.add();
-        IB::launchJob([meshAsset, &meshData]()
+        Job::Handle job = launchJob([meshAsset, &meshData]()
         {
             IB::MeshDesc meshDesc = {};
             meshDesc.Vertices.Data = meshAsset.Vertices;
@@ -743,7 +761,16 @@ namespace IB
 
         setCollisionShape(&meshData, meshAsset);
 
-        return MeshAsset::toHandle(reinterpret_cast<uint64_t>(&meshData));
+        *meshHandle = MeshAsset::toHandle(reinterpret_cast<uint64_t>(&meshData));
+        return job;
+    }
+
+    void setRendererMesh(Property::Handle rendererProperty, Resource::Handle resource)
+    {
+        RendererProperty* renderer = toRendererProperty(rendererProperty);
+        Asset::acquireResource(resource);
+        Asset::releaseResourceAsync(renderer->MeshResource);
+        renderer->MeshResource = resource;
     }
 
     ViewDesc gatherCellView(GatherCellViewDesc const& gatherDesc)

@@ -9,6 +9,7 @@
 #include "IBEntity.h"
 #include "IBJobs.h"
 #include "IBLogging.h"
+#include "IBGeometryToolkit.h"
 
 #include <imgui/imgui.h>
 
@@ -221,6 +222,7 @@ namespace IB
             setLocalTransform(transformProperty, { {0.0f, -5.0f, 0.0f}, Quaternion::identity(), 1.0f });
 
             Camera camera = {};
+            camera.Aspect = static_cast<float>(WindowWidth) / static_cast<float>(WindowHeight);
             Property::Handle cameraProperty = createCameraProperty(camera);
             addPropertyToEntity(CameraHandle, CameraPropertyType, cameraProperty);
         }
@@ -298,6 +300,7 @@ namespace IB
                     {
                         if (*state->CellResource != InvalidResource)
                         {
+                            SelectedEntity = InvalidEntity;
                             Asset::releaseResourceAsync(*state->CellResource);
                         }
 
@@ -430,10 +433,27 @@ namespace IB
                 {
                     Transform selectedTransform = getLocalTransform(transformProperty);
 
-                    static ImGizmo::TransformGizmo transformState;
-                    ImGizmo::transform(&selectedTransform, &transformState);
+                    Property::Handle lineSweepProperty = getPropertyFromEntity(SelectedEntity, LineSweepPropertyType);
+                    if (lineSweepProperty != InvalidProperty)
+                    {
+                        LineSweepDesc* sweep = getLineSweep(lineSweepProperty);
+                        for (uint32_t i = 0; i < sweep->Points.count(); i++)
+                        {
+                            // TODO: translation gizmo state needs to be unique per-point
+                            static ImGizmo::TranslationGizmo translateState;
 
-                    setLocalTransform(transformProperty, selectedTransform);
+                            Float3 worldPoint = transformPoint(selectedTransform, sweep->Points[i]);
+                            ImGizmo::translation(&worldPoint, Quaternion::identity(), &translateState, i);
+                            sweep->Points[i] = inverseTransformPoint(selectedTransform, worldPoint);
+                        }
+                    }
+                    else
+                    {
+                        static ImGizmo::TransformGizmo transformState;
+                        ImGizmo::transform(&selectedTransform, &transformState);
+
+                        setLocalTransform(transformProperty, selectedTransform);
+                    }
                 }
             }
 
@@ -589,9 +609,16 @@ namespace IB
             switch (message.Type)
             {
             case WindowMessage::Resize:
+            {
                 WindowWidth = message.Data.Resize.Width;
                 WindowHeight = message.Data.Resize.Height;
+
+                CameraProperty::Handle cameraProperty = toCameraHandle(getPropertyFromEntity(CameraHandle, CameraPropertyType));
+                Camera camera = IB::getCamera(cameraProperty);
+                camera.Aspect = static_cast<float>(WindowWidth) / static_cast<float>(WindowHeight);
+                setCamera(cameraProperty, camera);
                 return true;
+            }
             case WindowMessage::Create:
                 WindowWidth = message.Data.Create.Width;
                 WindowHeight = message.Data.Create.Height;
@@ -619,10 +646,40 @@ namespace IB
             Entity::Handle FrameCamera;
 
             void* FocusedGizmo = nullptr;
+            uint32_t FocusedGizmoId = 0;
 
-            bool canFocus()
+            bool isFocused(void *gizmo, uint32_t gizmoId)
             {
-                return !ImGui::GetIO().WantCaptureMouse && !Editor::EditorFocus;
+                bool isFocused = false;
+                if (FocusedGizmo != nullptr)
+                {
+                    isFocused = FocusedGizmo == gizmo && FocusedGizmoId == gizmoId;
+                }
+
+                return isFocused;
+            }
+
+            bool canFocus(void* gizmo, uint32_t gizmoId)
+            {
+                bool canFocus = !ImGui::GetIO().WantCaptureMouse && !Editor::EditorFocus;
+                if (canFocus)
+                {
+                    if (FocusedGizmo != nullptr)
+                    {
+                        canFocus = isFocused(gizmo, gizmoId);
+                    }
+                    else
+                    {
+                        canFocus = true; // We can focus if there's no focused gizmo
+                    }
+                }
+                return canFocus;
+            }
+
+            void setFocus(void *gizmo, uint32_t gizmoId)
+            {
+                FocusedGizmo = gizmo;
+                FocusedGizmoId = gizmoId;
             }
         }
 
@@ -872,7 +929,7 @@ namespace IB
             return FocusedGizmo != nullptr;
         }
 
-        void translation(Float3* position, Quaternion rotation, TranslationGizmo* state)
+        void translation(Float3* position, Quaternion rotation, TranslationGizmo* state, uint32_t id)
         {
             Transform cameraTransform = {};
             Property::Handle transformProperty = getPropertyFromEntity(FrameCamera, TransformPropertyType);
@@ -897,17 +954,17 @@ namespace IB
                 rotate(rotation, Float3{0.0f, 0.0f, 1.0f}),
             };
 
-            if (canFocus())
+            if (canFocus(state, id))
             {
                 if (!Input::isButtonPressed(Mouse::Left))
                 {
                     state->ActiveAxis = 3;
 
-                        // Clear out our focus if we were active
-                        if (FocusedGizmo == state)
-                        {
-                            FocusedGizmo = nullptr;
-                        }
+                    // Clear out our focus if we were active
+                    if (isFocused(state, id))
+                    {
+                        setFocus(nullptr, 0);
+                    }
                 }
                 else
                 {
@@ -921,14 +978,14 @@ namespace IB
                             if (doesLineCylinderIntersect(rayStart, rayEnd, *position, *position + axies[i], 0.1f))
                             {
                                 // Set our gizmo as the active gizmo
-                                FocusedGizmo = state;
+                                setFocus(state, id);
 
                                 state->ActiveAxis = i;
                                 break;
                             }
                         }
                     }
-                    else if (state->ActiveAxis < 3)
+                    else if (isFocused(state, id))
                     {
                         Float3 previousPos = Editor::mouseToWorldPos(invViewProj, Input::PreviousMousePos) - cameraTransform.Position;
                         Float3 nextPos = Editor::mouseToWorldPos(invViewProj, Input::MousePos) - cameraTransform.Position;
@@ -962,7 +1019,7 @@ namespace IB
             FrameDrawData.Instances.add(DrawData::Instance{ TranslationGizmoMesh, GizmoMaterial, Transform{*position, rotation, 1.0f} });
         }
 
-        void rotation(Float3 position, Quaternion* rotation, RotationGizmo* state)
+        void rotation(Float3 position, Quaternion* rotation, RotationGizmo* state, uint32_t id)
         {
             Transform cameraTransform = {};
             Property::Handle transformProperty = getPropertyFromEntity(FrameCamera, TransformPropertyType);
@@ -994,16 +1051,16 @@ namespace IB
                 Float3{0.0f, 1.0f, 0.0f},
             };
 
-            if (canFocus())
+            if (canFocus(state, id))
             {
                 if (!Input::isButtonPressed(Mouse::Left))
                 {
                     state->ActiveAxis = 3;
 
                     // Clear out our focus if we were active
-                    if (FocusedGizmo == state)
+                    if (isFocused(state, id))
                     {
-                        FocusedGizmo = nullptr;
+                        setFocus(nullptr, id);
                     }
                 }
                 else
@@ -1043,12 +1100,12 @@ namespace IB
                         if (intersectionCount > 0)
                         {
                             // Set our gizmo as the active gizmo
-                            FocusedGizmo = state;
+                            setFocus(state, id);
 
                             state->ActiveAxis = intersections[closestIntersection].Axis;
                         }
                     }
-                    else if (state->ActiveAxis < 3)
+                    else if (isFocused(state, id))
                     {
                         Float3 previousPos = Editor::mouseToWorldPos(invViewProj, Input::PreviousMousePos) - cameraTransform.Position;
                         Float3 nextPos = Editor::mouseToWorldPos(invViewProj, Input::MousePos) - cameraTransform.Position;
@@ -1076,9 +1133,9 @@ namespace IB
             FrameDrawData.Instances.add(DrawData::Instance{ RotationGizmoMesh, GizmoMaterial, Transform{position, *rotation, 1.0f} });
         }
 
-        void transform(Transform* transform, TransformGizmo* state)
+        void transform(Transform* transform, TransformGizmo* state, uint32_t id)
         {
-            if (canFocus())
+            if (canFocus(&state->Translation, id) || canFocus(&state->Rotation, id))
             {
                 if (Input::isButtonClicked(Key::Code::W))
                 {
@@ -1093,10 +1150,10 @@ namespace IB
             switch (state->GizmoType)
             {
             case TransformGizmo::Type::Translation:
-                translation(&transform->Position, transform->Rotation, &state->Translation);
+                translation(&transform->Position, transform->Rotation, &state->Translation, id);
                 break;
             case TransformGizmo::Type::Rotation:
-                rotation(transform->Position, &transform->Rotation, &state->Rotation);
+                rotation(transform->Position, &transform->Rotation, &state->Rotation, id);
                 break;
             }
         }

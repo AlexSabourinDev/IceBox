@@ -509,8 +509,9 @@ namespace IB
                 { Asset::toFourCC("TFRM"), "Transform" },
                 { Asset::toFourCC("RNDR"), "Renderer" },
                 { Asset::toFourCC("CMRA"), "Camera" },
+                { Asset::toFourCC("LNSW"), "Line Sweep" }
             };
-            uint32_t constexpr exposedPropertyCount = 3;
+            uint32_t constexpr exposedPropertyCount = 4;
 
             if (ImGui::BeginPopup("AddPropertyPopup"))
             {

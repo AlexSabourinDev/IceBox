@@ -79,7 +79,7 @@ namespace IB
     {
         constexpr Float4() = default;
         constexpr Float4(float ax, float ay, float az, float aw) : x(ax), y(ay), z(az), w(aw) {}
-        constexpr Float4(Float3 xyz, float aw = 0.0f) : x(xyz.x), y(xyz.y), z(xyz.z), w(aw) {}
+        constexpr explicit Float4(Float3 xyz, float aw = 0.0f) : x(xyz.x), y(xyz.y), z(xyz.z), w(aw) {}
 
         float &operator[](uint32_t i) { return (&x)[i]; }
         float operator[](uint32_t i) const { return (&x)[i]; }
@@ -89,6 +89,11 @@ namespace IB
     struct Half4
     {
         uint16_t x, y, z, w;
+    };
+
+    struct Half2
+    {
+        uint16_t x, y;
     };
 
     struct Quaternion
@@ -189,6 +194,7 @@ namespace IB
     inline Float2 operator+(Float2 left, Float2 right);
     inline Float2 operator-(Float2 left, Float2 right);
     inline Float2 operator/(Float2 left, Float2 right);
+    inline Half2 toHalf2(Float2 value);
 
     inline Int2 operator+(Int2 left, Int2 right);
     inline Int2 operator-(Int2 left, Int2 right);
@@ -252,8 +258,8 @@ namespace IB
     inline Float3 transformDirection(Transform const& transform, Float3 direction);
     inline Float3 inverseTransformDirection(Transform const& transform, Float3 direction);
 
-    inline Float3 transformPoint(Transform const& transform, Float3 direction);
-    inline Float3 inverseTransformPoint(Transform const& transform, Float3 direction);
+    inline Float3 transformPoint(Transform const& transform, Float3 point);
+    inline Float3 inverseTransformPoint(Transform const& transform, Float3 point);
 
     inline bool doesRayIntersectTriangle(Float3 rayO, Float3 rayD, float rayMin, float rayMax, Triangle const& triangle);
 
@@ -267,6 +273,11 @@ namespace IB
     inline Float2 operator+(Float2 left, Float2 right) { return Float2{ left.x + right.x, left.y + right.y }; }
     inline Float2 operator-(Float2 left, Float2 right) { return Float2{ left.x - right.x, left.y - right.y }; }
     inline Float2 operator/(Float2 left, Float2 right) { return Float2{ left.x / right.x, left.y / right.y }; }
+    inline Half2 toHalf2(Float2 value)
+    {
+        Half4 half4 = toHalf4(Float4{ value.x, value.y, 0.0f, 0.0f });
+        return Half2{ half4.x, half4.y };
+    }
 
     inline Int2 operator+(Int2 left, Int2 right) { return Int2{ left.x + right.x, left.y + right.y }; }
     inline Int2 operator-(Int2 left, Int2 right) { return Int2{ left.x - right.x, left.y - right.y }; }

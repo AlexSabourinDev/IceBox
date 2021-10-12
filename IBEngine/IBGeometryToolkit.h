@@ -13,18 +13,21 @@ namespace IB
         constexpr FourCC toFourCC(char const (&text)[5]);
     }
 
+    namespace Property
+    {
+        enum class Handle : uint64_t;
+    }
+
     // Geometry swept accross a line
-    struct LineSweep
+    struct LineSweepDesc
     {
         DynamicArray<Float3> Points;
         Float2 ShapeDimension = {};
     };
 
-    namespace LineSweepProperty
-    {
-        using Handle = LineSweep*;
-    }
     Asset::FourCC const LineSweepPropertyType = Asset::toFourCC("LNSW");
+
+    LineSweepDesc* getLineSweep(Property::Handle lineSweepProperty);
 
     IB_API void initGeometryToolkit();
     IB_API void killGeometryToolkit();

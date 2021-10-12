@@ -95,9 +95,9 @@ namespace IB
             Type GizmoType = Type::Translation;
         };
 
-        IB_API void translation(Float3* position, Quaternion rotation, TranslationGizmo* state);
-        IB_API void rotation(Float3 position, Quaternion* rotation, RotationGizmo* state);
-        IB_API void transform(Transform* transform, TransformGizmo* state);
+        IB_API void translation(Float3* position, Quaternion rotation, TranslationGizmo* state, uint32_t id = 0);
+        IB_API void rotation(Float3 position, Quaternion* rotation, RotationGizmo* state, uint32_t id = 0);
+        IB_API void transform(Transform* transform, TransformGizmo* state, uint32_t id = 0);
     }
 }
 

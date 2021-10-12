@@ -19,6 +19,11 @@ namespace IB
         constexpr FourCC toFourCC(char const (&text)[5]);
     }
 
+    namespace Resource
+    {
+        enum class Handle : uint32_t;
+    }
+
     namespace Property
     {
         enum class Handle : uint64_t;
@@ -137,7 +142,8 @@ namespace IB
     Asset::FourCC const RendererPropertyType = Asset::toFourCC("RNDR");
     IB_API Property::Handle createRendererProperty(char const* meshPath, char const* materialPath);
     IB_API MaterialAsset::Handle createMaterialAsset(MaterialAsset::Desc asset);
-    IB_API MeshAsset::Handle createMeshAsset(MeshAsset::Desc asset);
+    Job::Handle createMeshAssetAsync(MeshAsset::Desc meshAsset, MeshAsset::Handle* meshHandle);
+    void setRendererMesh(Property::Handle rendererProperty, Resource::Handle resource);
 
     struct Camera
     {
@@ -164,6 +170,9 @@ namespace IB
 
     Asset::FourCC const CameraPropertyType = Asset::toFourCC("CMRA");
     IB_API Property::Handle createCameraProperty(Camera camera);
+    IB_API Camera getCamera(CameraProperty::Handle cameraProperty);
+    IB_API void setCamera(CameraProperty::Handle cameraProperty, Camera camera);
+
     IB_API Mat4x4 getViewProjection(CameraProperty::Handle camera, Transform const& worldTransform);
     IB_API Mat4x4 getInvViewProjection(CameraProperty::Handle camera, Transform const& transform);
 

@@ -9,6 +9,7 @@
 #include <IBEngine/IBCollection.h>
 #include <IBEngine/IBJobs.h>
 #include <IBEngine/IBEditor.h>
+#include <IBEngine/IBGeometryToolkit.h>
 
 #include <imgui/imgui.h>
 
@@ -218,6 +219,7 @@ int main()
         JobGraph::init();
         Editor::init();
         ImGizmo::init();
+        initGeometryToolkit();
 
         ImGuiIO& io = ImGui::GetIO();
         io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
@@ -235,6 +237,7 @@ int main()
     {
         Asset::releaseResourceAsync(CellResource);
 
+        killGeometryToolkit();
         ImGizmo::kill();
         Editor::kill();
         JobGraph::kill();

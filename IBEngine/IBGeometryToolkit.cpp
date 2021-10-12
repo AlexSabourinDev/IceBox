@@ -17,8 +17,121 @@ namespace IB
 {
     namespace
     {
+        struct LineSweep
+        {
+            LineSweepDesc Desc;
+        };
+
         LineSweep* toLineSweep(Asset::Handle asset) { return reinterpret_cast<LineSweep*>(Asset::toValue(asset)); }
         LineSweep* toLineSweep(Property::Handle propertyHandle) { return reinterpret_cast<LineSweep*>(Property::toValue(propertyHandle)); }
+
+        struct LineSweepMesh
+        {
+            DynamicArray<Vertex> Vertices;
+            DynamicArray<uint16_t> Indices;
+        };
+
+        LineSweepMesh createLineSweepMesh(LineSweepDesc const& lineSweep)
+        {
+            LineSweepMesh mesh;
+
+            for (uint32_t i = 0; i < lineSweep.Points.count(); i++)
+            {
+                Float3 point = lineSweep.Points[i];
+
+                Float3 rectanglePoints[] =
+                {
+                    { -0.5f, 0.0f, -0.5f },
+                    {  0.5f, 0.0f, -0.5f },
+                    {  0.5f, 0.0f,  0.5f },
+                    { -0.5f, 0.0f,  0.5f }
+                };
+
+                float UVs[] = 
+                {
+                    bitcast<float>(toHalf2(Float2{0.0f, 0.0f})),
+                    bitcast<float>(toHalf2(Float2{1.0f, 0.0f})),
+                    bitcast<float>(toHalf2(Float2{1.0f, 1.0f})),
+                    bitcast<float>(toHalf2(Float2{0.0f, 1.0f})),
+                };
+
+                for (uint32_t p = 0; p < 4; p++)
+                {
+                    Vertex v;
+                    v.Pos = Float4{ rectanglePoints[p] * Float3{ lineSweep.ShapeDimension.x, 1.0f, lineSweep.ShapeDimension.y } +point, UVs[p] };
+                    v.Normal = Float4{ 0.0f, 1.0f, 0.0f, bitcast<float>(0xFFFFFFFF) };
+                    mesh.Vertices.add(v);
+                }
+            }
+
+            // Starting face
+            constexpr uint32_t quadIndexCount = 6;
+            {
+                uint16_t indices[] =
+                {
+                    0, 1, 2,
+                    0, 2, 3
+                };
+
+                for (uint32_t pi = 0; pi < quadIndexCount; pi++)
+                {
+                    mesh.Indices.add(indices[pi]);
+                }
+            }
+
+            // Tubes
+
+            /*
+              7---6
+            3---2 |
+            | 4 | 5
+            0---1
+            */
+            for (uint32_t i = 1; i < lineSweep.Points.count(); i++)
+            {
+                uint16_t indices[] =
+                {
+                    // bottom
+                    0, 5, 1,
+                    0, 4, 5,
+
+                    // right
+                    1, 5, 2,
+                    2, 5, 6,
+
+                    // top
+                    3, 2, 6,
+                    3, 6, 7,
+
+                    // left
+                    0, 3, 4,
+                    4, 3, 7,
+                };
+
+                uint16_t indexOffset = static_cast<uint16_t>((i - 1) * 4); // Advance our tube by one set of points each iteration
+                for (uint32_t pi = 0; pi < quadIndexCount * 4; pi++)
+                {
+                    mesh.Indices.add(static_cast<uint16_t>(indices[pi] + indexOffset));
+                }
+            }
+
+            // Ending face
+            {
+                uint16_t indices[] =
+                {
+                    0, 2, 1,
+                    0, 3, 2
+                };
+
+                uint16_t indexOffset = static_cast<uint16_t>((lineSweep.Points.count() - 1) * 4); // Advance our tube by one set of points each iteration
+                for (uint32_t pi = 0; pi < quadIndexCount; pi++)
+                {
+                    mesh.Indices.add(static_cast<uint16_t>(indices[pi] + indexOffset));
+                }
+            }
+
+            return mesh;
+        }
 
         class LineSweepPropertyStreamer : public IB::Asset::IStreamer
         {
@@ -26,6 +139,13 @@ namespace IB
             IB::Asset::Handle create() override
             {
                 LineSweep* lineSweep = allocate<LineSweep>();
+                // TODO: temporary line sweep test
+                lineSweep->Desc.ShapeDimension = Float2{ 1.0f, 1.0f };
+                lineSweep->Desc.Points.add(Float3{ 0.0f, 0.0f, 0.0f });
+                lineSweep->Desc.Points.add(Float3{ 0.0f, 1.0f, 0.0f });
+                lineSweep->Desc.Points.add(Float3{ 0.0f, 2.0f, 0.0f });
+                lineSweep->Desc.Points.add(Float3{ 0.0f, 3.0f, 0.0f });
+
                 return Asset::toHandle(reinterpret_cast<uint64_t>(lineSweep));
             }
 
@@ -37,9 +157,9 @@ namespace IB
                 Serialization::fromBinary(&context->Stream, &count);
 
                 Float3 const* pointBuffer = Serialization::arrayFromBinary<Float3>(&context->Stream, count);
-                lineSweep.Points.setBuffer(pointBuffer, count);
+                lineSweep.Desc.Points.setBuffer(pointBuffer, count);
 
-                Serialization::fromBinary(&context->Stream, &lineSweep.ShapeDimension);
+                Serialization::fromBinary(&context->Stream, &lineSweep.Desc.ShapeDimension);
 
                 return Asset::complete(Asset::toHandle(reinterpret_cast<uint64_t>(&lineSweep)));
             }
@@ -47,9 +167,9 @@ namespace IB
             void saveThreadSafe(IB::Asset::SaveContext *context) override
             {
                 LineSweep& lineSweep = *toLineSweep(context->Asset);
-                Serialization::toBinary(context->Stream, lineSweep.Points.count());
-                Serialization::arrayToBinary(context->Stream, lineSweep.Points.data(), lineSweep.Points.count());
-                Serialization::toBinary(context->Stream, lineSweep.ShapeDimension);
+                Serialization::toBinary(context->Stream, lineSweep.Desc.Points.count());
+                Serialization::arrayToBinary(context->Stream, lineSweep.Desc.Points.data(), lineSweep.Desc.Points.count());
+                Serialization::toBinary(context->Stream, lineSweep.Desc.ShapeDimension);
             }
 
             void unloadThreadSafe(IB::Asset::Handle assetHandle) override
@@ -77,74 +197,64 @@ namespace IB
 
                 LineSweep* lineSweep = toLineSweep(lineSweepProperty);
 
-                char fullPath[MaxFilePath] = {};
-                sprintf(fullPath, "Temporary_LineSweep_%" PRIu64, Entity::toValue(entity));
-                Resource::Handle lineSweepResource = Asset::createResourceThreadSafe(fullPath, MeshType, InvalidAsset);
-
-                struct LineSweepMesh
+                struct LineSweepData
                 {
-                    DynamicArray<Vertex> Vertices;
-                    DynamicArray<uint16_t> Indices;
+                    Resource::Handle Resource;
+                    LineSweepMesh Mesh;
                 };
 
-                LineSweepMesh* mesh = allocate<LineSweepMesh>();
+                LineSweepData* lineSweepData = allocate<LineSweepData>();
 
-                Job::Handle assetGenerationResource = launchJob([lineSweep, mesh]()
-                {
-                    for (uint32_t i = 0; i < lineSweep->Points.count(); i++)
+                char path[MaxFilePath];
+                sprintf(path, "Dynamic_LineSweep_%" PRIu64, Entity::toValue(entity));
+
+                Job::Handle loadJob = loadResourceAsync(path, MeshType,
+                    [](void *data, Resource::Handle resource, Asset::ResourceLoad::State)
                     {
-                        Float3 point = lineSweep->Points[i];
+                        LineSweepData* lineSweepData = reinterpret_cast<LineSweepData*>(data);
+                        lineSweepData->Resource = resource;
+                    }, lineSweepData);
 
-                        Float3 rectanglePoints[] = 
-                        {
-                            { -0.5f, 0.0f, -0.5f },
-                            {  0.5f, 0.0f, -0.5f },
-                            {  0.5f, 0.0f,  0.5f },
-                            { -0.5f, 0.0f,  0.5f }
-                        };
-
-                        uint16_t indices[] = 
-                        {
-                            0, 1, 2,
-                            0, 1, 3
-                        };
-
-                        for (uint32_t pi = 0; pi < 6; pi++)
-                        {
-                            mesh->Indices.add(static_cast<uint16_t>(indices[pi] + mesh->Vertices.count()));
-                        }
-
-                        for (uint32_t p = 0; p < 4; p++)
-                        {
-                            Vertex v;
-                            v.Pos = Float4{ rectanglePoints[p] * Float3{ lineSweep->ShapeDimension.x, 1.0f, lineSweep->ShapeDimension.y } +point, 0.0f };
-                            v.Normal = Float3{ 0.0f, 1.0f, 0.0f };
-                            mesh->Vertices.add(v);
-                        }
-                    }
-
+                Job::Handle assetGenerationResource = launchJob([lineSweep, lineSweepData]()
+                {
+                    lineSweepData->Mesh = createLineSweepMesh(lineSweep->Desc);
                     return JobResult::Complete;
                 });
 
-                Job::Handle meshAssetCreation = continueJob([mesh, lineSweepResource]()
+                Job::Handle jobDependencies[] = { loadJob, assetGenerationResource };
+                Job::Handle meshAssetCreation = continueJob([lineSweep, lineSweepData, rendererProperty]()
                 {
                     MeshAsset::Desc meshDesc = {};
-                    meshDesc.Vertices = mesh->Vertices.data();
-                    meshDesc.VertexCount = mesh->Vertices.count();
-                    meshDesc.Indices = mesh->Indices.data();
-                    meshDesc.IndexCount = mesh->Indices.count();
+                    meshDesc.Vertices = lineSweepData->Mesh.Vertices.data();
+                    meshDesc.VertexCount = lineSweepData->Mesh.Vertices.count();
+                    meshDesc.Indices = lineSweepData->Mesh.Indices.data();
+                    meshDesc.IndexCount = lineSweepData->Mesh.Indices.count();
 
-                    MeshAsset::Handle lineSweepMesh = createMeshAsset(meshDesc);
-                    setResourceAsset(lineSweepResource, toAssetHandle(lineSweepMesh));
+                    MeshAsset::Handle lineSweepMesh;
+                    Job::Handle createMeshJob = createMeshAssetAsync(meshDesc, &lineSweepMesh);
 
-                    deallocate(mesh);
+                    setResourceAsset(lineSweepData->Resource, toAssetHandle(lineSweepMesh));
+                    setRendererMesh(rendererProperty, lineSweepData->Resource);
+                    Asset::releaseResourceAsync(lineSweepData->Resource);
+
+                    // Only deallocate our sweep data once the data is consumed.
+                    continueJob([lineSweepData]()
+                    {
+                        deallocate(lineSweepData);
+                        return JobResult::Complete;
+                    }, &createMeshJob, 1);
                     return JobResult::Complete;
-                }, &assetGenerationResource, 1, RendererJobQueueIndex);
+                }, jobDependencies, 2, RendererJobQueueIndex);
 
                 return meshAssetCreation;
             }
         };
         LineSweepActivator LineSweepActivator;
+    }
+
+    LineSweepDesc* getLineSweep(Property::Handle lineSweepProperty)
+    {
+        return &reinterpret_cast<LineSweep*>(Property::toValue(lineSweepProperty))->Desc;
     }
 
     void initGeometryToolkit()

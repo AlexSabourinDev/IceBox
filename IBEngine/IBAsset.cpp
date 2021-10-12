@@ -133,14 +133,24 @@ namespace IB
                 sprintf(fullPath, "%s/%s", AssetPath, resource->Path);
 
                 resource->File = IB::openFile(fullPath, IB::OpenFileOptions::Read);
-                loadContext->Stream = { reinterpret_cast<uint8_t *>(IB::mapFile(resource->File)) };
-                IB_ASSERT(loadContext->Stream.Memory != nullptr, "Failed to map file!");
-                fromBinary(&loadContext->Stream, &loadContext->SaveVersion);
+                if (resource->File != IB::InvalidFile)
+                {
+                    loadContext->Stream = { reinterpret_cast<uint8_t *>(IB::mapFile(resource->File)) };
+                    IB_ASSERT(loadContext->Stream.Memory != nullptr, "Failed to map file!");
+                    fromBinary(&loadContext->Stream, &loadContext->SaveVersion);
+                }
                 return IB::JobResult::Complete;
             });
 
             loadContext->Handle = IB::reserveJob([loadContext, streamer, onResourceLoad, data, resource]()
             {
+                if (resource->File == IB::InvalidFile) // Invalid files get marked as available with no asset.
+                {
+                    onResourceLoad(data, IB::Resource::toHandle(resource->PathHash), IB::Asset::ResourceLoad::NotExisting);
+                    IB::deallocate(loadContext);
+                    return JobResult::Complete;
+                }
+
                 LoadResult loadResult = load(streamer, loadContext);
                 if (loadResult.Result == IB::JobResult::Complete)
                 {
@@ -353,8 +363,14 @@ namespace IB
                     onResourceLoad(data, Resource::toHandle(pathHash), ResourceLoad::Loading);
 
                     requestHandle = continueJob([resource, onResourceLoad, data, pathHash]() {
-                        IB_ASSERT(resource->Asset != InvalidAsset, "No asset handle loaded!");
-                        onResourceLoad(data, Resource::toHandle(pathHash), ResourceLoad::Available);
+                        if (resource->Asset != InvalidAsset)
+                        {
+                            onResourceLoad(data, Resource::toHandle(pathHash), ResourceLoad::Available);
+                        }
+                        else
+                        {
+                            onResourceLoad(data, Resource::toHandle(pathHash), ResourceLoad::NotExisting);
+                        }
                         return JobResult::Complete;
                     },
                                                 &resource->LoadingJob, 1);
@@ -430,7 +446,12 @@ namespace IB
             if (atomicDecrement(&ResourceHashTable[mappingIndex].RefCount) == 0)
             {
                 auto onUnload = [resource]() {
-                    getStreamer(resource->Type)->unloadThreadSafe(resource->Asset);
+
+                    if (resource->Asset != InvalidAsset)
+                    {
+                        getStreamer(resource->Type)->unloadThreadSafe(resource->Asset);
+                    }
+
                     if (resource->File != InvalidFile)
                     {
                         unmapFile(resource->File);
