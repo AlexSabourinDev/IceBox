@@ -21,7 +21,7 @@ namespace IB
     // Geometry swept accross a line
     struct LineSweepDesc
     {
-        DynamicArray<Float3> Points;
+        DynamicArray<Transform> Points;
         Float2 ShapeDimension = {};
     };
 

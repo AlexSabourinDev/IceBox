@@ -261,6 +261,9 @@ namespace IB
     inline Float3 transformPoint(Transform const& transform, Float3 point);
     inline Float3 inverseTransformPoint(Transform const& transform, Float3 point);
 
+    inline Transform applyTransform(Transform const& applier, Transform const& source);
+    inline Transform applyInverseTransform(Transform const& applier, Transform const& source);
+
     inline bool doesRayIntersectTriangle(Float3 rayO, Float3 rayD, float rayMin, float rayMax, Triangle const& triangle);
 
     // Implementation
@@ -698,6 +701,37 @@ namespace IB
     inline Float3 inverseTransformPoint(Transform const& transform, Float3 point)
     {
         return rotate(inverse(transform.Rotation), point - transform.Position) / transform.Scale;
+    }
+
+    inline Transform applyTransform(Transform const& applier, Transform const& source)
+    {
+        // Since transformation of P0 goes:
+        // P1 = P0 * S1 * R1 + T1
+        // Then
+        // P2 = P1 * S2 * R2 + T2
+        // So
+        // P2 = (P0 * S1 * R1 + T1) * S2 * R2 + T2
+        // P2 = P0 * (S1 * S2) * (R1 * R2) + (T1 * S2 * R2 + T2)
+
+        Transform destination = {};
+        destination.Scale = source.Scale * applier.Scale;
+        destination.Rotation = source.Rotation * applier.Rotation;
+        destination.Position = transformPoint(applier, source.Position);
+        return destination;
+    }
+
+    inline Transform applyInverseTransform(Transform const& applier, Transform const& source)
+    {
+        // Since transformation of P0 goes:
+        // P2 = P0 * (S1 * S2) * (R1 * R2) + (T1 * S2 * R2 + T2)
+        // Then we want to undo our changes:
+        // P2 = P0 * (S1 * S2) / S2 * (R1 * R2) * R2^-1 + ((T1 * S2 * R2 + T2) - T2) * R2^-1 / S2
+
+        Transform destination = {};
+        destination.Scale = source.Scale / applier.Scale;
+        destination.Rotation = source.Rotation * inverse(applier.Rotation);
+        destination.Position = inverseTransformPoint(applier, source.Position);
+        return destination;
     }
 
     inline bool doesRayIntersectTriangle(Float3 rayO, Float3 rayD, float rayMin, float rayMax, Triangle triangle)

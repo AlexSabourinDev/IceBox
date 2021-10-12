@@ -37,7 +37,7 @@ namespace IB
 
             for (uint32_t i = 0; i < lineSweep.Points.count(); i++)
             {
-                Float3 point = lineSweep.Points[i];
+                Transform point = lineSweep.Points[i];
 
                 Float3 rectanglePoints[] =
                 {
@@ -58,7 +58,7 @@ namespace IB
                 for (uint32_t p = 0; p < 4; p++)
                 {
                     Vertex v;
-                    v.Pos = Float4{ rectanglePoints[p] * Float3{ lineSweep.ShapeDimension.x, 1.0f, lineSweep.ShapeDimension.y } +point, UVs[p] };
+                    v.Pos = Float4{ transformPoint(point, rectanglePoints[p] * Float3{ lineSweep.ShapeDimension.x, 1.0f, lineSweep.ShapeDimension.y }), UVs[p] };
                     v.Normal = Float4{ 0.0f, 1.0f, 0.0f, bitcast<float>(0xFFFFFFFF) };
                     mesh.Vertices.add(v);
                 }
@@ -141,10 +141,10 @@ namespace IB
                 LineSweep* lineSweep = allocate<LineSweep>();
                 // TODO: temporary line sweep test
                 lineSweep->Desc.ShapeDimension = Float2{ 1.0f, 1.0f };
-                lineSweep->Desc.Points.add(Float3{ 0.0f, 0.0f, 0.0f });
-                lineSweep->Desc.Points.add(Float3{ 0.0f, 1.0f, 0.0f });
-                lineSweep->Desc.Points.add(Float3{ 0.0f, 2.0f, 0.0f });
-                lineSweep->Desc.Points.add(Float3{ 0.0f, 3.0f, 0.0f });
+                lineSweep->Desc.Points.add(Transform{ Float3{ 0.0f, 0.0f, 0.0f } });
+                lineSweep->Desc.Points.add(Transform{ Float3{ 0.0f, 1.0f, 0.0f } });
+                lineSweep->Desc.Points.add(Transform{ Float3{ 0.0f, 2.0f, 0.0f } });
+                lineSweep->Desc.Points.add(Transform{ Float3{ 0.0f, 3.0f, 0.0f } });
 
                 return Asset::toHandle(reinterpret_cast<uint64_t>(lineSweep));
             }
@@ -156,7 +156,7 @@ namespace IB
                 uint32_t count = 0;
                 Serialization::fromBinary(&context->Stream, &count);
 
-                Float3 const* pointBuffer = Serialization::arrayFromBinary<Float3>(&context->Stream, count);
+                Transform const* pointBuffer = Serialization::arrayFromBinary<Transform>(&context->Stream, count);
                 lineSweep.Desc.Points.setBuffer(pointBuffer, count);
 
                 Serialization::fromBinary(&context->Stream, &lineSweep.Desc.ShapeDimension);

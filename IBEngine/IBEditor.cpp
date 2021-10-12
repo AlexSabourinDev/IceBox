@@ -439,12 +439,11 @@ namespace IB
                         LineSweepDesc* sweep = getLineSweep(lineSweepProperty);
                         for (uint32_t i = 0; i < sweep->Points.count(); i++)
                         {
-                            // TODO: translation gizmo state needs to be unique per-point
-                            static ImGizmo::TranslationGizmo translateState;
+                            static ImGizmo::TransformGizmo transformState;
 
-                            Float3 worldPoint = transformPoint(selectedTransform, sweep->Points[i]);
-                            ImGizmo::translation(&worldPoint, Quaternion::identity(), &translateState, i);
-                            sweep->Points[i] = inverseTransformPoint(selectedTransform, worldPoint);
+                            Transform worldTransform = applyTransform(selectedTransform, sweep->Points[i]);
+                            ImGizmo::transform(&worldTransform, &transformState, i);
+                            sweep->Points[i] = applyInverseTransform(selectedTransform, worldTransform);
                         }
                     }
                     else
