@@ -445,6 +445,8 @@ namespace IB
                             ImGizmo::transform(&worldTransform, &transformState, i);
                             sweep->Points[i] = applyInverseTransform(selectedTransform, worldTransform);
                         }
+
+                        updateLineSweep(SelectedEntity, *sweep);
                     }
                     else
                     {
@@ -689,7 +691,7 @@ namespace IB
                 {0.0f, 1.0f, 0.0f, 0.75f},
                 {0.0f, 0.0f, 1.0f, 0.75f} };
 
-            launchJob([]()
+            launchJob([](Job::Handle /*currentJob*/)
             {
                 {
                     uint8_t whiteImageTexels[] = { 255, 255, 255, 255 };
@@ -711,7 +713,7 @@ namespace IB
                 return JobResult::Complete;
             }, RendererJobQueueIndex);
 
-            launchJob([]()
+            launchJob([](Job::Handle /*currentJob*/)
             {
                 // Mesh
                 constexpr uint16_t cylinderSegments = 8;
@@ -826,7 +828,7 @@ namespace IB
             }, RendererJobQueueIndex);
 
             // Rotation Gizmo
-            launchJob([]()
+            launchJob([](Job::Handle /*currentJob*/)
             {
                 constexpr uint32_t circleSegments = 180;
                 constexpr uint32_t circleTriangleCount = circleSegments * 2;

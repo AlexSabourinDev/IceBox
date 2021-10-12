@@ -127,7 +127,7 @@ namespace IB
             IB::Asset::LoadContext *loadContext = IB::allocate<IB::Asset::LoadContext>();
             loadContext->LoadingAsset = streamer->create();
 
-            IB::Job::Handle fileJob = IB::launchJob([resource, loadContext]()
+            IB::Job::Handle fileJob = IB::launchJob([resource, loadContext](Job::Handle /*currentJob*/)
             {
                 char fullPath[IB::MaxFilePath] = {};
                 sprintf(fullPath, "%s/%s", AssetPath, resource->Path);
@@ -142,7 +142,7 @@ namespace IB
                 return IB::JobResult::Complete;
             });
 
-            loadContext->Handle = IB::reserveJob([loadContext, streamer, onResourceLoad, data, resource]()
+            loadContext->Handle = IB::reserveJob([loadContext, streamer, onResourceLoad, data, resource](Job::Handle /*currentJob*/)
             {
                 if (resource->File == IB::InvalidFile) // Invalid files get marked as available with no asset.
                 {
@@ -195,7 +195,8 @@ namespace IB
             if (streamer != nullptr)
             {
                 context->LoadingAsset = desc.LoadingAsset;
-                context->Handle = reserveJob([context, streamer, onSubAssetLoad = desc.OnSubAssetLoad, data = desc.OnSubAssetLoadData]()
+                context->Handle = reserveJob(
+                    [context, streamer, onSubAssetLoad = desc.OnSubAssetLoad, data = desc.OnSubAssetLoadData](Job::Handle /*currentJob*/)
                 {
                     LoadResult loadResult = load(streamer, context);
                     if (loadResult.Result == JobResult::Complete)
@@ -362,7 +363,7 @@ namespace IB
                 {
                     onResourceLoad(data, Resource::toHandle(pathHash), ResourceLoad::Loading);
 
-                    requestHandle = continueJob([resource, onResourceLoad, data, pathHash]() {
+                    requestHandle = continueJob([resource, onResourceLoad, data, pathHash](Job::Handle /*currentJob*/) {
                         if (resource->Asset != InvalidAsset)
                         {
                             onResourceLoad(data, Resource::toHandle(pathHash), ResourceLoad::Available);
@@ -445,7 +446,7 @@ namespace IB
             Job::Handle job = InvalidJob;
             if (atomicDecrement(&ResourceHashTable[mappingIndex].RefCount) == 0)
             {
-                auto onUnload = [resource]() {
+                auto onUnload = [resource](Job::Handle /*currentJob*/) {
 
                     if (resource->Asset != InvalidAsset)
                     {
@@ -482,7 +483,7 @@ namespace IB
 
         Job::Handle saveResourceAsync(Resource::Handle resourceHandle)
         {
-            return launchJob([resourceHandle]() {
+            return launchJob([resourceHandle](Job::Handle /*currentJob*/) {
                 uint32_t hashTableIndex = Resource::toValue(resourceHandle) % MaxTableEntries;
 
                 atomicIncrement(&ResourceHashTable[hashTableIndex].RefCount); // Keep a reference count as we save, we don't want to dump our asset

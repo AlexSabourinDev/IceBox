@@ -215,14 +215,14 @@ namespace IB
                         lineSweepData->Resource = resource;
                     }, lineSweepData);
 
-                Job::Handle assetGenerationResource = launchJob([lineSweep, lineSweepData]()
+                Job::Handle assetGenerationResource = launchJob([lineSweep, lineSweepData](Job::Handle /*currentJob*/)
                 {
                     lineSweepData->Mesh = createLineSweepMesh(lineSweep->Desc);
                     return JobResult::Complete;
                 });
 
                 Job::Handle jobDependencies[] = { loadJob, assetGenerationResource };
-                Job::Handle meshAssetCreation = continueJob([lineSweep, lineSweepData, rendererProperty]()
+                Job::Handle meshAssetCreation = continueJob([lineSweep, lineSweepData, rendererProperty](Job::Handle /*currentJob*/)
                 {
                     MeshAsset::Desc meshDesc = {};
                     meshDesc.Vertices = lineSweepData->Mesh.Vertices.data();
@@ -238,13 +238,13 @@ namespace IB
                     Asset::releaseResourceAsync(lineSweepData->Resource);
 
                     // Only deallocate our sweep data once the data is consumed.
-                    continueJob([lineSweepData]()
+                    continueJob([lineSweepData](Job::Handle /*currentJob*/)
                     {
                         deallocate(lineSweepData);
                         return JobResult::Complete;
                     }, &createMeshJob, 1);
                     return JobResult::Complete;
-                }, jobDependencies, 2, RendererJobQueueIndex);
+                }, jobDependencies, 2);
 
                 return meshAssetCreation;
             }
@@ -255,6 +255,49 @@ namespace IB
     LineSweepDesc* getLineSweep(Property::Handle lineSweepProperty)
     {
         return &reinterpret_cast<LineSweep*>(Property::toValue(lineSweepProperty))->Desc;
+    }
+
+    void updateLineSweep(Entity::Handle entity, LineSweepDesc const& lineSweep)
+    {
+        struct JobState
+        {
+            enum
+            {
+                CreatingMesh,
+                CleanupMesh
+            };
+
+            uint32_t State = CreatingMesh;
+            LineSweepMesh Mesh;
+        };
+
+        Property::Handle rendererProperty = getPropertyFromEntity(entity, RendererPropertyType);
+        launchJob([lineSweep, rendererProperty, jobState = JobState{}](Job::Handle currentJob) mutable
+        {
+            if (jobState.State == JobState::CreatingMesh)
+            {
+                jobState.Mesh = createLineSweepMesh(lineSweep);
+
+                MeshAsset::Desc meshDesc = {};
+                meshDesc.Vertices = jobState.Mesh.Vertices.data();
+                meshDesc.VertexCount = jobState.Mesh.Vertices.count();
+                meshDesc.Indices = jobState.Mesh.Indices.data();
+                meshDesc.IndexCount = jobState.Mesh.Indices.count();
+
+                MeshAsset::Handle lineSweepMesh = getMeshFromRendererProperty(rendererProperty);
+                Job::Handle createMeshJob = updateMeshAssetAsync(lineSweepMesh, meshDesc);
+
+                jobState.State = JobState::CleanupMesh;
+
+                // Put our job to sleep, it will be complete once our mesh job is complete. (This will also clean up all our data)
+                continueJob(currentJob, &createMeshJob, 1);
+                return JobResult::Sleep;
+            }
+            else
+            {
+                return JobResult::Complete;
+            }
+        });
     }
 
     void initGeometryToolkit()

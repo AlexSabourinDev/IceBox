@@ -34,7 +34,7 @@ namespace
                 IB::ImageAsset image;
                 fromBinary(&context->Stream, &image, context->SaveVersion);
 
-                IB::Job::Handle imageCreate = IB::launchJob([image, imageHandle = &context->Data]() {
+                IB::Job::Handle imageCreate = IB::launchJob([image, imageHandle = &context->Data](IB::Job::Handle /*currentJob*/) {
                     IB::ImageDesc imageDesc = {};
                     imageDesc.Format = image.Format;
                     imageDesc.Width = image.Width;
@@ -118,7 +118,7 @@ namespace
 
                 IB::Job::Handle jobs[2];
 
-                jobs[0] = IB::launchJob([meshAsset, &meshData]() {
+                jobs[0] = IB::launchJob([meshAsset, &meshData](IB::Job::Handle /*currentJob*/) {
                     IB::MeshDesc meshDesc = {};
                     meshDesc.Vertices.Data = meshAsset.Vertices;
                     meshDesc.Vertices.Count = meshAsset.VertexCount;
@@ -131,7 +131,7 @@ namespace
                     IB::RendererJobQueueIndex);
 
                 // Store mesh for collision detection
-                jobs[1] = IB::launchJob([meshAsset, &meshData]()
+                jobs[1] = IB::launchJob([meshAsset, &meshData](IB::Job::Handle /*currentJob*/)
                 {
                     setCollisionShape(&meshData, meshAsset);
                     return IB::JobResult::Complete;
@@ -150,7 +150,7 @@ namespace
         {
             MeshData* meshData = reinterpret_cast<MeshData*>(IB::Asset::toValue(meshAsset));
 
-            IB::launchJob([meshHandle = meshData->RendererMesh]()
+            IB::launchJob([meshHandle = meshData->RendererMesh](IB::Job::Handle /*currentJob*/)
             {
                 IB::destroyMesh(meshHandle);
                 return IB::JobResult::Complete;
@@ -192,7 +192,7 @@ namespace
                 fromBinary(&context->Stream, &materialData.Asset, context->SaveVersion);
 
                 IB::Job::Handle textureJob = IB::Asset::loadResourceAsync(materialData.Asset.AlbedoPath, { IB::ImageType }, &materialData.AlbedoTexture);
-                IB::Job::Handle materialJob = IB::continueJob([materialPtr = &materialData, contextData = &context->Data]() {
+                IB::Job::Handle materialJob = IB::continueJob([materialPtr = &materialData, contextData = &context->Data](IB::Job::Handle /*currentJob*/) {
                     IB::Resource::Handle textureResource = materialPtr->AlbedoTexture;
 
                     IB::ForwardDesc materialDesc = {};
@@ -656,6 +656,12 @@ namespace IB
         return Property::toHandle(reinterpret_cast<uint64_t>(&renderer));
     }
 
+    MeshAsset::Handle getMeshFromRendererProperty(Property::Handle rendererProperty)
+    {
+        RendererProperty* renderer = toRendererProperty(rendererProperty);
+        return MeshAsset::toHandle(Asset::toValue(Asset::getAssetFromResource(renderer->MeshResource)));
+    }
+
     bool tryGetTriangleSet(Property::Handle rendererProperty, SimdTriangleSet** triangles, uint32_t* triangleCount)
     {
         if (rendererProperty == InvalidProperty)
@@ -696,7 +702,7 @@ namespace IB
                                  [](void*, Resource::Handle resource, IB::Asset::ResourceLoad::State loadState) {
                                      if (loadState == Asset::ResourceLoad::Available)
                                      {
-                                         launchJob([resource]() {
+                                         launchJob([resource](Job::Handle /*currentJob*/) {
                                              ShaderAsset *shaders = toShaderAsset(Asset::getAssetFromResource(resource));
                                              ForwardPassDesc desc;
                                              desc.VShader = shaders->VertexShader;
@@ -718,7 +724,7 @@ namespace IB
 
     void killRendererFrontend()
     {
-        launchJob([]() {
+        launchJob([](Job::Handle /*currentJob*/) {
             killRenderer();
             return JobResult::Complete;
         },
@@ -730,7 +736,7 @@ namespace IB
         RuntimeMaterial &materialData = MaterialPool.add();
         materialData.Asset = asset;
         Job::Handle textureJob = Asset::loadResourceAsync(asset.AlbedoPath, { ImageType }, &materialData.AlbedoTexture);
-        continueJob([materialPtr = &materialData]() {
+        continueJob([materialPtr = &materialData](Job::Handle /*currentJob*/) {
             IB::Resource::Handle textureResource = materialPtr->AlbedoTexture;
             IB::ForwardDesc materialDesc = {};
             materialDesc.AlbedoTint = materialPtr->Asset.AlbedoTint;
@@ -746,7 +752,7 @@ namespace IB
     Job::Handle createMeshAssetAsync(MeshAsset::Desc meshAsset, MeshAsset::Handle* meshHandle)
     {
         MeshData& meshData = MeshDataPool.add();
-        Job::Handle job = launchJob([meshAsset, &meshData]()
+        Job::Handle job = launchJob([meshAsset, &meshData](Job::Handle /*currentJob*/)
         {
             IB::MeshDesc meshDesc = {};
             meshDesc.Vertices.Data = meshAsset.Vertices;
@@ -762,6 +768,32 @@ namespace IB
         setCollisionShape(&meshData, meshAsset);
 
         *meshHandle = MeshAsset::toHandle(reinterpret_cast<uint64_t>(&meshData));
+        return job;
+    }
+
+    Job::Handle updateMeshAssetAsync(MeshAsset::Handle mesh, MeshAsset::Desc meshAsset)
+    {
+        if (mesh == InvalidMeshAsset)
+        {
+            return InvalidJob;
+        }
+
+        MeshData* meshData = reinterpret_cast<MeshData*>(MeshAsset::toValue(mesh));
+        Job::Handle job = launchJob([meshAsset, meshData](Job::Handle /*currentJob*/)
+        {
+            IB::MeshDesc meshDesc = {};
+            meshDesc.Vertices.Data = meshAsset.Vertices;
+            meshDesc.Vertices.Count = meshAsset.VertexCount;
+            meshDesc.Indices.Data = meshAsset.Indices;
+            meshDesc.Indices.Count = meshAsset.IndexCount;
+            updateMesh(meshData->RendererMesh, meshDesc);
+
+            return IB::JobResult::Complete;
+        },
+            IB::RendererJobQueueIndex);
+
+        setCollisionShape(meshData, meshAsset);
+
         return job;
     }
 

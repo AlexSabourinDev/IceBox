@@ -74,6 +74,7 @@ namespace IB
         constexpr Handle toHandle(uint64_t value) { return static_cast<Handle>(value); }
         constexpr uint64_t toValue(Handle handle) { return static_cast<uint64_t>(handle); }
     };
+    constexpr MeshAsset::Handle InvalidMeshAsset = MeshAsset::toHandle(UINT64_MAX);
     Asset::FourCC const MeshType = Asset::toFourCC("MESH");
     inline Asset::Handle toAssetHandle(MeshAsset::Handle handle) { return Asset::toHandle(static_cast<uint64_t>(handle)); };
 
@@ -141,8 +142,11 @@ namespace IB
 
     Asset::FourCC const RendererPropertyType = Asset::toFourCC("RNDR");
     IB_API Property::Handle createRendererProperty(char const* meshPath, char const* materialPath);
+    IB_API MeshAsset::Handle getMeshFromRendererProperty(Property::Handle renderer);
     IB_API MaterialAsset::Handle createMaterialAsset(MaterialAsset::Desc asset);
     Job::Handle createMeshAssetAsync(MeshAsset::Desc meshAsset, MeshAsset::Handle* meshHandle);
+    Job::Handle updateMeshAssetAsync(MeshAsset::Handle mesh, MeshAsset::Desc meshAsset);
+
     void setRendererMesh(Property::Handle rendererProperty, Resource::Handle resource);
 
     struct Camera

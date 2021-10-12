@@ -166,7 +166,8 @@ namespace
 
     constexpr uint32_t MaxJobPoolCount = MaxJobCount * MaxWorkerCount;
     IB::Job::Data JobPool[MaxJobPoolCount] = {};
-    IB::Job::Data EmptyJob = { {}, +[](void*) { return IB::JobResult::Complete; } };
+    IB::Job::Data EmptyJob = { {}, +[](void*, IB::Job::Handle) { return IB::JobResult::Complete; } };
+    IB::Job::Handle toJobHandle(IB::Job::Data const* job) { return IB::Job::toHandle((static_cast<uint64_t>(job->Generation) << 32) | static_cast<uint32_t>(job - JobPool)); }
 
     constexpr uint32_t MaxWaitCount = 1 << 16;
     constexpr uint32_t MaxJobWaiters = 10;
@@ -466,7 +467,8 @@ namespace
             // If it was put to sleep in this result, it will simply be removed from the queue
             // As a result, it should behave correctly if the job completes before it is even put to sleep.
             // If putting to sleep has side effects in the future, the API might have to be re-thought
-            IB::JobResult result = job->Func(job->Data);
+            IB::Job::Handle jobHandle = toJobHandle(job);
+            IB::JobResult result = job->Func(job->Data, jobHandle);
 
             // Queue management
             if(stolenJob == nullptr)
@@ -566,7 +568,7 @@ namespace IB
     Job::Handle reserveJob(JobDesc desc)
     {
         Job::Data* job = takeJob(desc);
-        return Job::toHandle((static_cast<uint64_t>(job->Generation) << 32) | static_cast<uint32_t>(job - JobPool));
+        return toJobHandle(job);
     }
 
     Job::Handle continueJob(JobDesc desc, Job::Handle* dependencies, uint32_t dependencyCount)
@@ -611,7 +613,7 @@ namespace IB
     {
         // TODO: Consider avoiding creating a new event every time.
         ThreadEvent threadEvent = IB::createThreadEvent();
-        continueJob([threadEvent]()
+        continueJob([threadEvent](Job::Handle /*currentJob*/)
         {
             IB::signalThreadEvent(threadEvent);
             return JobResult::Complete;

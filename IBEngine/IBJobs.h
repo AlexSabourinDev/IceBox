@@ -3,6 +3,8 @@
 #include "IBEngineAPI.h"
 #include <stdint.h>
 #include <string.h>
+#include <type_traits>
+#include <new>
 
 /*
 ## Why do we want a job system?
@@ -24,6 +26,13 @@ TODO: explain job reservation flow and sleep/complete
 
 namespace IB
 {
+    namespace Job
+    {
+        enum class Handle : uint64_t {};
+        constexpr Handle toHandle(uint64_t value) { return static_cast<Handle>(value); }
+        constexpr uint64_t toValue(Handle handle) { return static_cast<uint64_t>(handle); }
+    }
+
     constexpr uint32_t AllJobQueues = UINT32_MAX;
     enum class JobResult
     {
@@ -31,8 +40,8 @@ namespace IB
         Sleep
     };
 
-    constexpr size_t MaxJobDataSize = 64;
-    using JobFunc = JobResult(void *data);
+    constexpr size_t MaxJobDataSize = 128;
+    using JobFunc = JobResult(void *data, Job::Handle currentJobHandle);
 
     struct JobDesc
     {
@@ -40,13 +49,6 @@ namespace IB
         JobFunc *Func = nullptr;
         uint32_t QueueIndex = AllJobQueues;
     };
-
-    namespace Job
-    {
-        enum class Handle : uint64_t {};
-        constexpr Handle toHandle(uint64_t value) { return static_cast<Handle>(value); }
-        constexpr uint64_t toValue(Handle handle) { return static_cast<uint64_t>(handle); }
-    }
 
     constexpr Job::Handle InvalidJob = Job::toHandle(UINT64_MAX);
 
@@ -102,38 +104,56 @@ namespace IB
 
     // Utility API
 
-    template <typename T>
-    Job::Handle launchJob(const T &functor, uint32_t queueIndex = AllJobQueues)
+    template< typename T>
+    JobResult jobFunctor(void *functorData, Job::Handle currentJob)
     {
-        static_assert(sizeof(T) <= MaxJobDataSize, "Functor is too large for job. Consider allocating it on the heap.");
+        T* functor = reinterpret_cast<T *>(functorData);
+        JobResult result = (*functor)(currentJob);
+        if (result == JobResult::Complete)
+        {
+            functor->~T(); // Clean up our data if we're done with it.
+        }
+        return result;
+    }
+
+    template <typename T>
+    Job::Handle launchJob(T &&functor, uint32_t queueIndex = AllJobQueues)
+    {
+        using RawType = typename std::remove_reference<T>::type;
+
+        static_assert(sizeof(RawType) <= MaxJobDataSize, "Functor is too large for job. Consider allocating it on the heap.");
 
         JobDesc desc;
-        desc.Func = [](void *functor) { return (*reinterpret_cast<T *>(functor))(); };
-        memcpy(desc.JobData, &functor, sizeof(T));
+        desc.Func = &jobFunctor<RawType>;
+        new (desc.JobData) RawType{ std::forward<T>(functor) };
         desc.QueueIndex = queueIndex;
         return launchJob(desc);
     }
 
     template <typename T>
-    Job::Handle continueJob(const T &functor, Job::Handle* dependencies, uint32_t dependencyCount, uint32_t queueIndex = AllJobQueues)
+    Job::Handle continueJob(T &&functor, Job::Handle* dependencies, uint32_t dependencyCount, uint32_t queueIndex = AllJobQueues)
     {
-        static_assert(sizeof(T) <= MaxJobDataSize, "Functor is too large for job. Consider allocating it on the heap.");
+        using RawType = typename std::remove_reference<T>::type;
+
+        static_assert(sizeof(RawType) <= MaxJobDataSize, "Functor is too large for job. Consider allocating it on the heap.");
 
         JobDesc desc;
-        desc.Func = [](void *functor) { return (*reinterpret_cast<T *>(functor))(); };
-        memcpy(desc.JobData, &functor, sizeof(T));
+        desc.Func = &jobFunctor<RawType>;
+        new (desc.JobData) RawType{ std::forward<T>(functor) };
         desc.QueueIndex = queueIndex;
         return continueJob(desc, dependencies, dependencyCount);
     }
 
     template <typename T>
-    Job::Handle reserveJob(const T &functor, uint32_t queueIndex = AllJobQueues)
+    Job::Handle reserveJob(T &&functor, uint32_t queueIndex = AllJobQueues)
     {
-        static_assert(sizeof(T) <= MaxJobDataSize, "Functor is too large for job. Consider allocating it on the heap.");
+        using RawType = typename std::remove_reference<T>::type;
+
+        static_assert(sizeof(RawType) <= MaxJobDataSize, "Functor is too large for job. Consider allocating it on the heap.");
 
         JobDesc desc;
-        desc.Func = [](void *functor) { return (*reinterpret_cast<T *>(functor))(); };
-        memcpy(desc.JobData, &functor, sizeof(T));
+        desc.Func = &jobFunctor<RawType>;
+        new (desc.JobData) RawType{ std::forward<T>(functor) };
         desc.QueueIndex = queueIndex;
         return reserveJob(desc);
     }

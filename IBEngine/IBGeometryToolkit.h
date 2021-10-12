@@ -18,6 +18,11 @@ namespace IB
         enum class Handle : uint64_t;
     }
 
+    namespace Entity
+    {
+        enum class Handle : uint64_t;
+    }
+
     // Geometry swept accross a line
     struct LineSweepDesc
     {
@@ -27,7 +32,8 @@ namespace IB
 
     Asset::FourCC const LineSweepPropertyType = Asset::toFourCC("LNSW");
 
-    LineSweepDesc* getLineSweep(Property::Handle lineSweepProperty);
+    IB_API LineSweepDesc* getLineSweep(Property::Handle lineSweepProperty);
+    IB_API void updateLineSweep(Entity::Handle entity, LineSweepDesc const& lineSweep);
 
     IB_API void initGeometryToolkit();
     IB_API void killGeometryToolkit();

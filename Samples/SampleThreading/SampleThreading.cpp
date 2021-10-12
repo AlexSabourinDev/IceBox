@@ -15,7 +15,7 @@ int main()
     constexpr uint32_t iterations = 1024 * 10;
     for (uint32_t i = 0; i < iterations; i++)
     {
-        IB::launchJob([]()
+        IB::launchJob([](IB::Job::Handle /*currentJob*/)
         {
             IB::atomicIncrement(&Counter);
             printf("%u ", Counter);
@@ -29,11 +29,11 @@ int main()
     Counter = 0;
     for (uint32_t i = 0; i < iterations / 10; i++)
     {
-        IB::launchJob([]()
+        IB::launchJob([](IB::Job::Handle /*currentJob*/)
         {
             for (uint32_t i = 0; i < 10; i++)
             {
-                IB::launchJob([i]()
+                IB::launchJob([i](IB::Job::Handle /*currentJob*/)
                 {
                     IB::atomicIncrement(&Counter);
                     printf("%u: %u ", i, Counter);
@@ -48,30 +48,30 @@ int main()
 
     for (uint32_t i = 0; i < 10; i++)
     {
-        IB::Job::Handle sleepJob = IB::launchJob([]()
+        IB::Job::Handle sleepJob = IB::launchJob([](IB::Job::Handle /*currentJob*/)
         {
             Sleep(100);
             return IB::JobResult::Complete;
         });
-        IB::Job::Handle continueJob1 = IB::continueJob([]()
+        IB::Job::Handle continueJob1 = IB::continueJob([](IB::Job::Handle /*currentJob*/)
         {
             Sleep(10);
             return IB::JobResult::Complete;
         }, &sleepJob, 1);
-        IB::Job::Handle continueJob2 = IB::continueJob([]()
+        IB::Job::Handle continueJob2 = IB::continueJob([](IB::Job::Handle /*currentJob*/)
         {
             Sleep(10);
             return IB::JobResult::Complete;
         }, &sleepJob, 1);
 
         Counter = 0;
-        IB::continueJob([]()
+        IB::continueJob([](IB::Job::Handle /*currentJob*/)
         {
             IB::atomicIncrement(&Counter);
             return IB::JobResult::Complete;
         }, &continueJob1, 1);
 
-        IB::continueJob([]()
+        IB::continueJob([](IB::Job::Handle /*currentJob*/)
         {
             IB::atomicIncrement(&Counter);
             return IB::JobResult::Complete;
@@ -82,7 +82,7 @@ int main()
 
     for (uint32_t i = 0; i < 10; i++)
     {
-        IB::Job::Handle sleepJob = IB::launchJob([]()
+        IB::Job::Handle sleepJob = IB::launchJob([](IB::Job::Handle /*currentJob*/)
         {
             Sleep(100);
             return IB::JobResult::Complete;
@@ -91,7 +91,7 @@ int main()
         IB::Job::Handle continueJobs[10];
         for (uint32_t j = 0; j < 10; j++)
         {
-            continueJobs[j] = IB::continueJob([]()
+            continueJobs[j] = IB::continueJob([](IB::Job::Handle /*currentJob*/)
             {
                 Sleep(10);
                 return IB::JobResult::Complete;
@@ -99,7 +99,7 @@ int main()
         }
 
         Counter = 0;
-        IB::continueJob([]()
+        IB::continueJob([](IB::Job::Handle /*currentJob*/)
         {
             IB::atomicIncrement(&Counter);
             return IB::JobResult::Complete;
@@ -109,11 +109,11 @@ int main()
     }
 
     IB::Job::Handle myHandle;
-    myHandle = IB::reserveJob([&myHandle]()
+    myHandle = IB::reserveJob([&myHandle](IB::Job::Handle /*currentJob*/)
     {
         if (Counter == 0)
         {
-            IB::Job::Handle childJob = IB::launchJob([]()
+            IB::Job::Handle childJob = IB::launchJob([](IB::Job::Handle /*currentJob*/)
             {
                 Sleep(10);
                 return IB::JobResult::Complete;
@@ -140,7 +140,7 @@ int main()
     float volatile* initialFloat = IB::allocate<float>(2.0f);
     for (uint32_t i = 0; i < iterations; i++)
     {
-        IB::launchJob([]()
+        IB::launchJob([](IB::Job::Handle /*currentJob*/)
         {
             IB::atomicIncrement(&Counter);
 
@@ -160,7 +160,7 @@ int main()
     Counter = 0;
     for (uint32_t i = 0; i < iterations; i++)
     {
-        IB::launchJob([]()
+        IB::launchJob([](IB::Job::Handle /*currentJob*/)
         {
             IB::atomicIncrement(&Counter);
 
@@ -178,7 +178,7 @@ int main()
     Counter = 0;
     for (uint32_t i = 0; i < 20; i++)
     {
-        IB::launchJob([]()
+        IB::launchJob([](IB::Job::Handle /*currentJob*/)
         {
             IB::atomicIncrement(&Counter);
 

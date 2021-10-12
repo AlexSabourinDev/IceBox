@@ -79,7 +79,7 @@ namespace IB
             IB::destroyThreadEvent(PendingFrameEvent);
         }
 
-        JobResult platformMessageQueueJob()
+        JobResult platformMessageQueueJob(Job::Handle /*currentJob*/)
         {
             consumeMessageQueue([](void *, PlatformMessage message) {
                 if (message == PlatformMessage::Quit)
@@ -91,7 +91,7 @@ namespace IB
             return JobResult::Complete;
         }
 
-        JobResult editorJob()
+        JobResult editorJob(Job::Handle /*currentJob*/)
         {
             Editor::FrameState state = { &CellResource };
             Editor::frame(&state);
@@ -143,7 +143,7 @@ namespace IB
             // Reads:
             // Frontend Renderer state
             // Transform state
-            SubmittedViewGather = continueJob([viewDescriptor, renderFrameAllocator]() {
+            SubmittedViewGather = continueJob([viewDescriptor, renderFrameAllocator](Job::Handle /*currentJob*/) {
                 Cell::Handle currentCell = InvalidCell;
                 // Todo: needs a volatile load. Don't want the compiler to cache our load
                 if (Asset::isResourceAssetAvailable(CellResource))
@@ -167,7 +167,7 @@ namespace IB
 
             // Writes:
             // Backend Renderer state
-            continueJob([viewDescriptor, renderFrameAllocator]() {
+            continueJob([viewDescriptor, renderFrameAllocator](Job::Handle /*currentJob*/) {
                 drawCellView(renderFrameAllocator, *viewDescriptor);
 
                 uint32_t previousPendingFrameCount = volatileLoad(&QueuedFrameCount) - CommitedFrameCount;
@@ -198,7 +198,7 @@ int main()
     ThreadEvent platformEvent = createThreadEvent();
 
     {
-        launchJob([platformEvent]() {
+        launchJob([platformEvent](Job::Handle /*currentJob*/) {
             WindowDesc winDesc = {};
             winDesc.Name = "EngineCat";
             winDesc.Width = 1024;
@@ -245,7 +245,7 @@ int main()
         killRendererFrontend();
         Serialization::killSerialization();
 
-        launchJob([platformEvent]() {
+        launchJob([platformEvent](Job::Handle /*currentJob*/) {
             destroyWindow(WindowHandle);
             signalThreadEvent(platformEvent);
             return JobResult::Complete;

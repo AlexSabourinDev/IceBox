@@ -200,6 +200,7 @@ namespace IB
     IB_API void initForwardPass(ForwardPassDesc const &desc);
 
     IB_API Mesh::Handle createMesh(MeshDesc const &desc);
+    IB_API void updateMesh(Mesh::Handle mesh, MeshDesc const &desc);
     IB_API void destroyMesh(Mesh::Handle mesh);
 
     IB_API Image::Handle createImage(ImageDesc const &desc);
