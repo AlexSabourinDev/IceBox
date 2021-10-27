@@ -6,24 +6,16 @@ public class CatCollisionManager : MonoBehaviour
 {
     CatMotor cm;
 
-    // Start is called before the first frame update
     void Awake()
     {
         cm = GetComponent<CatMotor>();
     }
-
-    // Update is called once per frame
-    void Update()
-    {
-        
-    }
-
+    
     private void OnTriggerEnter(Collider other)
     {
         if (other.tag == "TriggerZone")
         {
-            ActivateTriggerZone triggerZone = other.GetComponent<ActivateTriggerZone>();
-            triggerZone.Trigger();
+            other.SendMessage("Trigger");
         }
 
         if (other.tag == "Checkpoint")

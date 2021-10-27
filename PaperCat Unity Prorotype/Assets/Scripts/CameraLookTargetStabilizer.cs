@@ -22,7 +22,7 @@ public class CameraLookTargetStabilizer : MonoBehaviour
     }
 
     // Update is called once per frame
-    void Update()
+    void FixedUpdate()
     {
         Vector3 wouldbePosition = new Vector3(xPosition, cat.position.y + yOffset, cat.position.z + zOffset);
         transform.position = Vector3.Lerp(transform.position, wouldbePosition, lerpAmount);

@@ -29,7 +29,7 @@ public class DollyTrackFollowYAxis : MonoBehaviour
     }
 
     // Update is called once per frame
-    void Update()
+    void FixedUpdate()
     {
         if (cm.Grounded)
         {
