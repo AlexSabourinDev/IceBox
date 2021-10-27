@@ -1,6 +1,7 @@
 #pragma once
 
 #include "IBAllocator.h"
+#include <string.h>
 
 namespace IB
 {

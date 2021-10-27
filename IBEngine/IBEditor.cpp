@@ -12,6 +12,7 @@
 #include "IBGeometryToolkit.h"
 
 #include <imgui/imgui.h>
+#include <stdio.h>
 
 namespace
 {

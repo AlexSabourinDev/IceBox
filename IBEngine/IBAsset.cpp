@@ -6,6 +6,7 @@
 #include "IBPlatform.h"
 
 #include <string.h>
+#include <stdio.h>
 
 namespace IB
 {

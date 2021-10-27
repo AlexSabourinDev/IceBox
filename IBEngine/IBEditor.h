@@ -20,7 +20,7 @@ namespace IB
     namespace Asset
     {
         enum class Handle : uint64_t;
-        enum FourCC : uint32_t;
+        enum class FourCC : uint32_t;
     }
 
     namespace Resource

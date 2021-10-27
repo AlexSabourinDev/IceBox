@@ -828,7 +828,7 @@ namespace
             swapchainCreate.pNext = NULL;
             swapchainCreate.minImageCount = FrameBufferCount;
             swapchainCreate.imageArrayLayers = 1;
-            swapchainCreate.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT;
+            swapchainCreate.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_STORAGE_BIT;
             swapchainCreate.surface = RendererContext.Present.Surface;
             swapchainCreate.imageFormat = RendererContext.Present.SurfaceFormat.format;
             swapchainCreate.imageColorSpace = RendererContext.Present.SurfaceFormat.colorSpace;

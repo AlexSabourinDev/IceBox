@@ -14,7 +14,7 @@ namespace IB
 
     namespace Asset
     {
-        enum FourCC : uint32_t;
+        enum class FourCC : uint32_t;
         constexpr FourCC toFourCC(char const (&text)[5]);
 
         enum class Handle : uint64_t;

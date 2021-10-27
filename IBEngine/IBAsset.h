@@ -21,7 +21,7 @@ namespace IB
 
     namespace Asset
     {
-        enum FourCC : uint32_t {};
+        enum class FourCC : uint32_t;
         constexpr FourCC toFourCC(uint32_t value) { return static_cast<FourCC>(value); }
 
         constexpr FourCC toFourCC(char const (&text)[5]) // Char array is of 5 due to null terminator
