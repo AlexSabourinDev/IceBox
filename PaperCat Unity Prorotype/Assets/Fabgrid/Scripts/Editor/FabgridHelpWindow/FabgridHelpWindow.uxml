@@ -1,0 +1,23 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<engine:UXML
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xmlns:engine="UnityEngine.UIElements"
+    xmlns:editor="UnityEditor.UIElements"
+    xsi:noNamespaceSchemaLocation="../../../UIElementsSchema/UIElements.xsd"
+>
+  <engine:Label text="Welcome to Fabgrid!" class="medium-header-bold"/>
+  <engine:Label text="This window will help you get started with Fabgrid, setting everything up is really easy!" class="small-paragraph"></engine:Label>
+  <engine:Label text="Setup" class="medium-header-bold"></engine:Label>
+  <engine:Label text="1. Create a new GameObject" class="small-paragraph"></engine:Label>
+  <engine:Label text="2. Add a Tilemap3D component to the new GameObject. This is the only component that Fabgrid contains. It will store your level and give you access to various tools to help you build your level." class="small-paragraph"></engine:Label>
+  <engine:Label text="3. Navigate to the Add Tile panel by clicking on the button with the plus icon." class="small-paragraph"></engine:Label>
+  <engine:Label text="4. Set the add option to 'Multiple'. The add option lets you control how Fabgrid will import prefabs to your collection. The option 'Single' lets you import one prefab at a time while 'Multiple' allows you to import multiple prefabs from a specified folder." class="small-paragraph"></engine:Label>
+  <engine:Label text="5. Set the path to 'Fabgrid/Demo/Prefabs' and make sure that the size calculation option is set to 'Mesh'." class="small-paragraph"></engine:Label>
+  <engine:Label text="6. Navigate to the 'Paint' panel by clicking on the button with the brush icon. You should now see a collection of prefabs." class="small-paragraph"></engine:Label>
+  <engine:Label text="7. Go to the 'Configuration' panel and make sure the snap option is set to 'Adaptive'." class="small-paragraph"></engine:Label>
+  <engine:Label text="8. Go back to the 'Paint' panel, select the 'Brush' tool and start painting on the grid displayed in the scene view." class="small-paragraph"></engine:Label>
+  
+  <engine:Label text="More Information" class="medium-header-bold"/>
+  <engine:Label text="You can find more information about using the tool in the 'Help' panel or the README located in the 'Documentation' folder. You can reach the 'Help' panel by clicking on the button with the question mark icon." class="small-paragraph"></engine:Label>
+  
+</engine:UXML>

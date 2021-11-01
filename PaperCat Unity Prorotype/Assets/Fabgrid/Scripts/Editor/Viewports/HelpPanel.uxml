@@ -1,0 +1,52 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<engine:UXML
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xmlns:engine="UnityEngine.UIElements"
+    xmlns:editor="UnityEditor.UIElements"
+    xsi:noNamespaceSchemaLocation="../../../../UIElementsSchema/UIElements.xsd"
+>
+  <engine:VisualElement name="help-panel" class="help-panel panel">
+    <engine:ScrollView class="rounded-scroll-view" show-vertical-scroller="true">
+      
+      <engine:Label class="help-panel-header" text="The Paint Panel"/>
+      <engine:Label class ="help-panel-paragraph" text="This panel lets you create your level(s) by offering you various tools and the collection of tiles you have added. The top panel displays your current tool and lets you change it.  If the tool contains any related settings, they will be displayed at the bottom of the same panel. "/>
+      <engine:Label class ="help-panel-paragraph" text="The middle panel contains your collection of tiles. In order to paint, you need to select one of the tiles by clicking on it in the collection. Now, if you move your mouse to the scene view, you will see a transparent blue preview of the tile. After you have selected a tile, you can remove it by clicking the Remove button located underneath the panel."/>
+      <engine:Label class ="help-panel-paragraph" text="At the bottom of the paint panel, you can control the level of the floor. The floor makes it easy to place out tiles because it controls where your tiles will snap on the global Y axis. You can also control the floor level using keyboard shortcuts. You can see and change the keyboard shortcuts in the Configuration panel."/>
+      <engine:Label class ="help-panel-paragraph" text="In the scene view, a grid is displayed which makes it easier to visualize where your tiles will be positioned."/>
+      <engine:Label class ="help-panel-paragraph" text="The paint panel supports Maya style navigation. You can hold down the left control button while left-clicking on a GameObject to focus on it. You can orbit around the GameObject by holding down the left alt button while dragging with the left mouse button. You can also pan the scene view by holding down the left control button and the left alt button while dragging with the left mouse button."/>
+
+      <engine:Label class="help-panel-header" text="The Add Tile Panel"/>
+      <engine:Label class ="help-panel-paragraph" text="Here you can add tiles to your collection. There are two ways to add tiles. The first option Single lets you add one prefab at a time using the prefab field. The second option Multiple lets you add multiple tiles from a specified folder. The path you specify needs to be relative to the Assets folder. For example, if you want to add the prefabs from Assets/Fabgrid/Demo/Prefabs, you only need to input Fabgrid/Demo/Prefabs. "/>
+      <engine:Label class ="help-panel-paragraph" text="The size calculation option allows you to control how the tiles will be placed out in the level. The option Mesh will make the treat the mesh as the bounds of the tile. The option Collider is similar but treats the collider as the bounds of the tile. The last option Custom lets you specify a custom size. The Offset option will displace the tile globally when it is placed out when painting."/>
+      <engine:Label class="help-panel-paragraph" text="You can also load tiles from a TileSet using the 'Load Tile Set' button. Before you can do this, you will need to save the tiles from your Tilemap3D component into a TileSet using the 'Save Tile Set' button."/>
+      
+      <engine:Label class="help-panel-header" text="The Configuration Panel"/>
+      <engine:Label class ="help-panel-paragraph" text="The configuration panel gives you a set of settings to configure the tool. Some settings (e.g. the grid color) are purely cosmetic while other settings (e.g. snap options) can have an significant impact on how the tool works. "/>
+      <engine:Label class ="help-panel-paragraph" text="The first panel contains settings related to the grid. The grid spacing determines the size of the grid cells and changes the precision of the tile placement."/>
+      <engine:Label class ="help-panel-paragraph" text="The second panel contains general settings like the floor spacing and the snap option. The floor spacing defines the distance between each consecutive floor level. The snap option determines how the tiles will be placed out when painting."/>
+      <engine:Label class ="help-panel-paragraph" text="The third panel holds all the keyboard shortcuts available. These can be tailored for your needs. If you want to disable a keyboard shortcut, you can set the key value to None."/>
+      <engine:Label class ="help-panel-paragraph" text="It is important to get a good understanding of how each snap option work. There exists four types of snap options:"/>
+      <engine:Label class ="help-panel-paragraph" text="    - 'Adaptive' where the tile snaps to the grid if there is no mesh underneath the cursor. If there is a mesh underneath the cursor, the tile will snap to the position over the mesh along the Y-axis and also snap to the grid along the floor plane."/>
+      <engine:Label class ="help-panel-paragraph" text="    - 'Floor' where the tile will only snap to the floor along the Y-axis."/>
+      <engine:Label class ="help-panel-paragraph" text="    - 'Mesh' where the tile will snap to the mesh the cursor is currently hovering over."/>
+      <engine:Label class ="help-panel-paragraph" text="    - 'Grid' where the tile snaps to the grid on all axes."/>
+      
+      <engine:Label class="help-panel-header" text="The Brush Tool"/>
+      <engine:Label class ="help-panel-paragraph" text="Place out tiles one at a time when clicking the left mouse button. Useful when placing out non-repetitive items like chests and doors."/>
+      
+      <engine:Label class="help-panel-header" text="The Eraser Tool"/>
+      <engine:Label class ="help-panel-paragraph" text="Erases tiles one at a time when clicking the left mouse button. This tool is most effective if you only want to remove a few items and need greater precision."/>
+      
+      <engine:Label class="help-panel-header" text="The Rectangle Tool"/>
+      <engine:Label class ="help-panel-paragraph" text="The rectangle tool lets you place out multiple tiles by dragging the cursor using the left mouse button. It is useful for placing out repetitive items like floors and walls. This tool has two different modes. Relative mode will offset each tile based on the size of the selected tile itself. In Grid mode, the tiles will instead be offset based on the grid spacing."/>
+      
+      <engine:Label class="help-panel-header" text="The Selection Box Tool"/>
+      <engine:Label class ="help-panel-paragraph" text="This works the same as any selection box and lets you delete multiple tiles at the same time. Hold the left mouse button while dragging over tiles to select them. It will only select tiles that belongs to the given 3D tilemap. Selected GameObjects will be highlighted in yellow. To delete the selected tiles, press the Delete key."/>
+      
+      <engine:Label class="help-panel-header" text="Report a bug"/>
+      <engine:Label class ="help-panel-paragraph" text="Please send us your bug report using the contact section on the following page:"/>
+      <engine:Label class ="help-panel-paragraph" style="color: rgb(0, 0, 255);" text="https://cikoriastudio.wixsite.com/home"></engine:Label>
+  
+    </engine:ScrollView>
+  </engine:VisualElement>
+</engine:UXML>

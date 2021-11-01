@@ -39,12 +39,24 @@ public class Spawner : MonoBehaviour
                     spawnSequenceIndex = 0;
                 }
 
-                GameObject child = Instantiate(toSpawn, transform.position, toSpawn.transform.rotation);
-                child.SetActive(true);
-                //Destroy(child, 10f);
+                SpawnChild();
             }
 
             spawnTimer -= Time.deltaTime;
         }
+    }
+
+    public void Trigger()
+    {
+        if (!timed)
+        {
+            SpawnChild();
+        }
+    }
+
+    void SpawnChild()
+    {
+        GameObject child = Instantiate(toSpawn, transform.position, toSpawn.transform.rotation);
+        child.SetActive(true);
     }
 }

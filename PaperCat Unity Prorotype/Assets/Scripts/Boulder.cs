@@ -19,7 +19,6 @@ public class Boulder : MonoBehaviour
     public float initialVelocity = 2f;
     public float force = 2f;
     public bool rolling;
-    public float killTimer = 10f;
     
 
     Rigidbody rb;
@@ -75,12 +74,12 @@ public class Boulder : MonoBehaviour
         kzf = GetComponentInChildren<BoulderKillzoneFollow>();
 
         UpdateFacing(Forward);
-
-        Invoke("Kill", killTimer);
+        
     }
 
     void FixedUpdate()
     {
+        if (!rolling) return;
         if (!moving)
         {
             rb.AddForce(Forward * initialVelocity, ForceMode.VelocityChange);
@@ -90,6 +89,11 @@ public class Boulder : MonoBehaviour
         {
             rb.AddForce(Forward * force, ForceMode.Acceleration);
 
+        }
+
+        if (transform.position.y < -50)
+        {
+            Destroy(this.gameObject);
         }
     }
 

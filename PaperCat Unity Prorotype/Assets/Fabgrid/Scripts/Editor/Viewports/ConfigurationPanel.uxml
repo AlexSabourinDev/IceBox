@@ -1,0 +1,36 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<engine:UXML
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xmlns:engine="UnityEngine.UIElements"
+    xmlns:editor="UnityEditor.UIElements"
+    xsi:noNamespaceSchemaLocation="../../../../UIElementsSchema/UIElements.xsd"
+>
+  <engine:VisualElement name="configuration-panel" class="panel">
+    
+    <engine:VisualElement class="rounded-panel">
+      <editor:ColorField name="grid-color-field" class="field" label="Grid Color"></editor:ColorField>
+      <editor:FloatField name="grid-spacing-float-field" class="field" label="Grid Spacing"></editor:FloatField>
+      <editor:IntegerField name="grid-size-field" class="field" label="Grid Size"></editor:IntegerField>
+    </engine:VisualElement>
+    
+    <engine:VisualElement class="rounded-panel">
+      <!--<engine:Toggle name="only-remove-on-same-floor-toggle" class="field" label="Only Remove On Equal Floor"></engine:Toggle>-->
+      <editor:FloatField name="floor-spacing-field" class="field" label="Floor Spacing" binding-path="floorSpacing"></editor:FloatField>
+      <editor:FloatField name="rotation-step-angle-float-field" class="field" label="Rotation Step Angle"></editor:FloatField>
+      <editor:EnumField name="snap-option-field" class="field" label="Snap Option" binding-path="snapOption" type="Fabgrid.SnapOption, Assembly-CSharp"></editor:EnumField>
+    </engine:VisualElement>
+
+    <engine:VisualElement class="rounded-panel">
+      <editor:EnumField name="selection-box-key-field" class="field" label="Selection Box Key" binding-path="selectionBoxKey" type="UnityEngine.KeyCode, UnityEngine.CoreModule"></editor:EnumField>
+      <editor:EnumField name="brush-key-field" class="field" label="Brush Key" binding-path="brushKey" type="UnityEngine.KeyCode, UnityEngine.CoreModule"></editor:EnumField>
+      <editor:EnumField name="eraser-key-field" class="field" label="Eraser Key" binding-path="eraserKey" type="UnityEngine.KeyCode, UnityEngine.CoreModule"></editor:EnumField>
+      <editor:EnumField name="rectangle-tool-key-field" class="field" label="Rectangle Tool Key" binding-path="rectangleToolKey" type="UnityEngine.KeyCode, UnityEngine.CoreModule"></editor:EnumField>
+      <editor:EnumField name="raise-floor-key-field" class="field" label="Raise Floor Key" binding-path="raiseFloorKey" type="UnityEngine.KeyCode, UnityEngine.CoreModule"></editor:EnumField>
+      <editor:EnumField name="lower-floor-key-field" class="field" label="Lower Floor Key" binding-path="lowerFloorKey" type="UnityEngine.KeyCode, UnityEngine.CoreModule"></editor:EnumField>
+      <editor:EnumField name="rotate-tile-around-y-key-field" class="field" label="Rotate Tile Around Y Key" binding-path="rotateTileAroundYKey" type="UnityEngine.KeyCode, UnityEngine.CoreModule"></editor:EnumField>
+      <editor:EnumField name="rotate-tile-around-z-key-field" class="field" label="Rotate Tile Around Z Key" binding-path="rotateTileAroundZKey" type="UnityEngine.KeyCode, UnityEngine.CoreModule"></editor:EnumField>
+      <editor:EnumField name="reset-tile-rotation-key-field" class="field" label="Reset Tile Rotation Key" binding-path="resetTileRotationKey" type="UnityEngine.KeyCode, UnityEngine.CoreModule"></editor:EnumField>
+    </engine:VisualElement>
+    
+  </engine:VisualElement>
+</engine:UXML>

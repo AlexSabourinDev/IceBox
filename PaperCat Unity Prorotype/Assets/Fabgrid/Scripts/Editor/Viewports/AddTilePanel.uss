@@ -1,0 +1,32 @@
+﻿.add-tile-panel {
+	display: flex;
+	flex: 1;
+}
+
+#add-tile-button {
+	display: flex;
+	margin: 10px;
+	width: 33%;
+	height: 30px;
+	border-radius: 6px;
+}
+
+#add-tile-button-container {
+	justify-content: center;
+	align-items: center;
+}
+
+#tile-set-panel {
+	display: flex;
+	flex-direction: row;
+	justify-content: center;
+	align-items: center;
+}
+
+.tile-set-button {
+	display: flex;
+	margin: 10px;
+	width: 33%;
+	height: 30px;
+	border-radius: 6px;
+}

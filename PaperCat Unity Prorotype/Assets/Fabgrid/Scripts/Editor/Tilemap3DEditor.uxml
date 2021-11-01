@@ -1,0 +1,23 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<engine:UXML
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xmlns:engine="UnityEngine.UIElements"
+    xmlns:editor="UnityEditor.UIElements"
+    xsi:noNamespaceSchemaLocation="../../../UIElementsSchema/UIElements.xsd"
+>
+  <engine:VisualElement name="main-container">
+    <engine:VisualElement name="navigation-bar">
+      <engine:Button name="paint-panel-button" class="navigation-bar-button" tooltip="Paint"/>
+      <engine:Button name="add-tile-panel-button" class="navigation-bar-button" tooltip="Add Tile"/>
+      <engine:Button name="configuration-panel-button" class="navigation-bar-button" tooltip="Configuration"/>
+      <engine:Button name="help-panel-button" class="navigation-bar-button" tooltip="Help"/>
+    </engine:VisualElement>
+
+    <engine:VisualElement name ="panel-container">
+      <engine:Label name ="main-panel-header"/>
+      <engine:VisualElement name="main-panel-viewport">
+      </engine:VisualElement>
+    </engine:VisualElement>
+
+  </engine:VisualElement>
+</engine:UXML>

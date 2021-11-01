@@ -1,0 +1,35 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<engine:UXML
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xmlns:engine="UnityEngine.UIElements"
+    xmlns:editor="UnityEditor.UIElements"
+    xsi:noNamespaceSchemaLocation="../../../../UIElementsSchema/UIElements.xsd"
+>
+  <engine:VisualElement name="paint-panel" class="paint-panel panel">
+
+    <engine:VisualElement name="tool-panel" class="rounded-panel">
+      <editor:EnumField name="tool-type-field"
+                        class="field"
+                        label="Tool"
+                        type="Fabgrid.ToolType, Assembly-CSharp"
+                        binding-path="toolType">
+      </editor:EnumField>
+    </engine:VisualElement>
+
+    <engine:VisualElement style="display: flex; width: auto; height: auto; flex: 1;">
+
+      <engine:TextField name="search-field" label="Search" binding-path="searchValue"></engine:TextField>
+      
+      <engine:ScrollView name="paint-scroll-view" class="rounded-scroll-view" show-vertical-scroller="true" style="flex-grow: 3.5;">
+        <engine:VisualElement name="paint-tile-container">
+        </engine:VisualElement>
+      </engine:ScrollView>
+    </engine:VisualElement>
+    <engine:VisualElement name="tile-edit-button-container" style="display: flex; justify-content: center; align-items: center; height: 48px;">
+      <engine:Button name="delete-tile-button" class="tile-edit-button" text="Remove"/>
+    </engine:VisualElement>
+    <engine:VisualElement name="paint-info">
+      <editor:IntegerField name="floor-index-field" label="Floor" class="small-paragraph" binding-path="floorIndex" style="width: 75px;"/>
+    </engine:VisualElement>
+  </engine:VisualElement>
+</engine:UXML>

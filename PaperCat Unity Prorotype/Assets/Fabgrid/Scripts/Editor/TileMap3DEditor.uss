@@ -1,0 +1,114 @@
+﻿#main-container {
+	display: flex;
+	width: auto;
+	height: 700px;
+}
+
+#navigation-bar {
+	height: 50px;
+	width: auto;
+	background-color: rgb(165, 165, 165);
+	border-radius: 10px;
+	display: flex;
+	flex-direction: row;
+	margin-bottom: 5px;
+	align-items: center;
+	justify-content: flex-start;
+}
+
+.navigation-bar-button {
+	width: 42px;
+	height: 42px;
+	border-radius: 12px;
+	padding: 0px;
+}
+
+.selected-navigation-bar-button {
+	background-color: rgb(130, 130, 130);
+}
+
+.navigation-bar-button-icon {
+	display: flex;
+	margin: 8px;	
+}
+
+#panel-container {
+	display: flex;
+	background-color: rgb(165, 165, 165);
+	border-radius: 16px;
+	flex: 1;
+	-unity-text-align: middle-center;
+}
+
+#main-panel-header {
+	-unity-font-style: bold;
+	color: rgb(10, 10, 10);
+	margin-top: 13px;
+	font-size: 18px;
+}
+
+#main-panel-viewport {
+	margin: 20px;
+	display: flex;
+	flex: 1;
+}
+
+.panel {
+	display: flex;
+	flex: 1;
+}
+
+TemplateContainer {
+	display: flex;
+	flex: 1;
+}
+
+.field-label {
+	font-size: 15px;
+	color: rgb(10, 10, 10);
+}
+
+.medium-header-bold {
+	font-size: 16px;
+	-unity-font-style: bold;
+	color: rgb(10, 10, 10);
+	margin: 4px;
+}
+
+.small-paragraph {
+	font-size: 14px;
+	color: rgb(10, 10, 10);
+	margin: 4px;
+	white-space: normal;
+}
+
+.button-label {
+	font-size: 14px;
+	color: rgb(10, 10, 10);
+}
+
+.toggle-button {
+	
+}
+
+.rounded-panel {
+	display: flex;
+	background-color: rgb(140, 140, 140);
+	border-radius: 16px 4px 4px 16px;
+	margin: 10px 0px 10px 0px;
+	padding: 10px 20px 10px 20px;
+	justify-content: center;
+	overflow: hidden;
+}
+
+.rounded-scroll-view {
+	display: flex;
+	flex: 1;
+	background-color: rgb(140, 140, 140);
+	border-radius: 16px 4px 4px 16px;
+	width: auto;
+}
+
+.field {
+	margin: 3px 0px 3px 0px;
+}

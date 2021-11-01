@@ -113,6 +113,7 @@ public class CatMotor : MonoBehaviour
         //handle horizontal movement
 
         Vector2 leftInput = im.GetLeftStickInput();
+
         movementTimer -= Time.deltaTime;
         bool leftStickActivated = leftInput.magnitude > stickInputDeadzone;
         Vector3 newForward;

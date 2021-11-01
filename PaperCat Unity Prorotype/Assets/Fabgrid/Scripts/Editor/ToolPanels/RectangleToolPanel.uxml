@@ -1,0 +1,25 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<engine:UXML
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xmlns:engine="UnityEngine.UIElements"
+    xmlns:editor="UnityEditor.UIElements"
+    xsi:noNamespaceSchemaLocation="../../../../../UIElementsSchema/UIElements.xsd"
+>
+  <engine:VisualElement name="rectangle-tool-panel" class="tool-sub-panel">
+    
+    <editor:EnumField name="offset-option-field"
+                      class="field"
+                      label="Offset"
+                      type="Fabgrid.OffsetOption, Assembly-CSharp"
+                      binding-path="rectangleToolOffsetOption">
+      
+    </editor:EnumField>
+    <editor:Vector2Field name="offset-multiplier-field" 
+                       class="field"
+                       label="Offset Multiplier"
+                       binding-path="rectangleOffsetMultiplier">
+      
+    </editor:Vector2Field>
+    
+  </engine:VisualElement>
+</engine:UXML>
