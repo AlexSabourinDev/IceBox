@@ -80,16 +80,21 @@ namespace IB
             ItemCount = count;
         }
 
-        void clear()
+        void clear(bool freeMemory = true)
         {
             for (uint32_t i = 0; i < ItemCount; i++)
             {
                 data()[i].~T();
             }
-            memoryFree(Buffer);
-            Buffer = nullptr;
+
+            if (freeMemory)
+            {
+                memoryFree(Buffer);
+                Buffer = nullptr;
+                MaxItemCount = 0;
+            }
+
             ItemCount = 0;
-            MaxItemCount = 0;
         }
 
         T* data() const { return reinterpret_cast<T*>(Buffer); }

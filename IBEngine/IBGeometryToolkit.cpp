@@ -10,9 +10,11 @@
 #include "IBPlatform.h"
 #include "IBRenderer.h"
 #include "IBJobs.h"
+#include "IBEditor.h"
 
 #include <inttypes.h>
 #include <stdio.h>
+#include <imgui/imgui.h>
 
 namespace IB
 {
@@ -301,10 +303,35 @@ namespace IB
         });
     }
 
+    namespace Editor
+    {
+        void lineSweepEditor(Asset::Handle asset, void *parentData)
+        {
+            PropertyEditorState *editorState = reinterpret_cast<PropertyEditorState *>(parentData);
+
+            if (propertyHeader("Line Sweep", &editorState->DestroyProperty))
+            {
+                LineSweepDesc* linesweep = getLineSweep(toPropertyHandle(asset));
+                for (uint32_t i = 0; i < linesweep->Points.count(); i++)
+                {
+                    ImGui::PushID(i);
+                    if (ImGui::TreeNode("", "[%u]", i))
+                    {
+                        imguiTransform(&linesweep->Points[i]);
+                        ImGui::TreePop();
+                    }
+                    ImGui::PopID();
+                }
+                ImGui::TreePop();
+            }
+        }
+    } // namespace Editor
+
     void initGeometryToolkit()
     {
         Asset::addStreamer(LineSweepPropertyType, &LineSweepStreamer);
         addPropertyActivator(LineSweepPropertyType, &LineSweepActivator);
+        Editor::addAssetEditor(LineSweepPropertyType, &Editor::lineSweepEditor);
     }
 
     void killGeometryToolkit()

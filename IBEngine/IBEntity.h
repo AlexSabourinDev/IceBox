@@ -108,5 +108,10 @@ namespace IB
     IB_API Transform const& getLocalTransform(Property::Handle handle);
     inline Transform const& getWorldTransform(Property::Handle handle) { return getLocalTransform(handle); } // No transform hierarchy yet.
     IB_API void setLocalTransform(Property::Handle handle, Transform const& transform);
+
+    namespace Editor
+    {
+        void imguiTransform(Transform* transform);
+    }
 }
 

@@ -437,17 +437,22 @@ namespace IB
                     Property::Handle lineSweepProperty = getPropertyFromEntity(SelectedEntity, LineSweepPropertyType);
                     if (lineSweepProperty != InvalidProperty)
                     {
+                        bool lineSweepChanged = false;
+
                         LineSweepDesc* sweep = getLineSweep(lineSweepProperty);
                         for (uint32_t i = 0; i < sweep->Points.count(); i++)
                         {
                             static ImGizmo::TransformGizmo transformState;
 
                             Transform worldTransform = applyTransform(selectedTransform, sweep->Points[i]);
-                            ImGizmo::transform(&worldTransform, &transformState, i);
+                            lineSweepChanged |= ImGizmo::transform(&worldTransform, &transformState, i);
                             sweep->Points[i] = applyInverseTransform(selectedTransform, worldTransform);
                         }
 
-                        updateLineSweep(SelectedEntity, *sweep);
+                        if (lineSweepChanged)
+                        {
+                            updateLineSweep(SelectedEntity, *sweep);
+                        }
                     }
                     else
                     {
@@ -931,8 +936,10 @@ namespace IB
             return FocusedGizmo != nullptr;
         }
 
-        void translation(Float3* position, Quaternion rotation, TranslationGizmo* state, uint32_t id)
+        bool translation(Float3 *position, Quaternion rotation, TranslationGizmo *state, uint32_t id)
         {
+            bool translationChanged = false;
+
             Transform cameraTransform = {};
             Property::Handle transformProperty = getPropertyFromEntity(FrameCamera, TransformPropertyType);
             if (transformProperty != InvalidProperty)
@@ -1013,16 +1020,19 @@ namespace IB
 
                         // Project our offset along our active axis for our delta
                         *position += axies[state->ActiveAxis] * dot(nextPos - previousPos, axies[state->ActiveAxis]);
+                        translationChanged = true;
                     }
                 }
             }
             
-
             FrameDrawData.Instances.add(DrawData::Instance{ TranslationGizmoMesh, GizmoMaterial, Transform{*position, rotation, 1.0f} });
+            return translationChanged;
         }
 
-        void rotation(Float3 position, Quaternion* rotation, RotationGizmo* state, uint32_t id)
+        bool rotation(Float3 position, Quaternion* rotation, RotationGizmo* state, uint32_t id)
         {
+            bool rotationChanged = false;
+
             Transform cameraTransform = {};
             Property::Handle transformProperty = getPropertyFromEntity(FrameCamera, TransformPropertyType);
             if (transformProperty != InvalidProperty)
@@ -1127,15 +1137,18 @@ namespace IB
                         {
                             float rotationDirection = sign(dot(cross(previousPosLocal, nextPosLocal), axies[state->ActiveAxis]));
                             *rotation = (*rotation) * fromAxisAngle(unrotatedAxies[state->ActiveAxis], rotationAngle * rotationDirection);
+                            rotationChanged = true;
                         }
                     }
                 }
             }
 
             FrameDrawData.Instances.add(DrawData::Instance{ RotationGizmoMesh, GizmoMaterial, Transform{position, *rotation, 1.0f} });
+            
+            return rotationChanged;
         }
 
-        void transform(Transform* transform, TransformGizmo* state, uint32_t id)
+        bool transform(Transform* transform, TransformGizmo* state, uint32_t id)
         {
             if (canFocus(&state->Translation, id) || canFocus(&state->Rotation, id))
             {
@@ -1149,15 +1162,17 @@ namespace IB
                 }
             }
 
+            bool changed = false;
             switch (state->GizmoType)
             {
             case TransformGizmo::Type::Translation:
-                translation(&transform->Position, transform->Rotation, &state->Translation, id);
+                changed = translation(&transform->Position, transform->Rotation, &state->Translation, id);
                 break;
             case TransformGizmo::Type::Rotation:
-                rotation(transform->Position, &transform->Rotation, &state->Rotation, id);
+                changed = rotation(transform->Position, &transform->Rotation, &state->Rotation, id);
                 break;
             }
+            return changed;
         }
     }
 }

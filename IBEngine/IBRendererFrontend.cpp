@@ -72,6 +72,8 @@ namespace
     {
         uint32_t triangleCount = meshAsset.IndexCount / 3;
         meshData->Triangles.reserve(triangleCount / IB::SimdLaneCount + 1);
+        const bool freeMemory = false;
+        meshData->Triangles.clear(freeMemory);
         for (uint32_t t = 0; t < triangleCount; t += IB::SimdLaneCount)
         {
             IB::Float3 p0[IB::SimdLaneCount];
