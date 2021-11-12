@@ -83,6 +83,7 @@ m_ResolvedPackages:
     - 2.6.5
     - 2.6.9
     - 2.6.10
+    - 2.6.11
     - 2.7.1
     - 2.7.2
     - 2.7.3
@@ -96,10 +97,12 @@ m_ResolvedPackages:
     - 2.8.0
     - 2.8.1
     - 2.8.2
+    - 2.9.0-pre.1
     compatible:
     - 2.8.0
     - 2.8.1
     - 2.8.2
+    - 2.9.0-pre.1
     verified: 2.8.2
   dependencies: []
   resolvedDependencies: []
@@ -535,8 +538,10 @@ m_ResolvedPackages:
     - 1.1.0-preview.2
     - 1.1.0-preview.3
     - 1.1.1
+    - 1.2.0
     compatible:
     - 1.1.1
+    - 1.2.0
     verified: 1.1.1
   dependencies:
   - name: com.unity.modules.uielements
@@ -921,9 +926,12 @@ m_ResolvedPackages:
     - 3.0.5
     - 3.0.6
     - 3.2.0-pre.1
+    - 3.2.0-pre.2
+    - 4.0.0-pre.1
     compatible:
     - 3.0.6
     - 3.2.0-pre.1
+    - 3.2.0-pre.2
     verified: 3.0.6
   dependencies:
   - name: com.unity.ugui
@@ -1050,9 +1058,11 @@ m_ResolvedPackages:
     - 1.6.1
     - 1.6.2
     - 1.6.3
+    - 1.7.0-pre.1
     compatible:
     - 1.6.2
     - 1.6.3
+    - 1.7.0-pre.1
     verified: 1.6.3
   dependencies:
   - name: com.unity.modules.director

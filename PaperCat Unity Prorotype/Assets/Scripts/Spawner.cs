@@ -20,9 +20,11 @@ public class Spawner : MonoBehaviour
         {
             Debug.LogWarning("The spawner has no template...");
         }
+        toSpawn.SetActive(false);
+
         if (!startActive)
         {
-            toSpawn.SetActive(false);
+            gameObject.SetActive(false);
         }
     }
 

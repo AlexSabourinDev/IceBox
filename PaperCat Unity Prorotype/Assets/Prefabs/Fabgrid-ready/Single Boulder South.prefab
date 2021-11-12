@@ -49,6 +49,14 @@ PrefabInstance:
       propertyPath: m_Mesh
       value: 
       objectReference: {fileID: 0}
+    - target: {fileID: 6397410172569539706, guid: 10ab0a9f0a1c4f347b42dacfeac9df23, type: 3}
+      propertyPath: m_Shape
+      value: 1396257894661096006
+      objectReference: {fileID: 0}
+    - target: {fileID: 6397410172569539706, guid: 10ab0a9f0a1c4f347b42dacfeac9df23, type: 3}
+      propertyPath: managedReferences[1396257894661096006]
+      value: Unity.ProBuilder UnityEngine.ProBuilder.Shapes.Cube
+      objectReference: {fileID: 0}
     - target: {fileID: 6434351305245932847, guid: 10ab0a9f0a1c4f347b42dacfeac9df23, type: 3}
       propertyPath: m_RootOrder
       value: 1
@@ -139,6 +147,10 @@ PrefabInstance:
       propertyPath: toSpawn
       value: 
       objectReference: {fileID: 4276792114327398723}
+    - target: {fileID: 5800740178093252037, guid: 449e988916d41cb4696819260f47f789, type: 3}
+      propertyPath: startActive
+      value: 1
+      objectReference: {fileID: 0}
     - target: {fileID: 9152220835489353846, guid: 449e988916d41cb4696819260f47f789, type: 3}
       propertyPath: m_RootOrder
       value: 2
@@ -212,15 +224,11 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 1219266622194944922, guid: 96c5084f4ca663f4bbc12ceda5cd2c34, type: 3}
       propertyPath: m_VersionIndex
-      value: 3850
+      value: 3853
       objectReference: {fileID: 0}
     - target: {fileID: 5230889477513295026, guid: 96c5084f4ca663f4bbc12ceda5cd2c34, type: 3}
       propertyPath: m_Mesh
       value: 
-      objectReference: {fileID: 0}
-    - target: {fileID: 5524256230084548534, guid: 96c5084f4ca663f4bbc12ceda5cd2c34, type: 3}
-      propertyPath: force
-      value: 2.41
       objectReference: {fileID: 0}
     - target: {fileID: 5524256230084548537, guid: 96c5084f4ca663f4bbc12ceda5cd2c34, type: 3}
       propertyPath: m_RootOrder
@@ -280,11 +288,27 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 5524256230500632146, guid: 96c5084f4ca663f4bbc12ceda5cd2c34, type: 3}
       propertyPath: m_VersionIndex
-      value: 18
+      value: 21
       objectReference: {fileID: 0}
     - target: {fileID: 5524256230500632147, guid: 96c5084f4ca663f4bbc12ceda5cd2c34, type: 3}
       propertyPath: m_Mesh
       value: 
+      objectReference: {fileID: 0}
+    - target: {fileID: 9132158872811024938, guid: 96c5084f4ca663f4bbc12ceda5cd2c34, type: 3}
+      propertyPath: m_Shape
+      value: 1396257894661095714
+      objectReference: {fileID: 0}
+    - target: {fileID: 9132158872811024938, guid: 96c5084f4ca663f4bbc12ceda5cd2c34, type: 3}
+      propertyPath: managedReferences[1396257894661095714]
+      value: Unity.ProBuilder UnityEngine.ProBuilder.Shapes.Sphere
+      objectReference: {fileID: 0}
+    - target: {fileID: 9132158872811024938, guid: 96c5084f4ca663f4bbc12ceda5cd2c34, type: 3}
+      propertyPath: managedReferences[1396257894661095714].m_Smooth
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 9132158872811024938, guid: 96c5084f4ca663f4bbc12ceda5cd2c34, type: 3}
+      propertyPath: managedReferences[1396257894661095714].m_Subdivisions
+      value: 3
       objectReference: {fileID: 0}
     m_RemovedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 96c5084f4ca663f4bbc12ceda5cd2c34, type: 3}

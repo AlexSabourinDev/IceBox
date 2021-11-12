@@ -1,4 +1,5 @@
 ﻿using UnityEngine;
+using UnityEngine.InputSystem;
 
 namespace Fabgrid
 {
@@ -22,8 +23,8 @@ namespace Fabgrid
         public override void OnMouseDown(Event e)
         {
             if (e.button != 0) return;
-            if (e.alt || Input.GetKey(KeyCode.LeftAlt)) return;
-            if (e.control || Input.GetKey(KeyCode.LeftControl)) return;
+            if (e.alt || Keyboard.current.leftAltKey.isPressed) return;
+            if (e.control || Keyboard.current.leftCtrlKey.isPressed) return;
 
             mouseDownPosition = positionCalculator.GetPosition(e.mousePosition);
             isDragging = true;
