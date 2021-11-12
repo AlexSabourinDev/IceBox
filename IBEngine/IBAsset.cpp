@@ -189,27 +189,29 @@ namespace IB
 
         Job::Handle loadAssetAsync(LoadAssetDesc desc)
         {
-            Asset::LoadContext *context = allocate<Asset::LoadContext>(desc.Stream);
-            context->SaveVersion = desc.SaveVersion;
-            context->BaseAsset = desc.BaseAsset;
-            IB::Asset::IStreamer *streamer = getStreamer(desc.Type);
+            Asset::IStreamer *streamer = getStreamer(desc.Type);
+            Job::Handle jobHandle = {};
             if (streamer != nullptr)
             {
-                context->LoadingAsset = desc.LoadingAsset;
-                context->Handle = reserveJob(
-                    [context, streamer, onSubAssetLoad = desc.OnSubAssetLoad, data = desc.OnSubAssetLoadData](Job::Handle /*currentJob*/)
-                {
-                    LoadResult loadResult = load(streamer, context);
-                    if (loadResult.Result == JobResult::Complete)
+                Asset::LoadContext loadContext = {};
+                loadContext.SaveVersion = desc.SaveVersion;
+                loadContext.LoadingAsset = desc.LoadingAsset;
+                loadContext.BaseAsset = desc.BaseAsset;
+                loadContext.Stream = desc.Stream;
+
+                jobHandle = launchJob(
+                    [loadContext, streamer, onSubAssetLoad = desc.OnSubAssetLoad, data = desc.OnSubAssetLoadData](Job::Handle currentJob) mutable
                     {
-                        onSubAssetLoad(data, loadResult.Asset);
-                        deallocate(context);
-                    }
-                    return loadResult.Result;
-                });
-                launchJob(context->Handle);
+                        loadContext.Handle = currentJob;
+                        LoadResult loadResult = load(streamer, &loadContext);
+                        if (loadResult.Result == JobResult::Complete)
+                        {
+                            onSubAssetLoad(data, loadResult.Asset);
+                        }
+                        return loadResult.Result;
+                    });
             }
-            return context->Handle;
+            return jobHandle;
         }
 
         Job::Handle loadAssetInPlaceAsync(Serialization::ReadStream stream, Asset::FourCC type, Asset::Handle loadingAsset, Asset::Handle baseAsset, Asset::OnSubAssetLoad *onSubAssetLoad, void *data)
