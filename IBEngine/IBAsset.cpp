@@ -183,8 +183,7 @@ namespace IB
             Asset::FourCC Type = InvalidFourCC;
             Asset::Handle LoadingAsset = InvalidAsset;
             Asset::Handle BaseAsset = InvalidAsset;
-            Asset::OnSubAssetLoad *OnSubAssetLoad = nullptr;
-            void *OnSubAssetLoadData = nullptr;
+            Asset::OnSubAssetLoad OnSubAssetLoad = {};
         };
 
         Job::Handle loadAssetAsync(LoadAssetDesc desc)
@@ -200,13 +199,13 @@ namespace IB
                 loadContext.Stream = desc.Stream;
 
                 jobHandle = launchJob(
-                    [loadContext, streamer, onSubAssetLoad = desc.OnSubAssetLoad, data = desc.OnSubAssetLoadData](Job::Handle currentJob) mutable
+                    [loadContext, streamer, onSubAssetLoad = desc.OnSubAssetLoad](Job::Handle currentJob) mutable
                     {
                         loadContext.Handle = currentJob;
                         LoadResult loadResult = load(streamer, &loadContext);
                         if (loadResult.Result == JobResult::Complete)
                         {
-                            onSubAssetLoad(data, loadResult.Asset);
+                            onSubAssetLoad.Func(onSubAssetLoad.Data, loadResult.Asset);
                         }
                         return loadResult.Result;
                     });
@@ -214,7 +213,7 @@ namespace IB
             return jobHandle;
         }
 
-        Job::Handle loadAssetInPlaceAsync(Serialization::ReadStream stream, Asset::FourCC type, Asset::Handle loadingAsset, Asset::Handle baseAsset, Asset::OnSubAssetLoad *onSubAssetLoad, void *data)
+        Job::Handle loadAssetInPlaceAsync(Serialization::ReadStream stream, Asset::FourCC type, Asset::Handle loadingAsset, Asset::Handle baseAsset)
         {
             LoadAssetDesc desc =
             {
@@ -223,8 +222,7 @@ namespace IB
                 type,
                 loadingAsset,
                 baseAsset,
-                onSubAssetLoad,
-                data
+                Asset::OnSubAssetLoad{}
             };
             return loadAssetAsync(desc);
         }
@@ -309,7 +307,7 @@ namespace IB
             return getStreamer(type)->create();
         }
 
-        Job::Handle loadSubAssetAsync(LoadSubAssetDesc desc, OnSubAssetLoad *onSubAssetLoad, void *data)
+        Job::Handle loadSubAssetAsync(LoadSubAssetDesc desc, OnSubAssetLoad onSubAssetLoad)
         {
             LoadAssetDesc loadAssetDesc =
             {
@@ -318,8 +316,7 @@ namespace IB
                 desc.Type,
                 desc.LoadingAsset,
                 desc.BaseAsset,
-                onSubAssetLoad,
-                data
+                onSubAssetLoad
             };
             return loadAssetAsync(loadAssetDesc);
         }
@@ -533,10 +530,7 @@ namespace IB
             IB_ASSERT(newAsset != IB::InvalidAsset, "Cloning API expects to be able to create an asset.");
             Serialization::ReadStream readStream = { writeStream.Buffer };
             Asset::Handle baseAsset = InvalidAsset;
-            IB::wait(loadAssetInPlaceAsync(readStream, type, newAsset, baseAsset,
-                [](void *, IB::Asset::Handle)
-                {
-                }, nullptr));
+            IB::wait(loadAssetInPlaceAsync(readStream, type, newAsset, baseAsset));
 
             return newAsset;
         }

@@ -310,10 +310,10 @@ namespace IB
                         };
 
                         loadHandles[handleCount++] = IB::Asset::loadSubAssetAsync(loadSubAssetDesc,
-                            [](void *data, IB::Asset::Handle asset)
+                            [handle = &entityProperty->Handle](IB::Asset::Handle asset)
                         {
-                            *reinterpret_cast<IB::Property::Handle *>(data) = toPropertyHandle(asset);
-                        }, &entityProperty->Handle);
+                            *handle = toPropertyHandle(asset);
+                        });
                         advance(&context->Stream, offset);
                     }
 
@@ -680,10 +680,10 @@ namespace IB
                         };
                         
                         loadHandles[handleCount++] = IB::Asset::loadSubAssetAsync(loadSubAssetDesc,
-                            [](void *data, IB::Asset::Handle asset)
+                            [&entity](IB::Asset::Handle asset)
                             {
-                                *reinterpret_cast<IB::Entity::Handle *>(data) = toEntityHandle(asset);
-                            }, &entity);
+                                entity = toEntityHandle(asset);
+                            });
 
                         advance(&context->Stream, offset);
                     }

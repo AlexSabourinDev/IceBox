@@ -3,6 +3,7 @@
 #include "IBEngineAPI.h"
 #include "IBSerialization.h"
 #include <stdint.h>
+#include <type_traits>
 
 namespace IB
 {
@@ -112,7 +113,6 @@ namespace IB
         };
 
         using OnResourceLoad = void(void *data, Resource::Handle resource, ResourceLoad::State loadState);
-        using OnSubAssetLoad = void(void *data, Asset::Handle asset);
 
         struct DeltaAssetDesc
         {
@@ -129,25 +129,45 @@ namespace IB
             Asset::Handle LoadingAsset = InvalidAsset;
             Asset::Handle BaseAsset = InvalidAsset;
         };
+
+        constexpr size_t MaxSubAssetLoadDataSize = 32;
+        struct OnSubAssetLoad
+        {
+            using FuncType = void(void* functorData, Asset::Handle asset);
+            alignas(16) uint8_t Data[MaxSubAssetLoadDataSize];
+            FuncType *Func = +[](void *, Asset::Handle) {};
+        };
+
         IB_API Asset::Handle createAsset(FourCC type);
-        IB_API Job::Handle loadSubAssetAsync(LoadSubAssetDesc desc, OnSubAssetLoad *onSubAssetLoad, void *data);
+        IB_API Job::Handle loadSubAssetAsync(LoadSubAssetDesc desc, OnSubAssetLoad onSubAssetLoad);
         IB_API void unloadAssetThreadSafe(FourCC type, Asset::Handle asset);
         IB_API void saveAssetThreadSafe(Serialization::WriteStream *stream, FourCC type, Asset::Handle asset, Asset::Handle baseAsset = InvalidAsset);
 
-        inline Job::Handle loadSubAssetAsync(LoadSubAssetDesc desc, Asset::Handle *outputAsset)
+        template <typename T>
+        void assetLoadFunctor(void *functorData, Asset::Handle asset)
         {
-            return loadSubAssetAsync(desc, [](void *data, Asset::Handle asset)
-            {
-                *reinterpret_cast<Asset::Handle *>(data) = asset;
-            },
-                outputAsset);
+            T *functor = reinterpret_cast<T *>(functorData);
+            (*functor)(asset);
+            functor->~T(); // Clean up our data
+        }
+
+        template <typename T>
+        Job::Handle loadSubAssetAsync(LoadSubAssetDesc desc, T &&functor)
+        {
+            using RawType = typename std::remove_reference<T>::type;
+
+            static_assert(sizeof(RawType) <= MaxSubAssetLoadDataSize, "Functor is too large. Consider allocating it on the heap.");
+
+            OnSubAssetLoad subAssetLoad;
+            subAssetLoad.Func = &assetLoadFunctor<RawType>;
+            new (subAssetLoad.Data) RawType{std::forward<T>(functor)};
+            return loadSubAssetAsync(desc, subAssetLoad);
         }
 
         inline Job::Handle loadSubAssetAsync(LoadSubAssetDesc desc)
         {
-            return loadSubAssetAsync(desc, [](void *, Asset::Handle) {}, nullptr);
+            return loadSubAssetAsync(desc, [](Asset::Handle) {});
         }
-
 
         // User API
         IB_API Resource::Handle createResourceThreadSafe(char const *assetPath, FourCC type, Asset::Handle asset);
