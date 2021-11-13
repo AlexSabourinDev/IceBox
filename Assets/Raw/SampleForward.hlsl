@@ -86,6 +86,7 @@ struct BatchData
 {
     uint InstanceOffset;
     uint FrameOffset;
+    uint Lit;
 };
 
 [[vk::push_constant]] BatchData Batch;
@@ -164,7 +165,7 @@ float4 fragMain(V2F input) : SV_TARGET
     float4 surfaceColor = Textures[material.TextureIndex].Sample(TextureSampler, input.UV) * input.Color * tint;
 
     [branch]
-    if (perFrame.LightIndex < 0xFFFFFFFF)
+    if (perFrame.LightIndex < 0xFFFFFFFF && Batch.Lit != 0)
     {
         DirectionalLight light = Lights[perFrame.LightIndex];
         float3 albedo = surfaceColor.rgb;

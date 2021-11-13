@@ -2717,9 +2717,11 @@ namespace IB
                         {
                             uint32_t InstanceOffset;
                             uint32_t FrameOffset;
+                            uint32_t Lit;
                         } pushConstantBatchData;
                         pushConstantBatchData.InstanceOffset = passIndirectDrawCountOffset;
                         pushConstantBatchData.FrameOffset = MaxPerFrameDrawDataSize * fb;
+                        pushConstantBatchData.Lit = passIndex == 0 ? 1 : 0;
 
                         vkCmdPushConstants(currentCommands, ForwardPass.PipelineLayout,
                                            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(pushConstantBatchData), &pushConstantBatchData);
