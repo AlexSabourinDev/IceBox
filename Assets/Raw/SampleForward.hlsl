@@ -39,41 +39,90 @@ float4 unpackColor(Vertex v)
 
 [[vk::binding(0, 0)]] ByteAddressBuffer MeshData;
 
-struct PerDrawBuffer
+struct PerFrameData
 {
     row_major float4x4 VP;
-    row_major float3x4 M;
-    uint VertexOffset;
-    uint MaterialIndex;
     uint LightIndex;
 };
 
-[[vk::push_constant]] PerDrawBuffer PerDraw;
+#define PerFrameDataSize (sizeof(float4) * 4 + sizeof(uint))
+PerFrameData loadPerFrameData(ByteAddressBuffer buffer, uint frameOffset)
+{
+    PerFrameData pf;
+    pf.VP = float4x4(
+        asfloat(buffer.Load4(frameOffset + sizeof(float4) * 0)),
+        asfloat(buffer.Load4(frameOffset + sizeof(float4) * 1)),
+        asfloat(buffer.Load4(frameOffset + sizeof(float4) * 2)),
+        asfloat(buffer.Load4(frameOffset + sizeof(float4) * 3)));
+    pf.LightIndex = buffer.Load(frameOffset + sizeof(float4) * 4);
+    return pf;
+}
+
+struct PerInstanceData
+{
+    row_major float3x4 M;
+    uint VertexOffset;
+    uint MaterialIndex;
+};
+
+#define PerInstanceDataSize (sizeof(float4) * 3 + sizeof(uint) * 2)
+PerInstanceData loadPerInstanceData(ByteAddressBuffer buffer, uint frameOffset, uint instanceIndex)
+{
+    uint instanceOffset = frameOffset + PerFrameDataSize + PerInstanceDataSize * instanceIndex;
+
+    PerInstanceData pd;
+    pd.M = float3x4(
+        asfloat(buffer.Load4(instanceOffset + sizeof(float4) * 0)),
+        asfloat(buffer.Load4(instanceOffset + sizeof(float4) * 1)),
+        asfloat(buffer.Load4(instanceOffset + sizeof(float4) * 2)));
+    pd.VertexOffset = buffer.Load(instanceOffset + sizeof(float4) * 3);
+    pd.MaterialIndex = buffer.Load(instanceOffset + sizeof(float4) * 3 + sizeof(uint));
+    return pd;
+}
+
+[[vk::binding(5, 0)]] ByteAddressBuffer PerFrameBuffer;
+
+struct BatchData
+{
+    uint InstanceOffset;
+    uint FrameOffset;
+};
+
+[[vk::push_constant]] BatchData Batch;
+
 
 struct VertexInput
 {
     uint VertexID : SV_VertexID;
+    uint InstanceOffset : SV_InstanceID;
+    [[vk::builtin("BaseInstance")]] uint BaseInstance : INSTANCE_ID;
 };
 
 struct V2F
 {
     float4 NDCPos : SV_POSITION;
-    [[vk::location(0)]] float3 Normal : NORMAL0;
-    [[vk::location(1)]] float2 UV : TEXCOORD0;
-    [[vk::location(2)]] float4 Color : COLOR0;
+    [[vk::location(0)]] float3 Normal : VARYING0;
+    [[vk::location(1)]] float2 UV : VARYING1;
+    [[vk::location(2)]] float4 Color : VARYING2;
+    [[vk::location(3)]] uint InstanceIndex : VARYING3;
 };
 
 V2F vertexMain(VertexInput input)
 {
+    uint instanceIndex = input.BaseInstance + input.InstanceOffset;
+    PerFrameData perFrame = loadPerFrameData(PerFrameBuffer, Batch.FrameOffset);
+    PerInstanceData perInstance = loadPerInstanceData(PerFrameBuffer, Batch.FrameOffset, Batch.InstanceOffset + instanceIndex);
+
     V2F output = (V2F)0;
-    row_major float4x4 M4 = float4x4(PerDraw.M, float4(0.0f, 0.0f, 0.0f, 1.0f));
+    row_major float4x4 M4 = float4x4(perInstance.M, float4(0.0f, 0.0f, 0.0f, 1.0f));
     row_major float3x3 rotation = (float3x3)M4;
 
-    Vertex vertex = loadVertex(MeshData, PerDraw.VertexOffset + sizeof(Vertex) * input.VertexID);
-    output.NDCPos = mul(PerDraw.VP, mul(M4, float4(vertex.Pos.xyz, 1.0f)));
+    Vertex vertex = loadVertex(MeshData, perInstance.VertexOffset + sizeof(Vertex) * input.VertexID);
+    output.NDCPos = mul(perFrame.VP, mul(M4, float4(vertex.Pos.xyz, 1.0f)));
     output.Normal = mul(vertex.Normal.xyz, rotation);
     output.UV = unpackUV(vertex);
     output.Color = unpackColor(vertex);
+    output.InstanceIndex = instanceIndex;
     return output;
 }
 
@@ -106,15 +155,18 @@ float3 unpackDirection(DirectionalLight light)
 
 float4 fragMain(V2F input) : SV_TARGET
 {
-    Material material = Materials[PerDraw.MaterialIndex];
+    PerFrameData perFrame = loadPerFrameData(PerFrameBuffer, Batch.FrameOffset);
+    PerInstanceData perInstance = loadPerInstanceData(PerFrameBuffer, Batch.FrameOffset, Batch.InstanceOffset + input.InstanceIndex);
+
+    Material material = Materials[perInstance.MaterialIndex];
     float4 tint = float4(fromRGBA(material.Tint).rgb, 1.0f);
 
     float4 surfaceColor = Textures[material.TextureIndex].Sample(TextureSampler, input.UV) * input.Color * tint;
 
     [branch]
-    if (PerDraw.LightIndex < 0xFFFFFFFF)
+    if (perFrame.LightIndex < 0xFFFFFFFF)
     {
-        DirectionalLight light = Lights[PerDraw.LightIndex];
+        DirectionalLight light = Lights[perFrame.LightIndex];
         float3 albedo = surfaceColor.rgb;
         float3 lambertianBRDF = albedo / Pi;
         float3 lightRadiance = fromRGBA(light.Tint).rgb * unpackRadiance(light);

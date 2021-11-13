@@ -635,6 +635,39 @@ namespace
         Allocation Allocation;
     };
 
+    constexpr uint32_t MaxIndirectDraws = 1024;
+    struct PerFrameData
+    {
+        IB::Mat4x4 VP;
+        uint32_t LightIndex = 0xFFFFFFFF;
+    };
+
+    struct PerInstanceData
+    {
+        IB::Mat3x4 M;
+        uint32_t VertexOffset;
+        uint32_t MaterialIndex;
+    };
+
+    constexpr uint32_t MaxPerFrameDrawDataSize = sizeof(PerFrameData) + sizeof(PerInstanceData) * MaxIndirectDraws;
+    struct IndirectDraw
+    {
+        struct
+        {
+            VkBuffer Buffer;
+            Allocation Allocation;
+            uint8_t *MappedMemory = nullptr;
+        } FrameBuffer[FrameBufferCount];
+
+        struct
+        {
+            VkBuffer Buffer;
+            Allocation Allocation;
+            uint8_t *MappedMemory = nullptr;
+        } PerFrameData;
+    };
+    IndirectDraw IndirectDraw;
+
     struct ForwardMaterial
     {
         uint32_t AlbedoTint;
@@ -1140,6 +1173,8 @@ namespace IB
 
                 VkPhysicalDeviceFeatures physicalDeviceFeatures = {};
                 physicalDeviceFeatures.shaderStorageImageWriteWithoutFormat = VK_TRUE;
+                physicalDeviceFeatures.multiDrawIndirect = VK_TRUE;
+                physicalDeviceFeatures.drawIndirectFirstInstance = VK_TRUE;
 
                 VkPhysicalDeviceDescriptorIndexingFeatures indexingFeatures = {};
                 indexingFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES_EXT;
@@ -1469,9 +1504,15 @@ namespace IB
                 fragBinding3.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
                 fragBinding3.descriptorCount = 1;
 
-                VkDescriptorSetLayoutBinding layoutBindings[] = {vertexBinding0, fragBinding0, fragBinding1, fragBinding2, fragBinding3 };
+                VkDescriptorSetLayoutBinding perFrameBufferBinding = {};
+                perFrameBufferBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+                perFrameBufferBinding.binding = 5;
+                perFrameBufferBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+                perFrameBufferBinding.descriptorCount = 1;
 
-                VkDescriptorBindingFlagsEXT bindFlags[] = {0, 0, VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT_EXT, 0, 0};
+                VkDescriptorSetLayoutBinding layoutBindings[] = {vertexBinding0, fragBinding0, fragBinding1, fragBinding2, fragBinding3, perFrameBufferBinding};
+
+                VkDescriptorBindingFlagsEXT bindFlags[] = {0, 0, VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT_EXT, 0, 0, 0};
                 VkDescriptorSetLayoutBindingFlagsCreateInfoEXT extendedInfo = {};
                 extendedInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO_EXT;
                 extendedInfo.bindingCount = arrayCount(bindFlags);
@@ -1536,6 +1577,62 @@ namespace IB
             IB_VKCHECK(vkBindBufferMemory(RendererContext.LogicalDevice, Staging.Buffer, Staging.Allocation.Memory, Staging.Allocation.Offset));
 
             Staging.MappedMemory = mapAllocation(RendererContext.LogicalDevice, &Allocator, Staging.Allocation);
+        }
+
+        // Indirect Draw Buffer
+        for (uint32_t fb = 0; fb < FrameBufferCount; fb++)
+        {
+            VkBufferCreateInfo bufferCreate = {};
+            bufferCreate.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+            bufferCreate.size = MaxIndirectDraws * sizeof(VkDrawIndexedIndirectCommand);
+            bufferCreate.usage = VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT;
+
+            IB_VKCHECK(vkCreateBuffer(RendererContext.LogicalDevice, &bufferCreate, NoAllocator, &IndirectDraw.FrameBuffer[fb].Buffer));
+
+            VkMemoryRequirements memoryRequirements;
+            vkGetBufferMemoryRequirements(RendererContext.LogicalDevice, IndirectDraw.FrameBuffer[fb].Buffer, &memoryRequirements);
+
+            AllocationRequest request;
+            request.Alignment = memoryRequirements.alignment;
+            request.Size = MaxIndirectDraws * sizeof(VkDrawIndexedIndirectCommand);
+            request.LogicalDevice = RendererContext.LogicalDevice;
+            request.PhysicalDevice = RendererContext.PhysicalDevice;
+            request.RequiredFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+            request.PreferedFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+            request.TypeBits = memoryRequirements.memoryTypeBits;
+            request.Category = AllocationCategory::Misc;
+
+            IndirectDraw.FrameBuffer[fb].Allocation = allocateDeviceMemory(&Allocator, request);
+            IB_VKCHECK(vkBindBufferMemory(RendererContext.LogicalDevice, IndirectDraw.FrameBuffer[fb].Buffer, IndirectDraw.FrameBuffer[fb].Allocation.Memory, IndirectDraw.FrameBuffer[fb].Allocation.Offset));
+
+            IndirectDraw.FrameBuffer[fb].MappedMemory = reinterpret_cast<uint8_t*>(mapAllocation(RendererContext.LogicalDevice, &Allocator, IndirectDraw.FrameBuffer[fb].Allocation));
+        }
+
+        {
+            VkBufferCreateInfo bufferCreate = {};
+            bufferCreate.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+            bufferCreate.size = FrameBufferCount * MaxPerFrameDrawDataSize;
+            bufferCreate.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+
+            IB_VKCHECK(vkCreateBuffer(RendererContext.LogicalDevice, &bufferCreate, NoAllocator, &IndirectDraw.PerFrameData.Buffer));
+
+            VkMemoryRequirements memoryRequirements;
+            vkGetBufferMemoryRequirements(RendererContext.LogicalDevice, IndirectDraw.PerFrameData.Buffer, &memoryRequirements);
+
+            AllocationRequest request;
+            request.Alignment = memoryRequirements.alignment;
+            request.Size = FrameBufferCount * MaxPerFrameDrawDataSize;
+            request.LogicalDevice = RendererContext.LogicalDevice;
+            request.PhysicalDevice = RendererContext.PhysicalDevice;
+            request.RequiredFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+            request.PreferedFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+            request.TypeBits = memoryRequirements.memoryTypeBits;
+            request.Category = AllocationCategory::Misc;
+
+            IndirectDraw.PerFrameData.Allocation = allocateDeviceMemory(&Allocator, request);
+            IB_VKCHECK(vkBindBufferMemory(RendererContext.LogicalDevice, IndirectDraw.PerFrameData.Buffer, IndirectDraw.PerFrameData.Allocation.Memory, IndirectDraw.PerFrameData.Allocation.Offset));
+
+            IndirectDraw.PerFrameData.MappedMemory = reinterpret_cast<uint8_t *>(mapAllocation(RendererContext.LogicalDevice, &Allocator, IndirectDraw.PerFrameData.Allocation));
         }
 
         // Mesh buffer
@@ -1714,7 +1811,20 @@ namespace IB
             writeLights.descriptorCount = 1;
             writeLights.pBufferInfo = &lightBufferInfo;
 
-            VkWriteDescriptorSet writeDescriptorSets[] = {writeSamplerSet, writeGeometry, writeMaterials, writeLights };
+            VkDescriptorBufferInfo perFrameBufferInfo = {};
+            perFrameBufferInfo.buffer = IndirectDraw.PerFrameData.Buffer;
+            perFrameBufferInfo.offset = 0;
+            perFrameBufferInfo.range = FrameBufferCount * MaxPerFrameDrawDataSize;
+
+            VkWriteDescriptorSet writePerFrame = {};
+            writePerFrame.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            writePerFrame.dstSet = ForwardPass.ShaderDescriptor;
+            writePerFrame.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+            writePerFrame.dstBinding = 5;
+            writePerFrame.descriptorCount = 1;
+            writePerFrame.pBufferInfo = &perFrameBufferInfo;
+
+            VkWriteDescriptorSet writeDescriptorSets[] = {writeSamplerSet, writeGeometry, writeMaterials, writeLights, writePerFrame};
             vkUpdateDescriptorSets(RendererContext.LogicalDevice, arrayCount(writeDescriptorSets), writeDescriptorSets, 0, NULL);
         }
 
@@ -1828,6 +1938,15 @@ namespace IB
 
         vkDestroyBuffer(RendererContext.LogicalDevice, Staging.Buffer, NoAllocator);
         freeDeviceMemory(&Allocator, Staging.Allocation);
+
+        for (uint32_t fb = 0; fb < FrameBufferCount; fb++)
+        {
+            vkDestroyBuffer(RendererContext.LogicalDevice, IndirectDraw.FrameBuffer[fb].Buffer, NoAllocator);
+            freeDeviceMemory(&Allocator, IndirectDraw.FrameBuffer[fb].Allocation);
+        }
+
+        vkDestroyBuffer(RendererContext.LogicalDevice, IndirectDraw.PerFrameData.Buffer, NoAllocator);
+        freeDeviceMemory(&Allocator, IndirectDraw.PerFrameData.Allocation);
 
         for (uint32_t i = 0; i < Queue::Count; i++)
         {
@@ -2436,10 +2555,10 @@ namespace IB
         }
 
         // Start the frame
-        uint32_t buffer = RendererContext.Present.ActiveFrame;
+        uint32_t fb = RendererContext.Present.ActiveFrame;
 
         uint32_t imageIndex = 0;
-        VkResult result = vkAcquireNextImageKHR(RendererContext.LogicalDevice, RendererContext.Present.Swapchain, UINT64_MAX, RendererContext.Present.FrameBuffer[buffer].AcquireSemaphore, VK_NULL_HANDLE, &imageIndex);
+        VkResult result = vkAcquireNextImageKHR(RendererContext.LogicalDevice, RendererContext.Present.Swapchain, UINT64_MAX, RendererContext.Present.FrameBuffer[fb].AcquireSemaphore, VK_NULL_HANDLE, &imageIndex);
         if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR)
         {
             vkDeviceWaitIdle(RendererContext.LogicalDevice);
@@ -2450,8 +2569,8 @@ namespace IB
             return;
         }
 
-        IB_VKCHECK(vkWaitForFences(RendererContext.LogicalDevice, 1, &RendererContext.Present.FrameBuffer[RendererContext.Present.ActiveFrame].FinishedFence, VK_TRUE, UINT64_MAX));
-        IB_VKCHECK(vkResetFences(RendererContext.LogicalDevice, 1, &RendererContext.Present.FrameBuffer[buffer].FinishedFence));
+        IB_VKCHECK(vkWaitForFences(RendererContext.LogicalDevice, 1, &RendererContext.Present.FrameBuffer[fb].FinishedFence, VK_TRUE, UINT64_MAX));
+        IB_VKCHECK(vkResetFences(RendererContext.LogicalDevice, 1, &RendererContext.Present.FrameBuffer[fb].FinishedFence));
 
         // Wait for the staging we've queued up before we've submitted this frame to complete before we move on.
         {
@@ -2480,7 +2599,7 @@ namespace IB
             Staging.WriteOffset = 0;
         }
 
-        VkCommandBuffer currentCommands = RendererContext.Present.FrameBuffer[buffer].PrimaryCommandBuffer;
+        VkCommandBuffer currentCommands = RendererContext.Present.FrameBuffer[fb].PrimaryCommandBuffer;
         {
             IB_VKCHECK(vkResetCommandBuffer(currentCommands, 0));
 
@@ -2508,7 +2627,7 @@ namespace IB
                 VkRenderPassBeginInfo renderPassBeginInfo = {};
                 renderPassBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
                 renderPassBeginInfo.renderPass = ForwardPass.RenderPass;
-                renderPassBeginInfo.framebuffer = ForwardPass.FrameBuffer[buffer].Framebuffer;
+                renderPassBeginInfo.framebuffer = ForwardPass.FrameBuffer[fb].Framebuffer;
                 renderPassBeginInfo.renderArea = renderArea;
                 renderPassBeginInfo.clearValueCount = arrayCount(clearValues);
                 renderPassBeginInfo.pClearValues = clearValues;
@@ -2533,58 +2652,79 @@ namespace IB
                     currentCommands, VK_PIPELINE_BIND_POINT_GRAPHICS, ForwardPass.PipelineLayout,
                     0, 1, &set, 0, VK_NULL_HANDLE);
 
+                vkCmdBindIndexBuffer(currentCommands, Geometry.MeshDataBuffers, 0, VK_INDEX_TYPE_UINT16);
+
+                uint32_t perFrameDataWriteIndex = MaxPerFrameDrawDataSize * fb;
+                PerFrameData perFrameData;
+                perFrameData.VP = view.ViewProj;
+                perFrameData.LightIndex = Light::toValue(view.DirectionalLight);
+                memcpy(IndirectDraw.PerFrameData.MappedMemory + perFrameDataWriteIndex, &perFrameData, sizeof(PerFrameData));
+                perFrameDataWriteIndex += sizeof(PerFrameData);
+
+                uint32_t indirectDrawCount = 0;
                 for (uint32_t passIndex = 0; passIndex < ViewDesc::ForwardPass::Count; passIndex++)
                 {
-                    ViewDesc::ForwardPass const *pass = &view.Forward.Passes[passIndex];
-
                     if (passIndex > 0)
                     {
                         vkCmdNextSubpass(currentCommands, VK_SUBPASS_CONTENTS_INLINE);
                     }
 
+                    if (ForwardPass.Pipelines[passIndex] == VK_NULL_HANDLE)
+                    {
+                        continue;
+                    }
+
+                    uint32_t passIndirectDrawCountOffset = indirectDrawCount;
+                    ViewDesc::ForwardPass const *pass = &view.Forward.Passes[passIndex];
+                    vkCmdBindPipeline(currentCommands, VK_PIPELINE_BIND_POINT_GRAPHICS, ForwardPass.Pipelines[passIndex]);
+
+                    uint32_t passDrawCount = 0;
                     for (uint32_t i = 0; i < pass->BatchCount; i++)
                     {
                         ViewDesc::Batch *batch = &pass->Batches[i];
                         uint32_t materialIndex = Material::toValue(batch->Material);
 
-                        if (ForwardPass.Pipelines[passIndex] != VK_NULL_HANDLE)
+                        for (uint32_t mesh = 0; mesh < batch->MeshCount && batch->Meshes[mesh].Mesh != InvalidMesh; mesh++)
                         {
-                            vkCmdBindPipeline(currentCommands, VK_PIPELINE_BIND_POINT_GRAPHICS, ForwardPass.Pipelines[passIndex]);
+                            uint32_t meshIndex = Mesh::toValue(batch->Meshes[mesh].Mesh);
 
-                            for (uint32_t mesh = 0; mesh < batch->MeshCount && batch->Meshes[mesh].Mesh != InvalidMesh; mesh++)
+                            VkDrawIndexedIndirectCommand drawIndexed = {};
+                            drawIndexed.indexCount = Geometry.Meshes[meshIndex].IndexCount;
+                            drawIndexed.instanceCount = batch->Meshes[mesh].Count;
+                            drawIndexed.firstIndex = Geometry.Meshes[meshIndex].IndexOffset / sizeof(uint16_t);
+                            drawIndexed.vertexOffset = 0;
+                            drawIndexed.firstInstance = passDrawCount;
+
+                            memcpy(IndirectDraw.FrameBuffer[fb].MappedMemory + indirectDrawCount * sizeof(VkDrawIndexedIndirectCommand), &drawIndexed, sizeof(VkDrawIndexedIndirectCommand));
+                            indirectDrawCount += 1;
+
+                            passDrawCount += batch->Meshes[mesh].Count;
+                            for (uint32_t inst = 0; inst < batch->Meshes[mesh].Count; inst++)
                             {
-                                uint32_t meshIndex = Mesh::toValue(batch->Meshes[mesh].Mesh);
-
-                                vkCmdBindIndexBuffer(currentCommands, Geometry.MeshDataBuffers, Geometry.Meshes[meshIndex].IndexOffset, VK_INDEX_TYPE_UINT16);
-                                for (uint32_t inst = 0; inst < batch->Meshes[mesh].Count; inst++)
-                                {
-                                    struct
-                                    {
-                                        Mat4x4 VP;
-                                        Mat3x4 M;
-                                        uint32_t VertexOffset;
-                                        uint32_t MaterialIndex;
-                                        uint32_t LightIndex = 0xFFFFFFFF;
-                                    } pushConstant;
-
-                                    pushConstant.VP = view.ViewProj;
-                                    pushConstant.M = batch->Meshes[mesh].Transforms[inst];
-                                    pushConstant.VertexOffset = Geometry.Meshes[meshIndex].VertexOffset;
-                                    pushConstant.MaterialIndex = materialIndex;
-
-                                    // No lighting for gizmos
-                                    if (passIndex != ViewDesc::ForwardPass::DebugOverlay)
-                                    {
-                                        pushConstant.LightIndex = Light::toValue(view.DirectionalLight);
-                                    }
-
-                                    vkCmdPushConstants(currentCommands, ForwardPass.PipelineLayout,
-                                                       VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(pushConstant), &pushConstant);
-
-                                    vkCmdDrawIndexed(currentCommands, Geometry.Meshes[meshIndex].IndexCount, 1, 0, 0, 0);
-                                }
+                                PerInstanceData perInstanceData;
+                                perInstanceData.M = batch->Meshes[mesh].Transforms[inst];
+                                perInstanceData.VertexOffset = Geometry.Meshes[meshIndex].VertexOffset;
+                                perInstanceData.MaterialIndex = materialIndex;
+                                memcpy(IndirectDraw.PerFrameData.MappedMemory + perFrameDataWriteIndex, &perInstanceData, sizeof(PerInstanceData));
+                                perFrameDataWriteIndex += sizeof(PerInstanceData);
                             }
                         }
+                    }
+
+                    if (passDrawCount > 0)
+                    {
+                        struct
+                        {
+                            uint32_t InstanceOffset;
+                            uint32_t FrameOffset;
+                        } pushConstantBatchData;
+                        pushConstantBatchData.InstanceOffset = passIndirectDrawCountOffset;
+                        pushConstantBatchData.FrameOffset = MaxPerFrameDrawDataSize * fb;
+
+                        vkCmdPushConstants(currentCommands, ForwardPass.PipelineLayout,
+                                           VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(pushConstantBatchData), &pushConstantBatchData);
+
+                        vkCmdDrawIndexedIndirect(currentCommands, IndirectDraw.FrameBuffer[fb].Buffer, passIndirectDrawCountOffset * sizeof(VkDrawIndexedIndirectCommand), passDrawCount, sizeof(VkDrawIndexedIndirectCommand));
                     }
                 }
 
@@ -2597,7 +2737,7 @@ namespace IB
                 VkRenderPassBeginInfo renderPassBeginInfo = {};
                 renderPassBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
                 renderPassBeginInfo.renderPass = ImGuiPass.RenderPass;
-                renderPassBeginInfo.framebuffer = ImGuiPass.FrameBuffer[buffer].Framebuffer;
+                renderPassBeginInfo.framebuffer = ImGuiPass.FrameBuffer[fb].Framebuffer;
 
                 VkRect2D renderArea = {};
                 renderArea.extent = RendererContext.Present.SurfaceExtents;
@@ -2619,17 +2759,17 @@ namespace IB
         submitInfo.commandBufferCount = 1;
         submitInfo.pCommandBuffers = &currentCommands;
         submitInfo.waitSemaphoreCount = 1;
-        submitInfo.pWaitSemaphores = &RendererContext.Present.FrameBuffer[buffer].AcquireSemaphore;
+        submitInfo.pWaitSemaphores = &RendererContext.Present.FrameBuffer[fb].AcquireSemaphore;
         submitInfo.signalSemaphoreCount = 1;
-        submitInfo.pSignalSemaphores = &RendererContext.Present.FrameBuffer[buffer].FinishedSemaphore;
+        submitInfo.pSignalSemaphores = &RendererContext.Present.FrameBuffer[fb].FinishedSemaphore;
         submitInfo.pWaitDstStageMask = &dstStageMask;
 
-        IB_VKCHECK(vkQueueSubmit(RendererContext.Present.Queues[Queue::Graphics].Queue, 1, &submitInfo, RendererContext.Present.FrameBuffer[buffer].FinishedFence));
+        IB_VKCHECK(vkQueueSubmit(RendererContext.Present.Queues[Queue::Graphics].Queue, 1, &submitInfo, RendererContext.Present.FrameBuffer[fb].FinishedFence));
 
         VkPresentInfoKHR presentInfo = {};
         presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
         presentInfo.waitSemaphoreCount = 1;
-        presentInfo.pWaitSemaphores = &RendererContext.Present.FrameBuffer[buffer].FinishedSemaphore;
+        presentInfo.pWaitSemaphores = &RendererContext.Present.FrameBuffer[fb].FinishedSemaphore;
         presentInfo.swapchainCount = 1;
         presentInfo.pSwapchains = &RendererContext.Present.Swapchain;
         presentInfo.pImageIndices = &imageIndex;
