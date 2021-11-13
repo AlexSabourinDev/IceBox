@@ -100,6 +100,8 @@ namespace IB
     IB_API void launchJob(Job::Handle handle);
     IB_API void continueJob(Job::Handle handle, Job::Handle* dependencies, uint32_t dependencyCount);
 
+    // TODO: If you end up waiting on a job that can only occur on a particular worker,
+    // and the wait is also on that worker, you can end up deadlocking...
     IB_API void wait(Job::Handle handle);
 
     // Utility API

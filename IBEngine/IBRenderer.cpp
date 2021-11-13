@@ -697,10 +697,6 @@ namespace
             VkImage DepthImage;
             VkImageView DepthImageView;
 
-            Allocation DebugDepthImageAllocation;
-            VkImage DebugDepthImage;
-            VkImageView DebugDepthImageView;
-
             VkFramebuffer Framebuffer;
         } FrameBuffer[FrameBufferCount];
         uint32_t InstanceCount = 0;
@@ -844,9 +840,6 @@ namespace
                 vkDestroyImage(RendererContext.LogicalDevice, ForwardPass.FrameBuffer[fb].DepthImage, NoAllocator);
                 vkDestroyImageView(RendererContext.LogicalDevice, ForwardPass.FrameBuffer[fb].DepthImageView, NoAllocator);
                 freeDeviceMemory(&Allocator, ForwardPass.FrameBuffer[fb].DepthImageAllocation);
-                vkDestroyImage(RendererContext.LogicalDevice, ForwardPass.FrameBuffer[fb].DebugDepthImage, NoAllocator);
-                vkDestroyImageView(RendererContext.LogicalDevice, ForwardPass.FrameBuffer[fb].DebugDepthImageView, NoAllocator);
-                freeDeviceMemory(&Allocator, ForwardPass.FrameBuffer[fb].DebugDepthImageAllocation);
                 vkDestroyFramebuffer(RendererContext.LogicalDevice, ForwardPass.FrameBuffer[fb].Framebuffer, NoAllocator);
                 vkDestroyFramebuffer(RendererContext.LogicalDevice, ImGuiPass.FrameBuffer[fb].Framebuffer, NoAllocator);
             }
@@ -934,11 +927,6 @@ namespace
                 ForwardPass.FrameBuffer[fb].DepthImage = imageAndView.Image;
                 ForwardPass.FrameBuffer[fb].DepthImageView = imageAndView.ImageView;
                 ForwardPass.FrameBuffer[fb].DepthImageAllocation = imageAndView.Allocation;
-
-                imageAndView = allocImageAndView(imageAlloc);
-                ForwardPass.FrameBuffer[fb].DebugDepthImage = imageAndView.Image;
-                ForwardPass.FrameBuffer[fb].DebugDepthImageView = imageAndView.ImageView;
-                ForwardPass.FrameBuffer[fb].DebugDepthImageAllocation = imageAndView.Allocation;
             }
 
             // Create our forward pass framebuffers
@@ -947,7 +935,6 @@ namespace
                     {
                         RendererContext.Present.FrameBuffer[fb].SwapchainImageView,
                         ForwardPass.FrameBuffer[fb].DepthImageView,
-                        ForwardPass.FrameBuffer[fb].DebugDepthImageView,
                     };
 
                 VkFramebufferCreateInfo framebufferCreate = {};
@@ -1348,7 +1335,7 @@ namespace IB
                 depth.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
                 depth.format = VK_FORMAT_D32_SFLOAT;
 
-                VkAttachmentDescription attachmentDescriptions[] = {output, depth, depth};
+                VkAttachmentDescription attachmentDescriptions[] = {output, depth};
 
                 // Attachments
                 VkAttachmentReference outputAttachment = {};
@@ -1365,33 +1352,13 @@ namespace IB
                 renderSubpass.pColorAttachments = &outputAttachment;
                 renderSubpass.pDepthStencilAttachment = &depthAttachment;
 
-                VkAttachmentReference debugDepthAttachment = {};
-                debugDepthAttachment.attachment = 2;
-                debugDepthAttachment.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-
-                VkSubpassDescription debugSubpass = {};
-                debugSubpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-                debugSubpass.colorAttachmentCount = 1;
-                debugSubpass.pColorAttachments = &outputAttachment;
-                debugSubpass.pDepthStencilAttachment = &debugDepthAttachment;
-
-                VkSubpassDescription subpasses[] = {renderSubpass, debugSubpass};
-
-                VkSubpassDependency dependency = {};
-                dependency.srcSubpass = 0;
-                dependency.dstSubpass = 1;
-                dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-                dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-                dependency.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-                dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-                dependency.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
+                VkSubpassDescription subpasses[] = {renderSubpass};
 
                 VkRenderPassCreateInfo createRenderPass = {};
                 createRenderPass.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
                 createRenderPass.attachmentCount = arrayCount(attachmentDescriptions);
                 createRenderPass.subpassCount = arrayCount(subpasses);
-                createRenderPass.dependencyCount = 1;
-                createRenderPass.pDependencies = &dependency;
+                createRenderPass.dependencyCount = 0;
                 createRenderPass.pAttachments = attachmentDescriptions;
                 createRenderPass.pSubpasses = subpasses;
 
@@ -1905,9 +1872,6 @@ namespace IB
             vkDestroyImage(RendererContext.LogicalDevice, ForwardPass.FrameBuffer[fb].DepthImage, NoAllocator);
             vkDestroyImageView(RendererContext.LogicalDevice, ForwardPass.FrameBuffer[fb].DepthImageView, NoAllocator);
             freeDeviceMemory(&Allocator, ForwardPass.FrameBuffer[fb].DepthImageAllocation);
-            vkDestroyImage(RendererContext.LogicalDevice, ForwardPass.FrameBuffer[fb].DebugDepthImage, NoAllocator);
-            vkDestroyImageView(RendererContext.LogicalDevice, ForwardPass.FrameBuffer[fb].DebugDepthImageView, NoAllocator);
-            freeDeviceMemory(&Allocator, ForwardPass.FrameBuffer[fb].DebugDepthImageAllocation);
         }
 
         vkDestroyBuffer(RendererContext.LogicalDevice, Geometry.MeshDataBuffers, NoAllocator);
@@ -2118,11 +2082,11 @@ namespace IB
         VkGraphicsPipelineCreateInfo subpass0Pipeline = baseGraphicsPipelineCreate;
         subpass0Pipeline.subpass = 0;
 
-        VkGraphicsPipelineCreateInfo subpass1Pipeline = baseGraphicsPipelineCreate;
-        subpass1Pipeline.pRasterizationState = &rasterizationCreateNoCull;
-        subpass1Pipeline.subpass = 1;
+        VkGraphicsPipelineCreateInfo debugGeoPipeline = baseGraphicsPipelineCreate;
+        debugGeoPipeline.pRasterizationState = &rasterizationCreateNoCull;
+        debugGeoPipeline.subpass = 0;
 
-        VkGraphicsPipelineCreateInfo pipelineCreateInfo[] = {subpass0Pipeline, subpass1Pipeline};
+        VkGraphicsPipelineCreateInfo pipelineCreateInfo[] = {subpass0Pipeline, debugGeoPipeline};
         static_assert(arrayCount(pipelineCreateInfo) == ForwardPass::SubpassCount, "Number of created pipelines is not correct.");
         VkPipeline createdPipelines[ForwardPass::SubpassCount];
         IB_VKCHECK(vkCreateGraphicsPipelines(RendererContext.LogicalDevice, RendererContext.PipelineCache, arrayCount(pipelineCreateInfo), pipelineCreateInfo, NoAllocator, createdPipelines));
@@ -2619,7 +2583,7 @@ namespace IB
                 colorClear.color = clearColor;
                 VkClearValue depthClear = {};
                 depthClear.depthStencil = {1.0f, 0};
-                VkClearValue clearValues[] = {colorClear, depthClear, depthClear};
+                VkClearValue clearValues[] = {colorClear, depthClear};
 
                 VkRect2D renderArea = {};
                 renderArea.extent = RendererContext.Present.SurfaceExtents;
@@ -2666,7 +2630,16 @@ namespace IB
                 {
                     if (passIndex > 0)
                     {
-                        vkCmdNextSubpass(currentCommands, VK_SUBPASS_CONTENTS_INLINE);
+                        VkClearAttachment depthAttachment = {};
+                        depthAttachment.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+                        depthAttachment.clearValue = depthClear;
+
+                        VkClearRect clearArea = {};
+                        clearArea.rect = renderArea;
+                        clearArea.baseArrayLayer = 0;
+                        clearArea.layerCount = 1;
+
+                        vkCmdClearAttachments(currentCommands, 1, &depthAttachment, 1, &clearArea);
                     }
 
                     if (ForwardPass.Pipelines[passIndex] == VK_NULL_HANDLE)
