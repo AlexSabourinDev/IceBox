@@ -2261,7 +2261,7 @@ namespace IB
         commandBufferAllocateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
         commandBufferAllocateInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
         commandBufferAllocateInfo.commandBufferCount = 1;
-        commandBufferAllocateInfo.commandPool = RendererContext.Present.Queues[Queue::Graphics].CommandPool;
+        commandBufferAllocateInfo.commandPool = RendererContext.Present.Queues[Queue::Transfer].CommandPool;
 
         VkCommandBuffer commandBuffer;
         IB_VKCHECK(vkAllocateCommandBuffers(RendererContext.LogicalDevice, &commandBufferAllocateInfo, &commandBuffer));
@@ -2360,8 +2360,8 @@ namespace IB
         submitInfo.commandBufferCount = 1;
         submitInfo.pCommandBuffers = &commandBuffer;
 
-        IB_VKCHECK(vkQueueSubmit(RendererContext.Present.Queues[Queue::Graphics].Queue, 1, &submitInfo, staging.Fence));
-        Staging.Transfers[Queue::Graphics].Commands[Staging.Transfers[Queue::Graphics].ActiveCount++] = commandBuffer;
+        IB_VKCHECK(vkQueueSubmit(RendererContext.Present.Queues[Queue::Transfer].Queue, 1, &submitInfo, staging.Fence));
+        Staging.Transfers[Queue::Graphics].Commands[Staging.Transfers[Queue::Transfer].ActiveCount++] = commandBuffer;
 
         // Queue up our shader descriptor update
         {
