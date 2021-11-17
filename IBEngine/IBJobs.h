@@ -33,6 +33,7 @@ namespace IB
         constexpr uint64_t toValue(Handle handle) { return static_cast<uint64_t>(handle); }
     }
 
+    constexpr uint32_t NoJobType = UINT32_MAX;
     constexpr uint32_t AllJobQueues = UINT32_MAX;
     enum class JobResult
     {
@@ -47,6 +48,7 @@ namespace IB
     {
         alignas(16) uint8_t JobData[MaxJobDataSize] = {};
         JobFunc *Func = nullptr;
+        uint32_t TypeIndex = NoJobType;
         uint32_t QueueIndex = AllJobQueues;
     };
 
@@ -119,7 +121,7 @@ namespace IB
     }
 
     template <typename T>
-    Job::Handle launchJob(T &&functor, uint32_t queueIndex = AllJobQueues)
+    Job::Handle launchJob(T &&functor, uint32_t typeIndex = NoJobType, uint32_t queueIndex = AllJobQueues)
     {
         using RawType = typename std::remove_reference<T>::type;
 
@@ -128,12 +130,13 @@ namespace IB
         JobDesc desc;
         desc.Func = &jobFunctor<RawType>;
         new (desc.JobData) RawType{ std::forward<T>(functor) };
+        desc.TypeIndex = typeIndex;
         desc.QueueIndex = queueIndex;
         return launchJob(desc);
     }
 
     template <typename T>
-    Job::Handle continueJob(T &&functor, Job::Handle* dependencies, uint32_t dependencyCount, uint32_t queueIndex = AllJobQueues)
+    Job::Handle continueJob(T &&functor, Job::Handle *dependencies, uint32_t dependencyCount, uint32_t typeIndex = NoJobType, uint32_t queueIndex = AllJobQueues)
     {
         using RawType = typename std::remove_reference<T>::type;
 
@@ -142,12 +145,13 @@ namespace IB
         JobDesc desc;
         desc.Func = &jobFunctor<RawType>;
         new (desc.JobData) RawType{ std::forward<T>(functor) };
+        desc.TypeIndex = typeIndex;
         desc.QueueIndex = queueIndex;
         return continueJob(desc, dependencies, dependencyCount);
     }
 
     template <typename T>
-    Job::Handle reserveJob(T &&functor, uint32_t queueIndex = AllJobQueues)
+    Job::Handle reserveJob(T &&functor, uint32_t typeIndex = NoJobType, uint32_t queueIndex = AllJobQueues)
     {
         using RawType = typename std::remove_reference<T>::type;
 
@@ -156,6 +160,7 @@ namespace IB
         JobDesc desc;
         desc.Func = &jobFunctor<RawType>;
         new (desc.JobData) RawType{ std::forward<T>(functor) };
+        desc.TypeIndex = typeIndex;
         desc.QueueIndex = queueIndex;
         return reserveJob(desc);
     }

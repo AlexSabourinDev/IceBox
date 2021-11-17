@@ -12,6 +12,7 @@
 #include <IBEngine/IBGeometryToolkit.h>
 
 #include <imgui/imgui.h>
+#include <stdio.h>
 
 using namespace IB;
 namespace
@@ -19,7 +20,7 @@ namespace
     // Global until we figure out state storage.
     Resource::Handle CellResource = {};
     bool EditorAlive = true;
-    constexpr uint32_t PlatformJobQueue = 2;
+    constexpr uint32_t PlatformJobQueue = 0;
     Window::Handle WindowHandle;
 
     bool primaryWindowHandler(void *data, WindowMessage message, WindowMessagePlatformData const *platformData)
@@ -58,6 +59,7 @@ namespace IB
 
         Job::Handle SubmittedEditorHandle = InvalidJob;
         Job::Handle SubmittedViewGather = InvalidJob;
+        Job::Handle SubmittedDraw = InvalidJob;
 
         void init()
         {
@@ -121,11 +123,11 @@ namespace IB
             Job::Handle platformJob;
             if (SubmittedEditorHandle == InvalidJob)
             {
-                platformJob = launchJob(&platformMessageQueueJob, PlatformJobQueue);
+                platformJob = launchJob(&platformMessageQueueJob, NoJobType, PlatformJobQueue);
             }
             else
             {
-                platformJob = continueJob(&platformMessageQueueJob, &SubmittedEditorHandle, 1, PlatformJobQueue);
+                platformJob = continueJob(&platformMessageQueueJob, &SubmittedEditorHandle, 1, NoJobType, PlatformJobQueue);
             }
 
             // Writes:
@@ -143,7 +145,8 @@ namespace IB
             // Reads:
             // Frontend Renderer state
             // Transform state
-            SubmittedViewGather = continueJob([viewDescriptor, renderFrameAllocator](Job::Handle /*currentJob*/) {
+            SubmittedViewGather = continueJob([viewDescriptor, renderFrameAllocator](Job::Handle /*currentJob*/)
+            {
                 Cell::Handle currentCell = InvalidCell;
                 // Todo: needs a volatile load. Don't want the compiler to cache our load
                 if (Asset::isResourceAssetAvailable(CellResource))
@@ -165,9 +168,13 @@ namespace IB
             },
                                               &SubmittedEditorHandle, 1);
 
+            // Can't draw in front of our previous draw
+            Job::Handle drawDependencies[2] = {SubmittedViewGather, SubmittedDraw};
+
             // Writes:
             // Backend Renderer state
-            continueJob([viewDescriptor, renderFrameAllocator](Job::Handle /*currentJob*/) {
+            SubmittedDraw = continueJob([viewDescriptor, renderFrameAllocator](Job::Handle /*currentJob*/)
+            {
                 drawCellView(renderFrameAllocator, *viewDescriptor);
 
                 uint32_t previousPendingFrameCount = volatileLoad(&QueuedFrameCount) - CommitedFrameCount;
@@ -180,7 +187,7 @@ namespace IB
 
                 return JobResult::Complete;
             },
-                        &SubmittedViewGather, 1, RendererJobQueueIndex);
+                                        drawDependencies, 2, RendererJobTypeIndex);
         }
 
         void flushQueuedFrames()
@@ -209,7 +216,7 @@ int main()
             signalThreadEvent(platformEvent);
             return JobResult::Complete;
         },
-                  PlatformJobQueue);
+                  NoJobType, PlatformJobQueue);
 
         waitOnThreadEvent(platformEvent);
 
@@ -250,7 +257,7 @@ int main()
             signalThreadEvent(platformEvent);
             return JobResult::Complete;
         },
-                  PlatformJobQueue);
+                  NoJobType, PlatformJobQueue);
 
         waitOnThreadEvent(platformEvent);
         destroyThreadEvent(platformEvent);

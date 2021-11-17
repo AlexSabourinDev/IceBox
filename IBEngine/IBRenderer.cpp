@@ -2361,7 +2361,7 @@ namespace IB
         submitInfo.pCommandBuffers = &commandBuffer;
 
         IB_VKCHECK(vkQueueSubmit(RendererContext.Present.Queues[Queue::Transfer].Queue, 1, &submitInfo, staging.Fence));
-        Staging.Transfers[Queue::Graphics].Commands[Staging.Transfers[Queue::Transfer].ActiveCount++] = commandBuffer;
+        Staging.Transfers[Queue::Transfer].Commands[Staging.Transfers[Queue::Transfer].ActiveCount++] = commandBuffer;
 
         // Queue up our shader descriptor update
         {
@@ -2405,6 +2405,7 @@ namespace IB
             commandBufferAllocateInfo.commandBufferCount = 1;
             commandBufferAllocateInfo.commandPool = RendererContext.Present.Queues[Queue::Transfer].CommandPool;
 
+
             VkCommandBuffer commandBuffer;
             IB_VKCHECK(vkAllocateCommandBuffers(RendererContext.LogicalDevice, &commandBufferAllocateInfo, &commandBuffer));
 
@@ -2428,7 +2429,7 @@ namespace IB
             submitInfo.pCommandBuffers = &commandBuffer;
 
             IB_VKCHECK(vkQueueSubmit(RendererContext.Present.Queues[Queue::Transfer].Queue, 1, &submitInfo, staging.Fence));
-            Staging.Transfers[Queue::Transfer].Commands[Staging.Transfers[Queue::Transfer].ActiveCount++];
+            Staging.Transfers[Queue::Transfer].Commands[Staging.Transfers[Queue::Transfer].ActiveCount++] = commandBuffer;
         }
 
         return Material::toHandle(instanceIndex);
@@ -2476,7 +2477,7 @@ namespace IB
             submitInfo.pCommandBuffers = &commandBuffer;
 
             IB_VKCHECK(vkQueueSubmit(RendererContext.Present.Queues[Queue::Transfer].Queue, 1, &submitInfo, staging.Fence));
-            Staging.Transfers[Queue::Transfer].Commands[Staging.Transfers[Queue::Transfer].ActiveCount++];
+            Staging.Transfers[Queue::Transfer].Commands[Staging.Transfers[Queue::Transfer].ActiveCount++] = commandBuffer;
         }
 
         return Light::toHandle(instanceIndex);

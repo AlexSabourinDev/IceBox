@@ -717,7 +717,7 @@ namespace IB
                     GizmoMaterial = IB::createMaterial(gizmoMatDesc);
                 }
                 return JobResult::Complete;
-            }, RendererJobQueueIndex);
+            }, RendererJobTypeIndex);
 
             launchJob([](Job::Handle /*currentJob*/)
             {
@@ -831,7 +831,7 @@ namespace IB
                 TranslationGizmoMesh = createMesh(meshDesc);
 
                 return JobResult::Complete;
-            }, RendererJobQueueIndex);
+            }, RendererJobTypeIndex);
 
             // Rotation Gizmo
             launchJob([](Job::Handle /*currentJob*/)
@@ -908,7 +908,7 @@ namespace IB
                 RotationGizmoMesh = createMesh(meshDesc);
 
                 return JobResult::Complete;
-            }, RendererJobQueueIndex);
+            }, RendererJobTypeIndex);
         }
 
         void kill()

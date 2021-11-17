@@ -14,7 +14,7 @@
 
 namespace
 {
-    constexpr uint32_t InitPassesJobQueueIndex = 1;
+    constexpr uint32_t InitPassesJobTypeIndex = 1;
 
     IB::Image::Handle toImageHandle(IB::Asset::Handle asset) { return IB::Image::toHandle(static_cast<uint32_t>(IB::Asset::toValue(asset))); }
 
@@ -44,7 +44,7 @@ namespace
 
                     return IB::JobResult::Complete;
                 },
-                                                          IB::RendererJobQueueIndex);
+                                                          IB::RendererJobTypeIndex);
 
                 return IB::Asset::wait(&imageCreate, 1, Create);
             }
@@ -130,7 +130,7 @@ namespace
 
                     return IB::JobResult::Complete;
                 },
-                    IB::RendererJobQueueIndex);
+                    IB::RendererJobTypeIndex);
 
                 // Store mesh for collision detection
                 jobs[1] = IB::launchJob([meshAsset, &meshData](IB::Job::Handle /*currentJob*/)
@@ -157,7 +157,7 @@ namespace
                 IB::destroyMesh(meshHandle);
                 return IB::JobResult::Complete;
             },
-                IB::RendererJobQueueIndex);
+                IB::RendererJobTypeIndex);
 
             MeshDataPool.remove(*meshData);
         }
@@ -205,7 +205,7 @@ namespace
 
                     return IB::JobResult::Complete;
                 },
-                                                            &textureJob, 1, IB::RendererJobQueueIndex);
+                                                            &textureJob, 1, IB::RendererJobTypeIndex);
 
                 return IB::Asset::wait(&materialJob, 1, Create);
             }
@@ -716,7 +716,7 @@ namespace IB
                                              Asset::releaseResourceAsync(resource);
                                              return JobResult::Complete;
                                          },
-                                             InitPassesJobQueueIndex);
+                                               InitPassesJobTypeIndex);
                                      }
                                  });
 
@@ -730,7 +730,7 @@ namespace IB
             killRenderer();
             return JobResult::Complete;
         },
-                  RendererJobQueueIndex);
+                  RendererJobTypeIndex);
     }
 
     MaterialAsset::Handle createMaterialAsset(MaterialAsset::Desc asset)
@@ -746,7 +746,7 @@ namespace IB
             materialPtr->Material = IB::createMaterial(materialDesc);
             return IB::JobResult::Complete;
         },
-                    &textureJob, 1, RendererJobQueueIndex);
+                    &textureJob, 1, RendererJobTypeIndex);
 
         return MaterialAsset::toHandle(reinterpret_cast<uint64_t>(&materialData));
     }
@@ -765,7 +765,7 @@ namespace IB
 
             return IB::JobResult::Complete;
         },
-            IB::RendererJobQueueIndex);
+            IB::RendererJobTypeIndex);
 
         setCollisionShape(&meshData, meshAsset);
 
@@ -792,7 +792,7 @@ namespace IB
 
             return IB::JobResult::Complete;
         },
-            IB::RendererJobQueueIndex);
+            IB::RendererJobTypeIndex);
 
         setCollisionShape(meshData, meshAsset);
 
@@ -952,8 +952,10 @@ namespace IB
             for (int32_t i = 0; i < viewDesc.ImGuiDrawData->CmdListsCount; i++)
             {
                 IM_DELETE(viewDesc.ImGuiDrawData->CmdLists[i]);
+                viewDesc.ImGuiDrawData->CmdLists[i] = nullptr;
             }
             deallocateArray(allocator, viewDesc.ImGuiDrawData->CmdLists, viewDesc.ImGuiDrawData->CmdListsCount);
+            viewDesc.ImGuiDrawData->CmdLists = nullptr;
             deallocate(allocator, viewDesc.ImGuiDrawData);
         }
     }

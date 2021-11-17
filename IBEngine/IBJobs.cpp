@@ -133,6 +133,7 @@ namespace IB
                 alignas(16) uint8_t Data[IB::MaxJobDataSize];
                 IB::JobFunc* Func = nullptr;
                 uint32_t Generation = 0;
+                uint32_t TypeIndex = IB::NoJobType;
                 uint32_t QueueIndex = IB::AllJobQueues;
             };
 #pragma warning(default : 4324)
@@ -163,6 +164,26 @@ namespace
     };
     constexpr uint32_t MaxWorkerCount = 64;
     WorkerThread Workers[MaxWorkerCount];
+
+    uint64_t JobTypeLocks = 0;
+    bool acquireTypeLock(uint32_t typeIndex)
+    {
+        if (typeIndex == IB::NoJobType)
+        {
+            return true;
+        }
+
+        uint64_t typeBit = 1ull << typeIndex;
+        return (IB::atomicOr(&JobTypeLocks, typeBit) & typeBit) == 0;
+    }
+
+    void releaseTypeLock(uint32_t typeIndex)
+    {
+        if (typeIndex != IB::NoJobType)
+        {
+            IB::volatileStore(&JobTypeLocks, JobTypeLocks & ~(1ull << typeIndex));
+        }
+    }
 
     constexpr uint32_t MaxJobPoolCount = MaxJobCount * MaxWorkerCount;
     IB::Job::Data JobPool[MaxJobPoolCount] = {};
@@ -200,6 +221,7 @@ namespace
         IB_ASSERT(job != nullptr, "Failed to get a job from the job pool!");
         static_assert(sizeof(job->Data) == sizeof(desc.JobData), "Job description data size doesn't match job data size.");
         memcpy(job->Data, desc.JobData, sizeof(desc.JobData));
+        job->TypeIndex = desc.TypeIndex;
         job->QueueIndex = desc.QueueIndex;
 
         return job;
@@ -226,12 +248,27 @@ namespace
             IB::Job::Data* jobCandidate = queue->Jobs[stealProducerIndex];
             if (jobCandidate != nullptr && jobCandidate != &EmptyJob && jobCandidate->QueueIndex == IB::AllJobQueues)
             {
-                // Simply replace the last job with our current job.
-                // If it was a valid job, our worker will simply work on the empty job.
-                //   If it was a valid job, our worker will not have consumed it. If our worker consumed it,
-                //   The job would have been exchanged with a nullptr and that's what we would receive here.
-                // If it was a nullptr, we will simply continue trying to steal
-                return IB::atomicExchange(&queue->Jobs[stealProducerIndex], &EmptyJob);
+                uint32_t expectedJobType = jobCandidate->TypeIndex;
+                if(acquireTypeLock(expectedJobType))
+                {
+                    // Simply replace the last job with our current job.
+                    // If it was a valid job, our worker will simply work on the empty job.
+                    //   If it was a valid job, our worker will not have consumed it. If our worker consumed it,
+                    //   The job would have been exchanged with a nullptr and that's what we would receive here.
+                    // If it was a nullptr, we will simply continue trying to steal
+                    IB::Job::Data* acquiredJob = IB::atomicExchange(&queue->Jobs[stealProducerIndex], &EmptyJob);
+                    // If we didn't acquire the job we expected, we need to release our type lock
+                    if (acquiredJob != jobCandidate)
+                    {
+                        IB_ASSERT(acquiredJob == nullptr || acquiredJob == &EmptyJob, "Did we acquire an unexpected job?");
+                        releaseTypeLock(expectedJobType);
+                    }
+                    else
+                    {
+                        // If we successfully locked our job type and acquired the right job,
+                        return acquiredJob;
+                    }
+                }
             }
         }
 
@@ -249,7 +286,7 @@ namespace
         while (commitedWorkerIndex == UINT32_MAX) // Until we've commited to a worker.
         {
             // Simply increment our value, use the modulo as our indexing.
-            uint32_t worker = (job->QueueIndex == IB::AllJobQueues ? NextWorker++ : job->QueueIndex) % WorkerCount;
+            uint32_t worker = (job->QueueIndex == IB::AllJobQueues ? (NextWorker++) : job->QueueIndex) % WorkerCount;
 
             // If our queue has space, try to commit our slot by doing a compare and exchange.
             // If it succeeds then we've commited our producer index and moved the index forward.
@@ -391,21 +428,34 @@ namespace
             IB::Job::Data* stolenJob = nullptr;
             // Keep looping while:
             // We're alive and waiting for a job or our producer hasn't moved forward
-            while (
-                (IB::volatileLoad(&queue->Jobs[queue->Consumer]) == nullptr
-                || IB::volatileLoad(&queue->Producer) == queue->Consumer)
-                && IB::volatileLoad(&worker->Alive))
+            // Our job has not been written yet
+            // We failed to acquire our job type lock.
+
+            uintptr_t expectedJobAddress = 0;
+            uint32_t expectedJobType = IB::NoJobType;
+            while (true)
             {
                 // Give it a few iterations, we might just be writting the value to this index.
                 bool breakEarly = false;
                 for (uint32_t i = 0; i < 32; i++)
                 {
-                    if ((IB::volatileLoad(&queue->Jobs[queue->Consumer]) != nullptr
-                        && IB::volatileLoad(&queue->Producer) != queue->Consumer)
-                        || !IB::volatileLoad(&worker->Alive))
+                    if (!IB::volatileLoad(&worker->Alive))
                     {
                         breakEarly = true;
                         break;
+                    }
+
+                    IB::Job::Data *job = IB::volatileLoad(&queue->Jobs[queue->Consumer]);
+                    if ((job != nullptr
+                        && IB::volatileLoad(&queue->Producer) != queue->Consumer))
+                    {
+                        expectedJobType = job->TypeIndex;
+                        if (acquireTypeLock(expectedJobType))
+                        {
+                            expectedJobAddress = reinterpret_cast<uintptr_t>(job);
+                            breakEarly = true;
+                            break;
+                        }
                     }
                 }
 
@@ -457,6 +507,12 @@ namespace
             if (stolenJob == nullptr)
             {
                 job = IB::atomicExchange<IB::Job::Data>(&queue->Jobs[queue->Consumer], nullptr);
+                // If we're not acquiring the job that we expected, we need to release the lock that we pre-emptively grabbed.
+                if (reinterpret_cast<uintptr_t>(job) != expectedJobAddress)
+                {
+                    IB_ASSERT(job == &EmptyJob, "If our job doesn't match, we expect an empty job.");
+                    releaseTypeLock(expectedJobType);
+                }
             }
             else
             {
@@ -469,6 +525,7 @@ namespace
             // If putting to sleep has side effects in the future, the API might have to be re-thought
             IB::Job::Handle jobHandle = toJobHandle(job);
             IB::JobResult result = job->Func(job->Data, jobHandle);
+            releaseTypeLock(job->TypeIndex);
 
             // Queue management
             if(stolenJob == nullptr)
