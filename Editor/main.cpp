@@ -187,7 +187,7 @@ namespace IB
 
                 return JobResult::Complete;
             },
-                                        drawDependencies, 2, RendererJobTypeIndex);
+                                        drawDependencies, 2, NoJobType, RendererJobQueueIndex);
         }
 
         void flushQueuedFrames()

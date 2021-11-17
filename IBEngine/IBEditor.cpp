@@ -451,7 +451,8 @@ namespace IB
 
                         if (lineSweepChanged)
                         {
-                            updateLineSweep(SelectedEntity, *sweep);
+                            Job::Handle job = updateLineSweepAsync(SelectedEntity, *sweep);
+                            wait(job); // Currently just plain waiting on the job. Likely want to run in parallel to the editor code
                         }
                     }
                     else
@@ -717,7 +718,7 @@ namespace IB
                     GizmoMaterial = IB::createMaterial(gizmoMatDesc);
                 }
                 return JobResult::Complete;
-            }, RendererJobTypeIndex);
+            }, NoJobType, RendererJobQueueIndex);
 
             launchJob([](Job::Handle /*currentJob*/)
             {
@@ -831,7 +832,7 @@ namespace IB
                 TranslationGizmoMesh = createMesh(meshDesc);
 
                 return JobResult::Complete;
-            }, RendererJobTypeIndex);
+            }, NoJobType, RendererJobQueueIndex);
 
             // Rotation Gizmo
             launchJob([](Job::Handle /*currentJob*/)
@@ -908,7 +909,7 @@ namespace IB
                 RotationGizmoMesh = createMesh(meshDesc);
 
                 return JobResult::Complete;
-            }, RendererJobTypeIndex);
+            }, NoJobType, RendererJobQueueIndex);
         }
 
         void kill()

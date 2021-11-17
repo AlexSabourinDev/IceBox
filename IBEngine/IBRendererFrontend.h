@@ -49,7 +49,7 @@ namespace IB
     struct ViewDesc;
     struct MeshDesc;
 
-    constexpr uint32_t RendererJobTypeIndex = 0;
+    constexpr uint32_t RendererJobQueueIndex = 1;
 
     namespace Serialization
     {

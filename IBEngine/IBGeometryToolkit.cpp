@@ -260,7 +260,7 @@ namespace IB
         return &reinterpret_cast<LineSweep*>(Property::toValue(lineSweepProperty))->Desc;
     }
 
-    void updateLineSweep(Entity::Handle entity, LineSweepDesc const& lineSweep)
+    Job::Handle updateLineSweepAsync(Entity::Handle entity, LineSweepDesc const& lineSweep)
     {
         struct JobState
         {
@@ -275,7 +275,7 @@ namespace IB
         };
 
         Property::Handle rendererProperty = getPropertyFromEntity(entity, RendererPropertyType);
-        launchJob([lineSweep, rendererProperty, jobState = JobState{}](Job::Handle currentJob) mutable
+        return launchJob([lineSweep, rendererProperty, jobState = JobState{}](Job::Handle currentJob) mutable
         {
             if (jobState.State == JobState::CreatingMesh)
             {
