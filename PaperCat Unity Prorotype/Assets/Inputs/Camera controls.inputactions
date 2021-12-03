@@ -1,0 +1,34 @@
+{
+    "name": "Camera controls",
+    "maps": [
+        {
+            "name": "Camera",
+            "id": "bdf3e14a-349b-4f5a-aab9-e57ca309fe56",
+            "actions": [
+                {
+                    "name": "Look",
+                    "type": "Value",
+                    "id": "f6ae87c5-0754-4616-9ce5-27eb4f7642ca",
+                    "expectedControlType": "Stick",
+                    "processors": "",
+                    "interactions": "",
+                    "initialStateCheck": true
+                }
+            ],
+            "bindings": [
+                {
+                    "name": "",
+                    "id": "bda87218-b69e-4b82-af16-89700f5e5543",
+                    "path": "<Gamepad>/rightStick",
+                    "interactions": "",
+                    "processors": "",
+                    "groups": "",
+                    "action": "Look",
+                    "isComposite": false,
+                    "isPartOfComposite": false
+                }
+            ]
+        }
+    ],
+    "controlSchemes": []
+}

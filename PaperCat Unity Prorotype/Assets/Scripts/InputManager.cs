@@ -5,6 +5,8 @@ using UnityEngine.InputSystem;
 
 public class InputManager : MonoBehaviour
 {
+    public bool rotateForCamera = true;
+
     Gamepad gp;
     // Start is called before the first frame update
     void Start()
@@ -21,8 +23,18 @@ public class InputManager : MonoBehaviour
 
     public Vector2 GetLeftStickInput()
     {
+        
         gp = Gamepad.current;
         Vector2 input = gp.leftStick.ReadValue();
+        if (rotateForCamera)
+        {       //TODO : gotta put the y input on z before rotating
+            Debug.Log("input going in: " + input);
+            float facing = Camera.main.transform.eulerAngles.y;
+            Debug.Log("facing: " + facing);
+            Vector3 rotatedInput = Quaternion.Euler(0, facing, 0) * new Vector3(input.x, 0, input.y);
+            Debug.Log("input going out: " + input);
+            input = new Vector2(rotatedInput.x, rotatedInput.z);
+        }
         return input;
     }
 
