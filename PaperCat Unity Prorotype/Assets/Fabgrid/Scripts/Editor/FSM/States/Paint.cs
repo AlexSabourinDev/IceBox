@@ -40,8 +40,6 @@ namespace Fabgrid
 
         public override void OnEnter()
         {
-            tilemap.selectedTile = null;
-
             PopulateTileButtons();
 
             var mainPanelHeader = root.Q<Label>("main-panel-header");
@@ -64,6 +62,28 @@ namespace Fabgrid
             deleteTileButton.RegisterCallback<MouseLeaveEvent>(_ => { isHoveringOverRemoveButton = false; });
 
             ShowTileButtonsThatContains(tilemap.searchValue);
+
+            // AlexS: See if our tile from our previous session is still around
+            // If so, select it
+            KeyValuePair<Button, Tile>? foundButton = null;
+            foreach (var buttonTile in buttonTilePairs)
+            {
+                if (buttonTile.Value == tilemap.selectedTile)
+                {
+                    foundButton = buttonTile;
+                    break;
+                }
+            }
+
+            if (foundButton != null)
+            {
+                bool shift = false;
+                OnClickTileButton(tilemap.selectedTile, foundButton.Value.Key, shift);
+            }
+            else
+            {
+                tilemap.selectedTile = null;
+            }
         }
 
         private void SetupControls()
@@ -249,7 +269,11 @@ namespace Fabgrid
             }
 
             button.AddToClassList("selected-tile-button");
-            selectedButtonTilePairs.Add(button, tile);
+            // AlexS: Make sure we only add to the dictionary if we don't already have the key
+            if (!selectedButtonTilePairs.ContainsKey(button))
+            {
+                selectedButtonTilePairs.Add(button, tile);
+            }
             tilemap.selectedTile = tile;
 
             selectedTileButton = button;
