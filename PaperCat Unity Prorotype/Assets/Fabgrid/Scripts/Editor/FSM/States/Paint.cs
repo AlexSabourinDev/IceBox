@@ -274,6 +274,13 @@ namespace Fabgrid
             var oldPosition = tilemap.selectedTile.prefab.transform.position;
             tilemap.selectedTile.prefab.transform.position = Vector3.zero;
 
+            // AlexS: Make sure our probuilder meshes are created for visualization.
+            UnityEngine.ProBuilder.ProBuilderMesh probuilderMesh = tilemap.selectedTile.prefab.GetComponent<UnityEngine.ProBuilder.ProBuilderMesh>();
+            if(probuilderMesh != null && probuilderMesh.meshSyncState != UnityEngine.ProBuilder.MeshSyncState.InSync)
+            {
+                probuilderMesh.ToMesh();
+            }
+
             var meshFilters = tilemap.selectedTile.prefab.GetComponentsInChildren<MeshFilter>(true);
             var combineInstances = new CombineInstance[meshFilters.Length];
 
