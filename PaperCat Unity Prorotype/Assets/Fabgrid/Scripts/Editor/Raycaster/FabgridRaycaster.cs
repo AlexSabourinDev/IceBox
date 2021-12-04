@@ -61,22 +61,23 @@ namespace Fabgrid
 
         private static Renderer GetIntersectingRenderer(Renderer[] renderers, Ray ray)
         {
-            var intersectingRenderers = new List<Renderer>();
-
             // Get all intersecting renderers
+            float closestIntersection = float.PositiveInfinity;
+            Renderer closestRenderer = null;
             for (int i = 0; i < renderers.Length; ++i)
             {
-                if (renderers[i].bounds.IntersectRay(ray))
+                float intersectionDistance;
+                if (renderers[i].bounds.IntersectRay(ray, out intersectionDistance))
                 {
-                    intersectingRenderers.Add(renderers[i]);
+                    if(intersectionDistance < closestIntersection)
+                    {
+                        closestRenderer = renderers[i];
+                        closestIntersection = intersectionDistance;
+                    }
                 }
             }
 
-            if (intersectingRenderers.Count == 0) return null;
-
-            return FabgridUtility.GetClosestOfType<Renderer>(
-                    intersectingRenderers.ToArray(),
-                    ray.origin);
+            return closestRenderer;
         }
 
         public static Collider GetIntersectingCollider(Collider[] colliders, Ray ray)
