@@ -337,6 +337,8 @@ namespace Fabgrid
 
         private void GetTilePreviews()
         {
+            bool anyMeshRefreshed = false;
+
             foreach (var pair in buttonTilePairs)
             {
                 var button = pair.Key;
@@ -344,12 +346,31 @@ namespace Fabgrid
 
                 if (tile.thumbnail == null && button.Q<Image>().image == null)
                 {
+                    // AlexS: Make sure our probuilder meshes are created for visualization.
+                    // Will require a refresh of the asset preview cache.
+                    UnityEngine.ProBuilder.ProBuilderMesh probuilderMesh = tile.prefab.GetComponent<UnityEngine.ProBuilder.ProBuilderMesh>();
+                    if (probuilderMesh != null && probuilderMesh.meshSyncState != UnityEngine.ProBuilder.MeshSyncState.InSync)
+                    {
+                        anyMeshRefreshed = true;
+
+                        probuilderMesh.ToMesh();
+                        probuilderMesh.Refresh();
+                    }
+
                     var preview = AssetPreview.GetAssetPreview(tile.prefab);
                     if (preview == null) continue;
 
                     tile.thumbnail = preview;
                     button.Q<Image>().image = preview;
                 }
+            }
+
+            // AlexS: HACK - This forces our preview cache to reset. 1000 is completely arbitrary
+            // We've updated our meshes and need their previews to be refreshed.
+            if(anyMeshRefreshed)
+            {
+                AssetPreview.SetPreviewTextureCacheSize(0);
+                AssetPreview.SetPreviewTextureCacheSize(1000);
             }
         }
 
