@@ -24,10 +24,12 @@ namespace Fabgrid
                 return new Bounds(Vector3.zero, Vector3.one);
             }
 
-            var copy = Object.Instantiate(prefab);
-
-            copy.transform.position = position;
-            copy.transform.rotation = rotation;
+            // AlexS: Instead of copying our object and then changing it's position
+            // Correctly create it with our position and rotation.
+            // This will assure that the world bounds are correctly set in our colliders
+            // Which allows us not to worry about fixing it up later.
+            // Ideally, I'd like to avoid instantiating a new object just to do this however...
+            var copy = GameObject.Instantiate(prefab, position, rotation);
             var bounds = FabgridUtility.GetWorldBounds(copy, sizeCalculationOption, tilemap);
 
             Object.DestroyImmediate(copy);

@@ -60,24 +60,8 @@ namespace Fabgrid
 
         private static Bounds GetColliderWorldBounds(GameObject prefab)
         {
-            var collider = GetFirstComponent<Collider>(prefab);
-            var bounds = collider.bounds;
-            bounds.center = prefab.transform.position;
-
-            if (collider is BoxCollider boxCollider)
-            {
-                bounds.center += boxCollider.center;
-            }
-            else if (collider is SphereCollider sphereCollider)
-            {
-                bounds.center += sphereCollider.center;
-            }
-            else if (collider is CapsuleCollider capsuleCollider)
-            {
-                bounds.center += capsuleCollider.center;
-            }
-
-            return bounds;
+            // AlexS: Since we now correctly instantiate our gameobject, we don't need to worry about all the extra logic being done here before.
+            return GetFirstComponent<Collider>(prefab).bounds;
         }
 
         public static bool HasAnyComponent<T>(GameObject gameObject) where T : Component
