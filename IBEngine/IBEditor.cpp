@@ -237,7 +237,10 @@ namespace IB
         {
             newImGuiFrame();
             Input::newFrame();
+            ImGeo::newFrame();
             ImGizmo::newFrame(CameraHandle);
+
+            ImGeo::grid(ImGeo::state(), 100, 100); 
 
             static bool showEditorInspector = false;
             static bool showSettings = false;
@@ -599,6 +602,7 @@ namespace IB
 
             Input::endFrame();
             ImGizmo::endFrame();
+            ImGeo::endFrame();
             ImGui::Render();
         }
 
@@ -649,8 +653,6 @@ namespace IB
             Image::Handle GizmoImage = InvalidImage;
             Material::Handle GizmoMaterial = InvalidMaterial;
 
-            DrawData FrameDrawData;
-
             Entity::Handle FrameCamera;
 
             void* FocusedGizmo = nullptr;
@@ -688,103 +690,6 @@ namespace IB
             {
                 FocusedGizmo = gizmo;
                 FocusedGizmoId = gizmoId;
-            }
-
-            struct State
-            {
-                Vertex *Vertices = nullptr;
-                uint16_t VertexCount = 0;
-                uint16_t *Indices = nullptr;
-                uint16_t IndexCount = 0;
-
-                Mat3x4 Transform = Mat3x4::identity();
-                Float4 VertexColor = {1.0f, 1.0f, 1.0f, 1.0f};
-            };
-
-            // Create a tube from the origin to the right
-            void createTube(State* state,
-                float length,
-                float radius,
-                uint16_t segmentCount)
-            {
-                float tubeAngleDelta = IB::Tao / static_cast<float>(segmentCount);
-                for (uint32_t i = 0; i < segmentCount; i++)
-                {
-                    Float3 start = {};
-                    Float3 end = {};
-
-                    float angle = tubeAngleDelta * i;
-                    start.x = 0.0f;
-                    end.x = length;
-                    end.y = start.y = sinf(angle) * radius;
-                    end.z = start.z = cosf(angle) * radius;
-
-                    state->Vertices[state->VertexCount + i * 2] = Vertex{Float4{mul(state->Transform, start), 0.0f}};
-                    state->Vertices[state->VertexCount + i * 2].Normal.w = bitcast<float>(packRGBA(state->VertexColor));
-                    state->Vertices[state->VertexCount + i * 2 + 1] = Vertex{Float4{mul(state->Transform, end), 0.0f}};
-                    state->Vertices[state->VertexCount + i * 2 + 1].Normal.w = bitcast<float>(packRGBA(state->VertexColor));
-                }
-
-                for (uint16_t i = 0; i < segmentCount; i++)
-                {
-                    uint16_t startEdge = state->VertexCount + i * 2;
-                    uint16_t endEdge = state->VertexCount + (i + 1) * 2 % (segmentCount * 2);
-
-                    state->Indices[state->IndexCount + i * 6] = startEdge;
-                    state->Indices[state->IndexCount + i * 6 + 1] = startEdge + 1;
-                    state->Indices[state->IndexCount + i * 6 + 2] = endEdge + 1;
-                    state->Indices[state->IndexCount + i * 6 + 3] = endEdge + 1;
-                    state->Indices[state->IndexCount + i * 6 + 4] = endEdge;
-                    state->Indices[state->IndexCount + i * 6 + 5] = startEdge;
-                }
-
-                state->IndexCount += segmentCount * 6;
-                state->VertexCount += segmentCount * 2;
-            }
-
-            void createCone(State *state,
-                            float height,
-                            float radius,
-                            uint16_t segmentCount)
-            {
-                float coneAngleDelta = IB::Tao / static_cast<float>(segmentCount);
-                for (uint32_t i = 0; i < segmentCount; i++)
-                {
-                    float angle = coneAngleDelta * i;
-                    Float3 pos = {};
-                    pos.x = 0.0f;
-                    pos.y = sinf(angle) * radius;
-                    pos.z = cosf(angle) * radius;
-                    state->Vertices[state->VertexCount + i] = IB::Vertex{Float4{mul(state->Transform, pos), 0.0f}};
-                    state->Vertices[state->VertexCount + i].Normal.w = bitcast<float>(packRGBA(state->VertexColor));
-                }
-
-                Float3 pos = {};
-                state->Vertices[state->VertexCount + segmentCount] = Vertex{Float4{mul(state->Transform, pos), 0.0f}};
-                state->Vertices[state->VertexCount + segmentCount].Normal.w = bitcast<float>(packRGBA(state->VertexColor));
-
-                pos.x = height;
-                state->Vertices[state->VertexCount + segmentCount + 1] = Vertex{Float4{mul(state->Transform, pos), 0.0f}};
-                state->Vertices[state->VertexCount + segmentCount + 1].Normal.w = bitcast<float>(packRGBA(state->VertexColor));
-
-                for (uint16_t i = 0; i < segmentCount; i++)
-                {
-                    uint16_t centerVertex = state->VertexCount + segmentCount;
-                    uint16_t topVertex = state->VertexCount + segmentCount + 1;
-
-                    uint16_t startVertex = state->VertexCount + i;
-                    uint16_t endVertex = state->VertexCount + (i + 1) % segmentCount;
-
-                    state->Indices[state->IndexCount + i * 6] = startVertex;
-                    state->Indices[state->IndexCount + i * 6 + 1] = topVertex;
-                    state->Indices[state->IndexCount + i * 6 + 2] = endVertex;
-                    state->Indices[state->IndexCount + i * 6 + 3] = centerVertex;
-                    state->Indices[state->IndexCount + i * 6 + 4] = startVertex;
-                    state->Indices[state->IndexCount + i * 6 + 5] = endVertex;
-                }
-
-                state->VertexCount += segmentCount + 2;
-                state->IndexCount += segmentCount * 6;
             }
         }
 
@@ -840,25 +745,28 @@ namespace IB
                 Vertex vertices[axisVertexCount * 3];
                 uint16_t indices[axisIndexCount * 3];
 
-                State state = {};
+                ImGeo::State state = {};
                 for (uint16_t axis = 0; axis < 3; axis++)
                 {
                     state.Vertices = vertices;
                     state.Indices = indices;
 
-                    state.Transform = Mat3x4{};
-                    state.Transform[axis][0] = 1.0f;
-                    state.Transform[(axis + 1) % 3][1] = 1.0f;
-                    state.Transform[(axis + 2) % 3][2] = 1.0f;
+                    state.Transform = Transform{};
+                    Float3 rotations[3] = 
+                        {{0.0f, 0.0f, 0.0f},
+                         {0.0f, 0.0f, Pi * 0.5f},
+                         {0.0f, -Pi * 0.5f, 0.0f}};
+                    state.Transform.Rotation = fromEulerAngles(rotations[axis]);
 
                     state.VertexColor = gizmoColors[axis];
-                    createTube(&state,
+                    ImGeo::tube(&state,
                         cylinderLength,
                         cylinderRadius,
                         cylinderSegments);
 
-                    state.Transform[axis][3] = cylinderLength;
-                    createCone(&state,
+                    state.Transform.Position = Float3{};
+                    state.Transform.Position[axis] = cylinderLength;
+                    ImGeo::cone(&state,
                                coneHeight,
                                coneRadius,
                                coneSegmentCount);
@@ -960,17 +868,11 @@ namespace IB
 
         void newFrame(Entity::Handle camera)
         {
-            FrameDrawData.Instances.clear();
             FrameCamera = camera;
         }
 
         void endFrame()
         {
-        }
-
-        DrawData const* getDrawData()
-        {
-            return &FrameDrawData;
         }
 
         bool hasFocusedGizmo()
@@ -1067,7 +969,7 @@ namespace IB
                 }
             }
             
-            FrameDrawData.Instances.add(DrawData::Instance{ TranslationGizmoMesh, GizmoMaterial, Transform{*position, rotation, 1.0f} });
+            ImGeo::addDrawInstance(ImGeo::DrawData::Instance{TranslationGizmoMesh, GizmoMaterial, Transform{*position, rotation, 1.0f}}, ViewDesc::ForwardPass::DebugOverlay);
             return translationChanged;
         }
 
@@ -1185,7 +1087,7 @@ namespace IB
                 }
             }
 
-            FrameDrawData.Instances.add(DrawData::Instance{ RotationGizmoMesh, GizmoMaterial, Transform{position, *rotation, 1.0f} });
+            ImGeo::addDrawInstance(ImGeo::DrawData::Instance{RotationGizmoMesh, GizmoMaterial, Transform{position, *rotation, 1.0f}}, ViewDesc::ForwardPass::DebugOverlay);
             
             return rotationChanged;
         }
@@ -1217,4 +1119,240 @@ namespace IB
             return changed;
         }
     }
+
+    namespace ImGeo
+    {
+        namespace
+        {
+            constexpr uint32_t FrameBufferCount = 2;
+            constexpr uint32_t MaxDynamicVertexCount = 100000;
+            constexpr uint32_t MaxDynamicIndexCount = 100000;
+            Vertex DynamicVertices[FrameBufferCount][MaxDynamicVertexCount];
+            uint16_t DynamicIndices[FrameBufferCount][MaxDynamicIndexCount];
+
+            State FrameStates[FrameBufferCount];
+            uint32_t ActiveFrame = 0;
+
+            Mesh::Handle DynamicMesh;
+            Material::Handle Material;
+            Image::Handle Albedo;
+
+            DrawData FrameDrawData;
+        } // namespace
+
+        State *state()
+        {
+            return &FrameStates[ActiveFrame];
+        }
+
+        DrawData const *getDrawData()
+        {
+            return &FrameDrawData;
+        }
+
+        void addDrawInstance(DrawData::Instance const &instance, ViewDesc::ForwardPass::Type type)
+        {
+            FrameDrawData.Instances[type].add(instance);
+        }
+
+        void init()
+        {
+            for (uint32_t i = 0; i < FrameBufferCount; i++)
+            {
+                FrameStates[i].Vertices = DynamicVertices[i];
+                FrameStates[i].Indices = DynamicIndices[i];
+            }
+
+            launchJob([](Job::Handle /*currentJob*/)
+                      {
+                          {
+                              uint8_t whiteImageTexels[] = {255, 255, 255, 255};
+
+                              IB::ImageDesc whiteImageDesc = {};
+                              whiteImageDesc.Format = IB::ImageFormat::RGBA8;
+                              whiteImageDesc.Width = 1;
+                              whiteImageDesc.Height = 1;
+                              whiteImageDesc.Data = whiteImageTexels;
+                              Albedo = IB::createImage(whiteImageDesc);
+                          }
+
+                          {
+                              IB::ForwardDesc gizmoMatDesc = {};
+                              gizmoMatDesc.AlbedoTint = IB::toRGBA(1.0f, 1.0f, 1.0f, 1.0f);
+                              gizmoMatDesc.AlbedoImage = Albedo;
+                              Material = IB::createMaterial(gizmoMatDesc);
+                          }
+
+                          {
+                              Vertex dummyVertex = {};
+                              uint16_t dummyIndices[3] = {};
+
+                              MeshDesc meshDesc = {};
+                              meshDesc.Vertices.Data = &dummyVertex;
+                              meshDesc.Vertices.Count = 1;
+                              meshDesc.Indices.Data = dummyIndices;
+                              meshDesc.Indices.Count = 3;
+
+                              DynamicMesh = createMesh(meshDesc);
+                          }
+                          return JobResult::Complete;
+                      },
+                      NoJobType, RendererJobQueueIndex);
+        }
+
+        void kill()
+        {
+            
+        }
+
+        void newFrame()
+        {
+            FrameStates[ActiveFrame].VertexCount = 0;
+            FrameStates[ActiveFrame].IndexCount = 0;
+            FrameStates[ActiveFrame].Transform = {};
+            FrameStates[ActiveFrame].VertexColor = Float4{1.0f,1.0f,1.0f,1.0f};
+
+            for (uint32_t i = 0; i < ViewDesc::ForwardPass::Count; i++)
+            {
+                FrameDrawData.Instances[i].clear();
+            }
+
+
+            FrameDrawData.Instances[ViewDesc::ForwardPass::Default].add(ImGeo::DrawData::Instance{DynamicMesh, Material, Transform{}});
+        }
+
+        void endFrame()
+        {
+            if (FrameStates[ActiveFrame].VertexCount > 0)
+            {
+                launchJob([frame = ActiveFrame](Job::Handle /*currentJob*/)
+                          {
+                              MeshDesc meshDesc = {};
+                              meshDesc.Vertices.Data = FrameStates[frame].Vertices;
+                              meshDesc.Vertices.Count = FrameStates[frame].VertexCount;
+                              meshDesc.Indices.Data = FrameStates[frame].Indices;
+                              meshDesc.Indices.Count = FrameStates[frame].IndexCount;
+
+                              updateMesh(DynamicMesh, meshDesc);
+
+                              return JobResult::Complete;
+                          },
+                          NoJobType, RendererJobQueueIndex);
+
+                ActiveFrame = (ActiveFrame + 1) % FrameBufferCount;
+            }
+        }
+
+        void tube(State *state, float length, float radius, uint16_t segmentCount)
+        {
+            float tubeAngleDelta = IB::Tao / static_cast<float>(segmentCount);
+            for (uint32_t i = 0; i < segmentCount; i++)
+            {
+                Float3 start = {};
+                Float3 end = {};
+
+                float angle = tubeAngleDelta * i;
+                start.x = 0.0f;
+                end.x = length;
+                end.y = start.y = sinf(angle) * radius;
+                end.z = start.z = cosf(angle) * radius;
+
+                state->Vertices[state->VertexCount + i * 2] = Vertex{Float4{transformPoint(state->Transform, start), 0.0f}};
+                state->Vertices[state->VertexCount + i * 2].Normal.w = bitcast<float>(packRGBA(state->VertexColor));
+                state->Vertices[state->VertexCount + i * 2 + 1] = Vertex{Float4{transformPoint(state->Transform, end), 0.0f}};
+                state->Vertices[state->VertexCount + i * 2 + 1].Normal.w = bitcast<float>(packRGBA(state->VertexColor));
+            }
+
+            for (uint16_t i = 0; i < segmentCount; i++)
+            {
+                uint16_t startEdge = state->VertexCount + i * 2;
+                uint16_t endEdge = state->VertexCount + (i + 1) * 2 % (segmentCount * 2);
+
+                state->Indices[state->IndexCount + i * 6] = startEdge;
+                state->Indices[state->IndexCount + i * 6 + 1] = startEdge + 1;
+                state->Indices[state->IndexCount + i * 6 + 2] = endEdge + 1;
+                state->Indices[state->IndexCount + i * 6 + 3] = endEdge + 1;
+                state->Indices[state->IndexCount + i * 6 + 4] = endEdge;
+                state->Indices[state->IndexCount + i * 6 + 5] = startEdge;
+            }
+
+            state->IndexCount += segmentCount * 6;
+            state->VertexCount += segmentCount * 2;
+        }
+
+        void cone(State *state, float height, float radius, uint16_t segmentCount)
+        {
+            float coneAngleDelta = IB::Tao / static_cast<float>(segmentCount);
+            for (uint32_t i = 0; i < segmentCount; i++)
+            {
+                float angle = coneAngleDelta * i;
+                Float3 pos = {};
+                pos.x = 0.0f;
+                pos.y = sinf(angle) * radius;
+                pos.z = cosf(angle) * radius;
+                state->Vertices[state->VertexCount + i] = IB::Vertex{Float4{transformPoint(state->Transform, pos), 0.0f}};
+                state->Vertices[state->VertexCount + i].Normal.w = bitcast<float>(packRGBA(state->VertexColor));
+            }
+
+            Float3 pos = {};
+            state->Vertices[state->VertexCount + segmentCount] = Vertex{Float4{transformPoint(state->Transform, pos), 0.0f}};
+            state->Vertices[state->VertexCount + segmentCount].Normal.w = bitcast<float>(packRGBA(state->VertexColor));
+
+            pos.x = height;
+            state->Vertices[state->VertexCount + segmentCount + 1] = Vertex{Float4{transformPoint(state->Transform, pos), 0.0f}};
+            state->Vertices[state->VertexCount + segmentCount + 1].Normal.w = bitcast<float>(packRGBA(state->VertexColor));
+
+            for (uint16_t i = 0; i < segmentCount; i++)
+            {
+                uint16_t centerVertex = state->VertexCount + segmentCount;
+                uint16_t topVertex = state->VertexCount + segmentCount + 1;
+
+                uint16_t startVertex = state->VertexCount + i;
+                uint16_t endVertex = state->VertexCount + (i + 1) % segmentCount;
+
+                state->Indices[state->IndexCount + i * 6] = startVertex;
+                state->Indices[state->IndexCount + i * 6 + 1] = topVertex;
+                state->Indices[state->IndexCount + i * 6 + 2] = endVertex;
+                state->Indices[state->IndexCount + i * 6 + 3] = centerVertex;
+                state->Indices[state->IndexCount + i * 6 + 4] = startVertex;
+                state->Indices[state->IndexCount + i * 6 + 5] = endVertex;
+            }
+
+            state->VertexCount += segmentCount + 2;
+            state->IndexCount += segmentCount * 6;
+        }
+
+        void grid(State* state, uint32_t width, uint32_t height)
+        {
+            constexpr float gridRadius = 0.03f;
+            Transform const previousTransform = state->Transform;
+
+            for (uint32_t y = 0; y <= height; y++)
+            {
+                Transform gridOffset = {};
+                gridOffset.Position = Float3{
+                    -static_cast<float>(width) * 0.5f,
+                    -static_cast<float>(height) * 0.5f + static_cast<float>(y),
+                    0.0f};
+
+                state->Transform = applyTransform(gridOffset, previousTransform);
+                tube(state, static_cast<float>(width), gridRadius, 4);
+            }
+
+            for (uint32_t x = 0; x <= width; x++)
+            {
+                Transform gridOffset = {};
+                gridOffset.Rotation = fromEulerAngles(Float3{0.0f, 0.0f, Pi * 0.5f});
+                gridOffset.Position = Float3{
+                    -static_cast<float>(width) * 0.5f + static_cast<float>(x),
+                    -static_cast<float>(height) * 0.5f,
+                    0.0f};
+
+                state->Transform = applyTransform(gridOffset, previousTransform);
+                tube(state, static_cast<float>(height), gridRadius, 4);
+            }
+            state->Transform = previousTransform;
+        }
+
+    } // namespace ImGeo
 }

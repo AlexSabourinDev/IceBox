@@ -596,9 +596,15 @@ namespace
         VkFence Fence;
     };
 
-    StagingBuffer requestStagingBuffer(Staging* staging, uint32_t size)
+    StagingBuffer requestStagingBuffer(Staging* staging, uint32_t size, uint32_t alignment = 1)
     {
-        IB_ASSERT(staging->WriteOffset + size < StagingSize, "TODO: Handle flushing our staging buffer if we reach the maximum.");
+        uint32_t alignmentBump = staging->WriteOffset % alignment;
+        alignmentBump = alignmentBump != 0 ? alignment - alignmentBump : alignmentBump;
+
+        IB_ASSERT(staging->WriteOffset + size + alignmentBump < StagingSize, "TODO: Handle flushing our staging buffer if we reach the maximum.");
+
+        staging->WriteOffset += alignmentBump;
+
         StagingBuffer stagingBuffer = {};
         stagingBuffer.Buffer = staging->Buffer;
         stagingBuffer.Memory = reinterpret_cast<uint8_t*>(staging->MappedMemory) + staging->WriteOffset;
@@ -2254,7 +2260,7 @@ namespace IB
         RendererContext.Textures.Images[imageIndex].ImageView = imageAndView.ImageView;
         RendererContext.Textures.Images[imageIndex].Allocation = imageAndView.Allocation;
 
-        StagingBuffer staging = requestStagingBuffer(&Staging, desc.Width * desc.Height * formatSize[desc.Format]);
+        StagingBuffer staging = requestStagingBuffer(&Staging, desc.Width * desc.Height * formatSize[desc.Format], formatSize[desc.Format]);
         memcpy(staging.Memory, desc.Data, desc.Width * desc.Height * formatSize[desc.Format]);
 
         VkCommandBufferAllocateInfo commandBufferAllocateInfo = {};

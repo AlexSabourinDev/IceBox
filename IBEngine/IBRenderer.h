@@ -172,7 +172,7 @@ namespace IB
 
         struct ForwardPass
         {
-            enum
+            enum Type
             {
                 Default,
                 DebugOverlay,

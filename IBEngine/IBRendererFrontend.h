@@ -130,7 +130,7 @@ namespace IB
 
     struct StackAllocator;
 
-    namespace ImGizmo
+    namespace ImGeo
     {
         struct DrawData;
     }
@@ -191,7 +191,7 @@ namespace IB
         Entity::Handle Camera;
         Cell::Handle Cell;
         ImDrawData const* ImGuiDrawData;
-        ImGizmo::DrawData const* ImGizmoDrawData;
+        ImGeo::DrawData const* ImGeoDrawData;
     };
     IB_API ViewDesc gatherCellView(GatherCellViewDesc const& gatherDesc);
 

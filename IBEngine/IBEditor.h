@@ -2,6 +2,7 @@
 #include "IBEngineAPI.h"
 #include "IBMath.h"
 #include "IBCollection.h"
+#include "IBRenderer.h"
 
 #include <stdint.h>
 
@@ -56,21 +57,8 @@ namespace IB
 
     namespace ImGizmo
     {
-        struct DrawData
-        {
-            struct Instance
-            {
-                Mesh::Handle Mesh;
-                Material::Handle Material;
-                Transform Transform;
-            };
-
-            DynamicArray<Instance> Instances;
-        };
-
         IB_API void init();
         IB_API void kill();
-        IB_API DrawData const* getDrawData();
 
         struct TranslationGizmo
         {
@@ -98,6 +86,46 @@ namespace IB
         IB_API bool translation(Float3* position, Quaternion rotation, TranslationGizmo* state, uint32_t id = 0);
         IB_API bool rotation(Float3 position, Quaternion *rotation, RotationGizmo *state, uint32_t id = 0);
         IB_API bool transform(Transform *transform, TransformGizmo *state, uint32_t id = 0);
+    }
+
+    struct Vertex;
+    namespace ImGeo
+    {
+        struct DrawData
+        {
+            struct Instance
+            {
+                Mesh::Handle Mesh;
+                Material::Handle Material;
+                Transform Transform;
+            };
+
+            DynamicArray<Instance> Instances[ViewDesc::ForwardPass::Count];
+        };
+
+        struct State
+        {
+            Vertex *Vertices = nullptr;
+            uint16_t *Indices = nullptr;
+            uint16_t VertexCount = 0;
+            uint16_t IndexCount = 0;
+
+            Transform Transform = {};
+            Float4 VertexColor = {1.0f, 1.0f, 1.0f, 1.0f};
+        };
+
+        State *state();
+        IB_API void init();
+        IB_API void kill();
+        IB_API void newFrame();
+        IB_API void endFrame();
+
+        IB_API DrawData const *getDrawData();
+        IB_API void addDrawInstance(DrawData::Instance const &instance, ViewDesc::ForwardPass::Type type);
+
+        IB_API void tube(State *state, float length, float radius, uint16_t segmentCount);
+        IB_API void cone(State *state, float height, float radius, uint16_t segmentCount);
+        IB_API void grid(State *state, uint32_t width, uint32_t height);
     }
 }
 

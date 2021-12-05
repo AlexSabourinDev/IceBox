@@ -11,6 +11,7 @@
 
 #include <imgui/imgui.h>
 
+#include <algorithm>
 
 namespace
 {
@@ -826,8 +827,19 @@ namespace IB
         getEntityList(gatherDesc.Cell, &entities, &entityCount);
 
         uint32_t rendererCount = 0;
-        Mesh::Handle meshes[32];
-        Material::Handle materials[32];
+
+        union SortKey
+        {
+            struct
+            {
+                Material::Handle Material;
+                Mesh::Handle Mesh;
+            } Handles;
+            uint64_t Value;
+        };
+
+        // TODO: dynamic stack
+        SortKey keys[32];
         Transform transforms[32];
         for (uint32_t i = 0; i < entityCount; i++)
         {
@@ -843,21 +855,39 @@ namespace IB
                     // It's possible our loading thread hasn't finished creating it for us
                     if (material->Material != InvalidMaterial)
                     {
-                        meshes[rendererCount] = toMeshHandle(Asset::getAssetFromResource(renderer->MeshResource));
-                        materials[rendererCount] = material->Material;
-
-                        Property::Handle transformHandle = getPropertyFromEntity(entities[i], TransformPropertyType);
-                        if (transformHandle != InvalidProperty)
+                        Mesh::Handle mesh = toMeshHandle(Asset::getAssetFromResource(renderer->MeshResource));
+                        if (mesh != InvalidMesh)
                         {
-                            transforms[rendererCount] = getLocalTransform(transformHandle);
-                        }
+                            keys[rendererCount].Handles.Mesh = mesh;
+                            keys[rendererCount].Handles.Material = material->Material;
 
-                        rendererCount++;
+                            Property::Handle transformHandle = getPropertyFromEntity(entities[i], TransformPropertyType);
+                            if (transformHandle != InvalidProperty)
+                            {
+                                transforms[rendererCount] = getLocalTransform(transformHandle);
+                            }
+
+                            rendererCount++;
+                        }
                     }
                 }
             }
         }
 
+        {
+            DynamicArray<ImGeo::DrawData::Instance> const &instances = gatherDesc.ImGeoDrawData->Instances[ViewDesc::ForwardPass::Default];
+            for (uint32_t i = 0; i < instances.count(); i++)
+            {
+                if (instances[i].Mesh != InvalidMesh && instances[i].Material != InvalidMaterial)
+                {
+                    keys[rendererCount].Handles.Mesh = instances[i].Mesh;
+                    keys[rendererCount].Handles.Material = instances[i].Material;
+                    transforms[rendererCount] = instances[i].Transform;
+                    rendererCount++;
+                }
+            }
+        }
+       
         ViewDesc viewDesc = {};
         {
             Transform cameraTransform = {};
@@ -876,39 +906,127 @@ namespace IB
                 viewProj = getViewProjection(cameraProperty, cameraTransform);
             }
 
-            ViewDesc::MeshInstances* meshInstances = allocateArray<ViewDesc::MeshInstances>(gatherDesc.Allocator, rendererCount);
-
-            for (uint32_t i = 0; i < rendererCount; i++)
-            {
-                meshInstances[i].Mesh = meshes[i];
-                Mat3x4 meshTransform = toMatrix(transforms[i]);
-                meshInstances[i].Transforms = allocateArray<Mat3x4>(gatherDesc.Allocator, 1, meshTransform);
-                meshInstances[i].Count = 1;
-            }
-
-            ViewDesc::Batch* meshBatch = allocateArray<ViewDesc::Batch>(gatherDesc.Allocator, 1);
-            meshBatch->Material = materials[0]; // TODO
-            meshBatch->Meshes = meshInstances;
-            meshBatch->MeshCount = rendererCount;
-
             if (rendererCount > 0)
             {
+                // TODO: Not 32 max...
+                uint16_t indices[32];
+                for (uint16_t i = 0; i < 32; i++)
+                {
+                    indices[i] = i;
+                }
+
+                std::sort(indices, indices + rendererCount, [&keys](uint16_t left, uint16_t right)
+                          { return keys[left].Value < keys[right].Value; });
+
+                // Count the number of unique materials
+                uint32_t uniqueMaterialCount = 1;
+                Material::Handle lastMaterial = keys[indices[0]].Handles.Material;
+                for (uint32_t i = 1; i < rendererCount; i++)
+                {
+                    uint16_t index = indices[i];
+                    if (keys[index].Handles.Material != lastMaterial)
+                    {
+                        lastMaterial = keys[index].Handles.Material;
+                        uniqueMaterialCount++;
+                    }
+                }
+
+                ViewDesc::Batch *batches = allocateArray<ViewDesc::Batch>(gatherDesc.Allocator, uniqueMaterialCount);
+                Material::Handle currentMaterial = InvalidMaterial;
+
+                // Warning: Lots of nested loops below...
+                uint32_t readIndex = 0;
+                for (uint32_t batchIndex = 0; readIndex < rendererCount; batchIndex++)
+                {
+                    uint32_t materialIndex = indices[readIndex];
+                    IB_ASSERT(keys[materialIndex].Handles.Material != currentMaterial, "Expecting a new material.");
+
+                    {
+                        currentMaterial = keys[materialIndex].Handles.Material;
+                        batches[batchIndex].Material = currentMaterial;
+                    }
+
+                    // Count our number of unique meshes
+                    uint32_t uniqueMeshCount = 1;
+                    Mesh::Handle lastMesh = keys[materialIndex].Handles.Mesh;
+                    for (uint32_t meshReadIndex = readIndex + 1; meshReadIndex < rendererCount; meshReadIndex++)
+                    {
+                        uint32_t meshIndex = indices[meshReadIndex];
+                        // Only count meshes for our current material
+                        if (keys[meshIndex].Handles.Material != currentMaterial)
+                        {
+                            break;
+                        }
+
+                        if (keys[meshIndex].Handles.Mesh != lastMesh)
+                        {
+                            lastMesh = keys[meshIndex].Handles.Mesh;
+                            uniqueMeshCount++;
+                        }
+                    }
+
+                    ViewDesc::MeshInstances *instanceGroups = allocateArray<ViewDesc::MeshInstances>(gatherDesc.Allocator, uniqueMeshCount);
+                    batches[batchIndex].Meshes = instanceGroups;
+                    batches[batchIndex].MeshCount = uniqueMeshCount;
+
+                    Mesh::Handle currentMesh = InvalidMesh;
+                    for (uint32_t instanceGroupIndex = 0;
+                        readIndex < rendererCount && keys[indices[readIndex]].Handles.Material == currentMaterial;
+                        instanceGroupIndex++)
+                    {
+                        uint32_t meshIndex = indices[readIndex];
+                        IB_ASSERT(keys[meshIndex].Handles.Mesh != currentMesh, "Expecting a new mesh.");
+
+                        {
+                            currentMesh = keys[meshIndex].Handles.Mesh;
+                            instanceGroups[instanceGroupIndex].Mesh = currentMesh;
+                        }
+
+                        uint32_t instanceCount = 0;
+                        for (uint32_t instanceReadIndex = readIndex; instanceReadIndex < rendererCount; instanceReadIndex++)
+                        {
+                            uint32_t instanceIndex = indices[instanceReadIndex];
+                            if (keys[instanceIndex].Handles.Mesh != currentMesh || keys[instanceIndex].Handles.Material != currentMaterial)
+                            {
+                                break;
+                            }
+
+                            instanceCount++;
+                        }
+
+                        Mat3x4 *instanceTransforms = allocateArray<Mat3x4>(gatherDesc.Allocator, instanceCount);
+                        for (uint32_t instanceIndex = 0; instanceIndex < instanceCount; instanceIndex++)
+                        {
+                            instanceTransforms[instanceIndex] = toMatrix(transforms[indices[readIndex + instanceIndex]]);
+                        }
+
+                        instanceGroups[instanceGroupIndex].Transforms = instanceTransforms;
+                        instanceGroups[instanceGroupIndex].Count = instanceCount;
+
+                        readIndex += instanceCount;
+                    }
+                }
+
                 ViewDesc::ForwardPass worldPass;
-                worldPass.Batches = meshBatch;
-                worldPass.BatchCount = 1;
+                worldPass.Batches = batches;
+                worldPass.BatchCount = uniqueMaterialCount;
                 viewDesc.Forward.Passes[ViewDesc::ForwardPass::Default] = worldPass;
             }
 
             // Restart our collection for gizmos
             rendererCount = 0;
-            for (uint32_t i = 0; i < gatherDesc.ImGizmoDrawData->Instances.count(); i++)
+
+            // TODO: Share logic between debug and default passes
+            Mesh::Handle meshes[32];
+            Material::Handle materials[32];
+            DynamicArray<ImGeo::DrawData::Instance> const &instances = gatherDesc.ImGeoDrawData->Instances[ViewDesc::ForwardPass::DebugOverlay];
+            for (uint32_t i = 0; i < instances.count(); i++)
             {
-                if (gatherDesc.ImGizmoDrawData->Instances[i].Mesh != InvalidMesh
-                    && gatherDesc.ImGizmoDrawData->Instances[i].Material != InvalidMaterial)
+                if (instances[i].Mesh != InvalidMesh && instances[i].Material != InvalidMaterial)
                 {
-                    meshes[rendererCount] = gatherDesc.ImGizmoDrawData->Instances[i].Mesh;
-                    materials[rendererCount] = gatherDesc.ImGizmoDrawData->Instances[i].Material;
-                    transforms[rendererCount] = gatherDesc.ImGizmoDrawData->Instances[i].Transform;
+                    meshes[rendererCount] = instances[i].Mesh;
+                    materials[rendererCount] = instances[i].Material;
+                    transforms[rendererCount] = instances[i].Transform;
                     rendererCount++;
                 }
             }

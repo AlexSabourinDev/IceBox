@@ -160,7 +160,7 @@ namespace IB
                     Editor::getCamera(),
                     currentCell,
                     ImGui::GetDrawData(),
-                    ImGizmo::getDrawData()
+                    ImGeo::getDrawData()
                 };
                 *viewDescriptor = gatherCellView(gatherDesc);
 
@@ -225,6 +225,7 @@ int main()
         initEntitySystem();
         JobGraph::init();
         Editor::init();
+        ImGeo::init();
         ImGizmo::init();
         initGeometryToolkit();
 
@@ -246,6 +247,7 @@ int main()
 
         killGeometryToolkit();
         ImGizmo::kill();
+        ImGeo::kill();
         Editor::kill();
         JobGraph::kill();
         killEntitySystem();
