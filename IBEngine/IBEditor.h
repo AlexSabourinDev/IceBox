@@ -125,7 +125,7 @@ namespace IB
 
         IB_API void tube(State *state, float length, float radius, uint16_t segmentCount);
         IB_API void cone(State *state, float height, float radius, uint16_t segmentCount);
-        IB_API void grid(State *state, uint32_t width, uint32_t height);
+        IB_API void grid(State *state, uint32_t rowCount, uint32_t columnCount, float spacing);
     }
 }
 

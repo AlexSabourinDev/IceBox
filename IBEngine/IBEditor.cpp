@@ -139,6 +139,17 @@ namespace IB
         Entity::Handle SelectedEntity;
         bool EditorFocus = false;
 
+        struct EditorSettings
+        {
+            float CameraPanSpeed = 180.0f * 0.5f;
+            float CameraSpeed = 0.25f;
+            float CameraSlowSpeed = 0.05f;
+            float GridSpacing = 1.0f;
+            int32_t GridWidth = 100;
+        };
+
+        static EditorSettings Settings;
+
         Float3 mouseToWorldPos(Mat4x4 const& invViewProj, Int2 mousePos, float depth = 0.0f)
         {
             float u = static_cast<float>(mousePos.x) / static_cast<float>(Editor::WindowWidth)*2.0f - 1.0f;
@@ -220,7 +231,7 @@ namespace IB
             CameraHandle = createEntity("Editor Camera");
             Property::Handle transformProperty = createTransformProperty();
             addPropertyToEntity(CameraHandle, TransformPropertyType, transformProperty);
-            setLocalTransform(transformProperty, { {0.0f, -5.0f, 0.0f}, Quaternion::identity(), 1.0f });
+            setLocalTransform(transformProperty, { {0.0f, -5.0f, 2.0f}, Quaternion::identity(), 1.0f });
 
             Camera camera = {};
             camera.Aspect = static_cast<float>(WindowWidth) / static_cast<float>(WindowHeight);
@@ -240,7 +251,8 @@ namespace IB
             ImGeo::newFrame();
             ImGizmo::newFrame(CameraHandle);
 
-            ImGeo::grid(ImGeo::state(), 100, 100); 
+            ImGeo::state()->VertexColor = Float4{1.0f, 1.0f, 1.0f, 0.7f};
+            ImGeo::grid(ImGeo::state(), Settings.GridWidth, Settings.GridWidth, Settings.GridSpacing); 
 
             static bool showEditorInspector = false;
             static bool showSettings = false;
@@ -381,14 +393,6 @@ namespace IB
                 ImGui::End();
             }
 
-            struct EditorSettings
-            {
-                float CameraPanSpeed = 180.0f * 0.5f;
-                float CameraSpeed = 0.25f;
-                float CameraSlowSpeed = 0.05f;
-            };
-
-            static EditorSettings settings;
             if (showSettings)
             {
                 if (ImGui::Begin("Editor Settings", &showSettings))
@@ -403,21 +407,35 @@ namespace IB
 
                         ImGui::TableNextColumn();
                         ImGui::SetNextItemWidth(-FLT_MIN);
-                        ImGui::InputFloat("#CameraPanSpeed", &settings.CameraPanSpeed);
+                        ImGui::InputFloat("#CameraPanSpeed", &Settings.CameraPanSpeed);
 
                         ImGui::TableNextColumn();
                         ImGui::Text("Camera Speed (m/s)");
 
                         ImGui::TableNextColumn();
                         ImGui::SetNextItemWidth(-FLT_MIN);
-                        ImGui::InputFloat("#CameraSpeed", &settings.CameraSpeed);
+                        ImGui::InputFloat("#CameraSpeed", &Settings.CameraSpeed);
 
                         ImGui::TableNextColumn();
                         ImGui::Text("Camera Slow  Speed (m/s)");
 
                         ImGui::TableNextColumn();
                         ImGui::SetNextItemWidth(-FLT_MIN);
-                        ImGui::InputFloat("#CameraSlowSpeed", &settings.CameraSlowSpeed);
+                        ImGui::InputFloat("#CameraSlowSpeed", &Settings.CameraSlowSpeed);
+
+                        ImGui::TableNextColumn();
+                        ImGui::Text("Grid Spacing");
+
+                        ImGui::TableNextColumn();
+                        ImGui::SetNextItemWidth(-FLT_MIN);
+                        ImGui::InputFloat("#GridSpacing", &Settings.GridSpacing);
+
+                        ImGui::TableNextColumn();
+                        ImGui::Text("Grid Width");
+
+                        ImGui::TableNextColumn();
+                        ImGui::SetNextItemWidth(-FLT_MIN);
+                        ImGui::InputInt("#GridWidth", &Settings.GridWidth);
 
                         ImGui::EndTable();
                     }
@@ -480,7 +498,7 @@ namespace IB
                     {
                         Transform cameraTransform = getLocalTransform(transformProperty);
 
-                        float const rotationSpeed = settings.CameraPanSpeed * DegToRad;
+                        float const rotationSpeed = Settings.CameraPanSpeed * DegToRad;
                         Float2 mouseDelta = static_cast<Float2>(Input::MousePos - Input::PreviousMousePos) / Float2{ static_cast<float>(WindowWidth), static_cast<float>(WindowHeight) };
                         mouseDelta = mouseDelta * 2.0f;
                         cameraTransform.Rotation = fromAxisAngle(Float3{ 0.0f, 0.0f, 1.0f }, -mouseDelta.x * rotationSpeed) * cameraTransform.Rotation * fromAxisAngle(Float3{1.0f, 0.0f, 0.0f}, -mouseDelta.y * rotationSpeed);
@@ -508,7 +526,7 @@ namespace IB
                         if (cameraDirectionLength > 0.0f)
                         {
                             cameraDirection = normalize(cameraDirection, cameraDirectionLength);
-                            float const cameraSpeed = Input::isButtonPressed(Key::Shift) ? settings.CameraSlowSpeed : settings.CameraSpeed;
+                            float const cameraSpeed = Input::isButtonPressed(Key::Shift) ? Settings.CameraSlowSpeed : Settings.CameraSpeed;
 
                             cameraTransform.Position += rotate(cameraTransform.Rotation, cameraDirection * cameraSpeed);
                         }
@@ -1322,34 +1340,34 @@ namespace IB
             state->IndexCount += segmentCount * 6;
         }
 
-        void grid(State* state, uint32_t width, uint32_t height)
+        void grid(State* state, uint32_t rowCount, uint32_t columnCount, float spacing)
         {
-            constexpr float gridRadius = 0.03f;
+            constexpr float gridRadius = 0.02f;
             Transform const previousTransform = state->Transform;
 
-            for (uint32_t y = 0; y <= height; y++)
+            for (uint32_t y = 0; y <= columnCount; y++)
             {
                 Transform gridOffset = {};
                 gridOffset.Position = Float3{
-                    -static_cast<float>(width) * 0.5f,
-                    -static_cast<float>(height) * 0.5f + static_cast<float>(y),
+                    -static_cast<float>(rowCount) * 0.5f * spacing,
+                    -static_cast<float>(columnCount) * 0.5f * spacing + static_cast<float>(y) * spacing,
                     0.0f};
 
                 state->Transform = applyTransform(gridOffset, previousTransform);
-                tube(state, static_cast<float>(width), gridRadius, 4);
+                tube(state, static_cast<float>(rowCount) * spacing, gridRadius, 4);
             }
 
-            for (uint32_t x = 0; x <= width; x++)
+            for (uint32_t x = 0; x <= rowCount; x++)
             {
                 Transform gridOffset = {};
                 gridOffset.Rotation = fromEulerAngles(Float3{0.0f, 0.0f, Pi * 0.5f});
                 gridOffset.Position = Float3{
-                    -static_cast<float>(width) * 0.5f + static_cast<float>(x),
-                    -static_cast<float>(height) * 0.5f,
+                    -static_cast<float>(rowCount) * 0.5f * spacing + static_cast<float>(x) * spacing,
+                    -static_cast<float>(columnCount) * 0.5f * spacing,
                     0.0f};
 
                 state->Transform = applyTransform(gridOffset, previousTransform);
-                tube(state, static_cast<float>(height), gridRadius, 4);
+                tube(state, static_cast<float>(columnCount) * spacing, gridRadius, 4);
             }
             state->Transform = previousTransform;
         }
