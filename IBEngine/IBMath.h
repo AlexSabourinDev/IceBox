@@ -342,6 +342,21 @@ namespace IB
         return out;
     }
 
+    inline Float3 mul(Mat3x4 const &left, Float3 right)
+    {
+        Float3 out = {};
+        for (uint32_t row = 0; row < 3; row++)
+        {
+            Float4 r = {
+                left[row][0] * right[0],
+                left[row][1] * right[1],
+                left[row][2] * right[2],
+                left[row][3]};
+            out[row] = r[0] + r[1] + r[2] + r[3];
+        }
+        return out;
+    }
+
     inline Float4 operator/(Float4 left, float right)
     {
         return Float4{ left.x / right, left.y / right, left.z / right, left.w / right };

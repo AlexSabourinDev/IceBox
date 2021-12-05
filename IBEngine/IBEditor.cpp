@@ -689,6 +689,103 @@ namespace IB
                 FocusedGizmo = gizmo;
                 FocusedGizmoId = gizmoId;
             }
+
+            struct State
+            {
+                Vertex *Vertices = nullptr;
+                uint16_t VertexCount = 0;
+                uint16_t *Indices = nullptr;
+                uint16_t IndexCount = 0;
+
+                Mat3x4 Transform = Mat3x4::identity();
+                Float4 VertexColor = {1.0f, 1.0f, 1.0f, 1.0f};
+            };
+
+            // Create a tube from the origin to the right
+            void createTube(State* state,
+                float length,
+                float radius,
+                uint16_t segmentCount)
+            {
+                float tubeAngleDelta = IB::Tao / static_cast<float>(segmentCount);
+                for (uint32_t i = 0; i < segmentCount; i++)
+                {
+                    Float3 start = {};
+                    Float3 end = {};
+
+                    float angle = tubeAngleDelta * i;
+                    start.x = 0.0f;
+                    end.x = length;
+                    end.y = start.y = sinf(angle) * radius;
+                    end.z = start.z = cosf(angle) * radius;
+
+                    state->Vertices[state->VertexCount + i * 2] = Vertex{Float4{mul(state->Transform, start), 0.0f}};
+                    state->Vertices[state->VertexCount + i * 2].Normal.w = bitcast<float>(packRGBA(state->VertexColor));
+                    state->Vertices[state->VertexCount + i * 2 + 1] = Vertex{Float4{mul(state->Transform, end), 0.0f}};
+                    state->Vertices[state->VertexCount + i * 2 + 1].Normal.w = bitcast<float>(packRGBA(state->VertexColor));
+                }
+
+                for (uint16_t i = 0; i < segmentCount; i++)
+                {
+                    uint16_t startEdge = state->VertexCount + i * 2;
+                    uint16_t endEdge = state->VertexCount + (i + 1) * 2 % (segmentCount * 2);
+
+                    state->Indices[state->IndexCount + i * 6] = startEdge;
+                    state->Indices[state->IndexCount + i * 6 + 1] = startEdge + 1;
+                    state->Indices[state->IndexCount + i * 6 + 2] = endEdge + 1;
+                    state->Indices[state->IndexCount + i * 6 + 3] = endEdge + 1;
+                    state->Indices[state->IndexCount + i * 6 + 4] = endEdge;
+                    state->Indices[state->IndexCount + i * 6 + 5] = startEdge;
+                }
+
+                state->IndexCount += segmentCount * 6;
+                state->VertexCount += segmentCount * 2;
+            }
+
+            void createCone(State *state,
+                            float height,
+                            float radius,
+                            uint16_t segmentCount)
+            {
+                float coneAngleDelta = IB::Tao / static_cast<float>(segmentCount);
+                for (uint32_t i = 0; i < segmentCount; i++)
+                {
+                    float angle = coneAngleDelta * i;
+                    Float3 pos = {};
+                    pos.x = 0.0f;
+                    pos.y = sinf(angle) * radius;
+                    pos.z = cosf(angle) * radius;
+                    state->Vertices[state->VertexCount + i] = IB::Vertex{Float4{mul(state->Transform, pos), 0.0f}};
+                    state->Vertices[state->VertexCount + i].Normal.w = bitcast<float>(packRGBA(state->VertexColor));
+                }
+
+                Float3 pos = {};
+                state->Vertices[state->VertexCount + segmentCount] = Vertex{Float4{mul(state->Transform, pos), 0.0f}};
+                state->Vertices[state->VertexCount + segmentCount].Normal.w = bitcast<float>(packRGBA(state->VertexColor));
+
+                pos.x = height;
+                state->Vertices[state->VertexCount + segmentCount + 1] = Vertex{Float4{mul(state->Transform, pos), 0.0f}};
+                state->Vertices[state->VertexCount + segmentCount + 1].Normal.w = bitcast<float>(packRGBA(state->VertexColor));
+
+                for (uint16_t i = 0; i < segmentCount; i++)
+                {
+                    uint16_t centerVertex = state->VertexCount + segmentCount;
+                    uint16_t topVertex = state->VertexCount + segmentCount + 1;
+
+                    uint16_t startVertex = state->VertexCount + i;
+                    uint16_t endVertex = state->VertexCount + (i + 1) % segmentCount;
+
+                    state->Indices[state->IndexCount + i * 6] = startVertex;
+                    state->Indices[state->IndexCount + i * 6 + 1] = topVertex;
+                    state->Indices[state->IndexCount + i * 6 + 2] = endVertex;
+                    state->Indices[state->IndexCount + i * 6 + 3] = centerVertex;
+                    state->Indices[state->IndexCount + i * 6 + 4] = startVertex;
+                    state->Indices[state->IndexCount + i * 6 + 5] = endVertex;
+                }
+
+                state->VertexCount += segmentCount + 2;
+                state->IndexCount += segmentCount * 6;
+            }
         }
 
         void init()
@@ -743,91 +840,35 @@ namespace IB
                 Vertex vertices[axisVertexCount * 3];
                 uint16_t indices[axisIndexCount * 3];
 
+                State state = {};
                 for (uint16_t axis = 0; axis < 3; axis++)
                 {
-                    Vertex *axisVerts = vertices + axisVertexCount * axis;
-                    uint16_t *axisIndices = indices + axisIndexCount * axis;
+                    state.Vertices = vertices;
+                    state.Indices = indices;
 
-                    float cylinderAngleDelta = IB::Tao / static_cast<float>(cylinderSegments);
-                    for (uint32_t i = 0; i < cylinderSegments; i++)
-                    {
-                        float start[3] = {};
-                        float end[3] = {};
+                    state.Transform = Mat3x4{};
+                    state.Transform[axis][0] = 1.0f;
+                    state.Transform[(axis + 1) % 3][1] = 1.0f;
+                    state.Transform[(axis + 2) % 3][2] = 1.0f;
 
-                        {
-                            float angle = cylinderAngleDelta * i;
-                            start[axis] = 0.0f;
-                            end[axis] = cylinderLength;
-                            end[(axis + 1) % 3] = start[(axis + 1) % 3] = sinf(angle) * cylinderRadius;
-                            end[(axis + 2) % 3] = start[(axis + 2) % 3] = cosf(angle) * cylinderRadius;
-                        }
+                    state.VertexColor = gizmoColors[axis];
+                    createTube(&state,
+                        cylinderLength,
+                        cylinderRadius,
+                        cylinderSegments);
 
-                        axisVerts[i * 2] = IB::Vertex{ {start[0], start[1], start[2], 0.0f} };
-                        axisVerts[i * 2].Normal.w = bitcast<float>(packRGBA(gizmoColors[axis]));
-                        axisVerts[i * 2 + 1] = IB::Vertex{ {end[0], end[1], end[2], 0.0f} };
-                        axisVerts[i * 2 + 1].Normal.w = bitcast<float>(packRGBA(gizmoColors[axis]));
-                    }
-
-                    axisVerts += cylinderVertexCount;
-                    float coneAngleDelta = IB::Tao / static_cast<float>(cylinderSegments);
-                    for (uint32_t i = 0; i < coneSegmentCount; i++)
-                    {
-                        float angle = coneAngleDelta * i;
-                        float pos[3];
-                        pos[axis] = cylinderLength;
-                        pos[(axis + 1) % 3] = sinf(angle) * coneRadius;
-                        pos[(axis + 2) % 3] = cosf(angle) * coneRadius;
-                        axisVerts[i] = IB::Vertex{ {pos[0], pos[1], pos[2], 0.0f} };
-                        axisVerts[i].Normal.w = bitcast<float>(packRGBA(gizmoColors[axis]));
-                    }
-
-                    float pos[3];
-                    pos[axis] = cylinderLength;
-                    pos[(axis + 1) % 3] = 0.0f;
-                    pos[(axis + 2) % 3] = 0.0f;
-                    axisVerts[coneSegmentCount] = Vertex{ {pos[0], pos[1], pos[2], 0.0f} };
-                    axisVerts[coneSegmentCount].Normal.w = bitcast<float>(packRGBA(gizmoColors[axis]));
-
-                    pos[axis] = cylinderLength + coneHeight;
-                    axisVerts[coneSegmentCount + 1] = Vertex{ {pos[0], pos[1], pos[2], 0.0f} };
-                    axisVerts[coneSegmentCount + 1].Normal.w = bitcast<float>(packRGBA(gizmoColors[axis]));
-
-                    for (uint16_t i = 0; i < cylinderSegments; i++)
-                    {
-                        uint16_t startEdge = axisVertexCount * axis + i * 2;
-                        uint16_t endEdge = axisVertexCount * axis + (i + 1) * 2 % cylinderVertexCount;
-
-                        axisIndices[i * 6] = startEdge;
-                        axisIndices[i * 6 + 1] = startEdge + 1;
-                        axisIndices[i * 6 + 2] = endEdge + 1;
-                        axisIndices[i * 6 + 3] = endEdge + 1;
-                        axisIndices[i * 6 + 4] = endEdge;
-                        axisIndices[i * 6 + 5] = startEdge;
-                    }
-
-                    axisIndices += cylinderIndexCount;
-                    for (uint16_t i = 0; i < coneSegmentCount; i++)
-                    {
-                        uint16_t centerVertex = axisVertexCount * axis + cylinderVertexCount + coneSegmentCount;
-                        uint16_t topVertex = axisVertexCount * axis + cylinderVertexCount + coneSegmentCount + 1;
-
-                        uint16_t startVertex = axisVertexCount * axis + cylinderVertexCount + i;
-                        uint16_t endVertex = axisVertexCount * axis + cylinderVertexCount + (i + 1) % coneSegmentCount;
-
-                        axisIndices[i * 6] = startVertex;
-                        axisIndices[i * 6 + 1] = topVertex;
-                        axisIndices[i * 6 + 2] = endVertex;
-                        axisIndices[i * 6 + 3] = centerVertex;
-                        axisIndices[i * 6 + 4] = startVertex;
-                        axisIndices[i * 6 + 5] = endVertex;
-                    }
+                    state.Transform[axis][3] = cylinderLength;
+                    createCone(&state,
+                               coneHeight,
+                               coneRadius,
+                               coneSegmentCount);
                 }
 
                 MeshDesc meshDesc = {};
-                meshDesc.Vertices.Data = vertices;
-                meshDesc.Vertices.Count = axisVertexCount * 3;
-                meshDesc.Indices.Data = indices;
-                meshDesc.Indices.Count = axisIndexCount * 3;
+                meshDesc.Vertices.Data = state.Vertices;
+                meshDesc.Vertices.Count = state.VertexCount;
+                meshDesc.Indices.Data = state.Indices;
+                meshDesc.Indices.Count = state.IndexCount;
 
                 TranslationGizmoMesh = createMesh(meshDesc);
 
