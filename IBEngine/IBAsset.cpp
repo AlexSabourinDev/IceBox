@@ -321,9 +321,17 @@ namespace IB
             return loadAssetAsync(loadAssetDesc);
         }
 
+        bool isResourceLoaded(char const *assetPath)
+        {
+            uint32_t pathHash = hash(assetPath);
+            uint32_t hashTableIndex = pathHash % MaxTableEntries;
+
+            return ResourceHashTable[hashTableIndex].RefCount > 0;
+        }
+
         Job::Handle loadResourceAsync(char const *assetPath, FourCC type, OnResourceLoad *onResourceLoad, void *data)
         {
-            if (assetPath[0] == '\0')
+            if (assetPath[0] == '\0' || type == InvalidFourCC)
             {
                 onResourceLoad(data, InvalidResource, ResourceLoad::NotExisting);
                 return InvalidJob;

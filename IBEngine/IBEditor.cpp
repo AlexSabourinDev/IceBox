@@ -14,28 +14,44 @@
 #include <imgui/imgui.h>
 #include <stdio.h>
 
-namespace
-{
-    bool hasExtension(char const *path, char const *extension)
-    {
-        uint32_t length = static_cast<uint32_t>(strlen(path));
-        int32_t extensionIndex = length;
-        for (; extensionIndex > 0; extensionIndex--)
-        {
-            if (path[extensionIndex - 1] == '.')
-            {
-                break;
-            }
-        }
-
-        extensionIndex--; // Include period
-
-        return extensionIndex > 0 && strcmp(path + extensionIndex, extension) == 0;
-    }
-}
-
 namespace IB
 {
+    namespace
+    {
+        char const *getExtension(char const *path)
+        {
+            uint32_t length = static_cast<uint32_t>(strlen(path));
+            int32_t extensionIndex = length;
+            for (; extensionIndex > 0; extensionIndex--)
+            {
+                if (path[extensionIndex - 1] == '.')
+                {
+                    break;
+                }
+            }
+
+            extensionIndex--; // Include period
+
+            return path + extensionIndex;
+        }
+
+        Asset::FourCC resourcePathToType(char const *assetPath)
+        {
+            char const *extension = getExtension(assetPath);
+
+            if (strcmp(extension, ".cell") == 0)
+            {
+                return CellType;
+            }
+            else if (strcmp(extension, ".mat") == 0)
+            {
+                return MaterialType;
+            }
+
+            return InvalidFourCC;
+        }
+    } // namespace
+
     namespace ImGizmo
     {
         void newFrame(Entity::Handle camera);
@@ -136,19 +152,95 @@ namespace IB
         Entity::Handle CameraHandle;
         uint32_t WindowWidth = 0;
         uint32_t WindowHeight = 0;
-        Entity::Handle SelectedEntity;
-        bool EditorFocus = false;
 
-        struct EditorSettings
+        namespace
         {
-            float CameraPanSpeed = 180.0f * 0.5f;
-            float CameraSpeed = 0.25f;
-            float CameraSlowSpeed = 0.05f;
-            float GridSpacing = 1.0f;
-            int32_t GridWidth = 100;
-        };
+            Entity::Handle CellSelectedEntity = InvalidEntity;
+            struct
+            {
+                Asset::Handle Asset = InvalidAsset;
+                Asset::FourCC Type = InvalidFourCC;
+            } InspectorSelection;
 
-        static EditorSettings Settings;
+            void selectCellEntity(Entity::Handle entity)
+            {
+                CellSelectedEntity = entity;
+                InspectorSelection.Asset = toAssetHandle(entity);
+                InspectorSelection.Type = EntityType;
+            }
+
+            bool EditorFocus = false;
+
+            struct EditorSettings
+            {
+                float CameraPanSpeed = 180.0f * 0.5f;
+                float CameraSpeed = 0.25f;
+                float CameraSlowSpeed = 0.05f;
+                float GridSpacing = 1.0f;
+                int32_t GridWidth = 100;
+            };
+
+            EditorSettings Settings;
+
+            struct AssetBrowserState
+            {
+                FileInfo SelectedResourceFile;
+                Resource::Handle SelectedResource = InvalidResource;
+            } AssetBrowser;
+
+            void assetBrowserFileTree(char const *rootPath, char const *folder, AssetBrowserState *assetBrowser)
+            {
+                char directoryPath[MaxFilePath] = {0};
+                sprintf(directoryPath, "%s%s/", rootPath, folder);
+
+                char searchPath[MaxFilePath] = {0};
+                sprintf(searchPath, "%s*", directoryPath);
+
+                DirectoryIterator directoryTree = {searchPath};
+                FileInfo fileInfo;
+                while (iterateDirectory(&directoryTree, &fileInfo))
+                {
+                    if (fileInfo.IsDirectory)
+                    {
+                        if (ImGui::TreeNode(fileInfo.Path))
+                        {
+                            assetBrowserFileTree(directoryPath, fileInfo.Path, assetBrowser);
+                            ImGui::TreePop();
+                        }
+                    }
+                    else
+                    {
+                        ImGui::TreeNodeEx(fileInfo.Path, ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen);
+
+                        if (ImGui::IsItemClicked())
+                        {
+                            Asset::FourCC resourceType = resourcePathToType(fileInfo.Path);
+                            if (strcmp(assetBrowser->SelectedResourceFile.Path, fileInfo.Path) != 0)
+                            {
+                                assetBrowser->SelectedResourceFile = fileInfo;
+                                Asset::releaseResourceAsync(assetBrowser->SelectedResource);
+                                assetBrowser->SelectedResource = InvalidResource;
+
+                                Job::Handle loadJob = Asset::loadResourceAsync(fileInfo.Path, resourceType, &assetBrowser->SelectedResource);
+                                wait(loadJob); // We want to wait on our load job as this simplifies the rest of the editor code
+                            }
+
+                            if (assetBrowser->SelectedResource != InvalidResource)
+                            {
+                                InspectorSelection.Asset = Asset::getAssetFromResource(assetBrowser->SelectedResource);
+                                InspectorSelection.Type = resourceType;
+                            }
+
+                            if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) && resourceType == CellType)
+                            {
+                                ImGui::OpenPopup("Open Cell?");
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
 
         Float3 mouseToWorldPos(Mat4x4 const& invViewProj, Int2 mousePos, float depth = 0.0f)
         {
@@ -158,11 +250,6 @@ namespace IB
             Float4 ndcRayStart = Float4{ u, v, depth, 1.0f };
             Float4 rayStart4 = mul(invViewProj, ndcRayStart);
             return Float3{ rayStart4.x, rayStart4.y, rayStart4.z } / rayStart4.w;
-        };
-
-        struct AssetBrowserState
-        {
-            FileInfo LoadResourceInfo;
         };
 
         struct AssetEditor
@@ -189,41 +276,6 @@ namespace IB
             }
         }
 
-        void assetBrowserFileTree(char const* rootPath, char const* folder, AssetBrowserState* assetBrowser)
-        {
-            char directoryPath[MaxFilePath] = { 0 };
-            sprintf(directoryPath, "%s%s/", rootPath, folder);
-
-            char searchPath[MaxFilePath] = { 0 };
-            sprintf(searchPath, "%s*", directoryPath);
-
-            DirectoryIterator directoryTree = { searchPath };
-            FileInfo fileInfo;
-            while (iterateDirectory(&directoryTree, &fileInfo))
-            {
-                if (fileInfo.IsDirectory)
-                {
-                    if (ImGui::TreeNode(fileInfo.Path))
-                    {
-                        assetBrowserFileTree(directoryPath, fileInfo.Path, assetBrowser);
-                        ImGui::TreePop();
-                    }
-                }
-                else
-                {
-                    ImGui::TreeNodeEx(fileInfo.Path, ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen);
-                    if (ImGui::IsItemClicked() && hasExtension(fileInfo.Path, ".cell"))
-                    {
-                        if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
-                        {
-                            assetBrowser->LoadResourceInfo = fileInfo;
-                            ImGui::OpenPopup("Load Cell?");
-                        }
-                    }
-                }
-            }
-        };
-
         Entity::Handle getCamera() { return CameraHandle; }
 
         void init()
@@ -242,6 +294,7 @@ namespace IB
         void kill()
         {
             destroyEntity(CameraHandle);
+            Asset::releaseResourceAsync(AssetBrowser.SelectedResource);
         }
 
         void frame(Editor::FrameState* state)
@@ -307,28 +360,23 @@ namespace IB
 
             if (ImGui::Begin("Asset Browser"))
             {
-                static AssetBrowserState assetBrowserState = {};
-                assetBrowserFileTree("../Assets/", "Compiled", &assetBrowserState);
+                assetBrowserFileTree("../Assets/", "Compiled", &AssetBrowser);
 
-                if (ImGui::BeginPopupModal("Load Cell?", nullptr, ImGuiWindowFlags_NoResize))
+                if (ImGui::BeginPopupModal("Open Cell?", nullptr, ImGuiWindowFlags_NoResize))
                 {
                     if (ImGui::Button("OK", ImVec2(120, 0)))
                     {
-                        if (*state->CellResource != InvalidResource)
+                        if (InspectorSelection.Asset == toAssetHandle(CellSelectedEntity))
                         {
-                            SelectedEntity = InvalidEntity;
-                            Asset::releaseResourceAsync(*state->CellResource);
+                            InspectorSelection = {};
                         }
+                        CellSelectedEntity = InvalidEntity;
+                        
+                        // Acquire before we release in case we're acquiring/releasing the same resource
+                        Asset::acquireResource(AssetBrowser.SelectedResource);
+                        Asset::releaseResourceAsync(*state->CellResource);
 
-                        Asset::loadResourceAsync(assetBrowserState.LoadResourceInfo.Path, CellType,
-                            [](void *data, Resource::Handle resource, Asset::ResourceLoad::State loadState)
-                            {
-                                if (loadState >= Asset::ResourceLoad::Loading)
-                                {
-                                    *reinterpret_cast<Resource::Handle *>(data) = resource;
-                                }
-                            }, state->CellResource);
-
+                        *state->CellResource = AssetBrowser.SelectedResource;
                         ImGui::CloseCurrentPopup();
                     }
 
@@ -358,7 +406,7 @@ namespace IB
                         ImGui::TreeNodeEx(getEntityName(entities[i]), ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen);
                         if (ImGui::IsItemClicked())
                         {
-                            SelectedEntity = entities[i];
+                            selectCellEntity(entities[i]);
                         }
                     }
 
@@ -377,9 +425,9 @@ namespace IB
 
             if (ImGui::Begin("Inspector"))
             {
-                if (SelectedEntity != InvalidEntity)
+                if (InspectorSelection.Asset != InvalidAsset)
                 {
-                    drawAssetEditor(EntityType, toAssetHandle(SelectedEntity));
+                    drawAssetEditor(InspectorSelection.Type, InspectorSelection.Asset);
                 }
             }
             ImGui::End();
@@ -448,14 +496,14 @@ namespace IB
             // - ImGizmo
             // - Editor render window functionality
 
-            if(SelectedEntity != InvalidEntity)
+            if (CellSelectedEntity != InvalidEntity)
             {
-                Property::Handle transformProperty = getPropertyFromEntity(SelectedEntity, TransformPropertyType);
+                Property::Handle transformProperty = getPropertyFromEntity(CellSelectedEntity, TransformPropertyType);
                 if (transformProperty != InvalidProperty)
                 {
                     Transform selectedTransform = getLocalTransform(transformProperty);
 
-                    Property::Handle lineSweepProperty = getPropertyFromEntity(SelectedEntity, LineSweepPropertyType);
+                    Property::Handle lineSweepProperty = getPropertyFromEntity(CellSelectedEntity, LineSweepPropertyType);
                     if (lineSweepProperty != InvalidProperty)
                     {
                         bool lineSweepChanged = false;
@@ -472,7 +520,7 @@ namespace IB
 
                         if (lineSweepChanged)
                         {
-                            Job::Handle job = updateLineSweepAsync(SelectedEntity, *sweep);
+                            Job::Handle job = updateLineSweepAsync(CellSelectedEntity, *sweep);
                             wait(job); // Currently just plain waiting on the job. Likely want to run in parallel to the editor code
                         }
                     }
@@ -612,7 +660,7 @@ namespace IB
                             }
                         }
 
-                        SelectedEntity = closestEntity;
+                        selectCellEntity(closestEntity);
                     }
                 }
 
@@ -622,11 +670,6 @@ namespace IB
             ImGizmo::endFrame();
             ImGeo::endFrame();
             ImGui::Render();
-        }
-
-        bool isSelected(Entity::Handle entity)
-        {
-            return SelectedEntity == entity;
         }
 
         bool onWindowMessage(IB::WindowMessage message)

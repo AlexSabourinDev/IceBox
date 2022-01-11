@@ -170,13 +170,17 @@ namespace IB
         }
 
         // User API
+        // Resource ref count incremented synchronously
         IB_API Resource::Handle createResourceThreadSafe(char const *assetPath, FourCC type, Asset::Handle asset);
+        
+        // Resource ref count incremented synchronously
         IB_API Job::Handle loadResourceAsync(char const *assetPath, FourCC type, OnResourceLoad *onResourceLoad, void *data = nullptr);
         IB_API void acquireResource(Resource::Handle resource); // add a new reference to our resource
         IB_API Job::Handle releaseResourceAsync(Resource::Handle resource);
         IB_API Job::Handle saveResourceAsync(Resource::Handle resource);
         IB_API Asset::Handle cloneAssetThreadSafe(Asset::Handle asset, FourCC type);
         IB_API void setResourceAsset(Resource::Handle resourceHandle, Asset::Handle asset);
+        IB_API bool isResourceLoaded(char const *assetPath);
 
         IB_API Asset::Handle getAssetFromResource(Resource::Handle resourceHandle);
         IB_API char const *getResourcePath(Resource::Handle resourceHandle);
