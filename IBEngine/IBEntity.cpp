@@ -14,6 +14,10 @@
 
 #include <string.h>
 
+static_assert(static_cast<uint64_t>(IB::InvalidProperty) == static_cast<uint64_t>(IB::InvalidAsset), "Invalid property is expected to match invalid asset.");
+static_assert(static_cast<uint64_t>(IB::InvalidCell) == static_cast<uint64_t>(IB::InvalidAsset), "Invalid cell is expected to match invalid asset.");
+static_assert(static_cast<uint64_t>(IB::InvalidEntity) == static_cast<uint64_t>(IB::InvalidAsset), "Invalid entity is expected to match invalid asset.");
+
 // Property
 namespace IB
 {

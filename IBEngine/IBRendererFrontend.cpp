@@ -13,255 +13,305 @@
 
 #include <algorithm>
 
-namespace
+namespace IB
 {
-    constexpr uint32_t InitPassesJobTypeIndex = 1;
-
-    IB::Image::Handle toImageHandle(IB::Asset::Handle asset) { return IB::Image::toHandle(static_cast<uint32_t>(IB::Asset::toValue(asset))); }
-
-    class ImageAssetStreamer : public IB::Asset::IStreamer
+    namespace
     {
-    public:
-        IB::Asset::LoadContinuation loadAsync(IB::Asset::LoadContext *context) override
+        constexpr uint32_t InitPassesJobTypeIndex = 1;
+
+        Image::Handle toImageHandle(Asset::Handle asset) { return Image::toHandle(static_cast<uint32_t>(Asset::toValue(asset))); }
+
+        class ImageAssetStreamer : public Asset::IStreamer
         {
-            enum
+        public:
+            Asset::LoadContinuation loadAsync(Asset::LoadContext *context) override
             {
-                Load = 0,
-                Create
-            };
-
-            if (context->State == Load)
-            {
-                IB::ImageAsset image;
-                fromBinary(&context->Stream, &image, context->SaveVersion);
-
-                IB::Job::Handle imageCreate = IB::launchJob([image, imageHandle = &context->Data](IB::Job::Handle /*currentJob*/) {
-                    IB::ImageDesc imageDesc = {};
-                    imageDesc.Format = image.Format;
-                    imageDesc.Width = image.Width;
-                    imageDesc.Height = image.Height;
-                    imageDesc.Data = image.Data;
-                    *imageHandle = IB::Image::toValue(IB::createImage(imageDesc));
-
-                    return IB::JobResult::Complete;
-                },
-                                                          IB::NoJobType, IB::RendererJobQueueIndex);
-
-                return IB::Asset::wait(&imageCreate, 1, Create);
-            }
-            else
-            {
-                return IB::Asset::complete(IB::Asset::toHandle(context->Data));
-            }
-        }
-
-        void unloadThreadSafe(IB::Asset::Handle) override
-        {
-            // TODO: Handle image destruction
-        }
-    };
-    ImageAssetStreamer ImageStreamer;
-
-    struct MeshData
-    {
-        IB::Mesh::Handle RendererMesh = IB::InvalidMesh;
-        IB::DynamicArray<IB::SimdTriangleSet> Triangles;
-        uint32_t TriangleCount = 0;
-    };
-
-    void setCollisionShape(MeshData* meshData, IB::MeshAsset::Desc meshAsset)
-    {
-        uint32_t triangleCount = meshAsset.IndexCount / 3;
-        meshData->Triangles.reserve(triangleCount / IB::SimdLaneCount + 1);
-        const bool freeMemory = false;
-        meshData->Triangles.clear(freeMemory);
-        for (uint32_t t = 0; t < triangleCount; t += IB::SimdLaneCount)
-        {
-            IB::Float3 p0[IB::SimdLaneCount];
-            IB::Float3 p1[IB::SimdLaneCount];
-            IB::Float3 p2[IB::SimdLaneCount];
-
-            uint32_t triangleSetCount = IB::min(triangleCount, IB::SimdLaneCount);
-            for (uint32_t ti = 0; ti < triangleSetCount; ti++)
-            {
-                uint32_t i0 = meshAsset.Indices[(t + ti) * 3 + 0];
-                uint32_t i1 = meshAsset.Indices[(t + ti) * 3 + 1];
-                uint32_t i2 = meshAsset.Indices[(t + ti) * 3 + 2];
-                p0[ti] = IB::Float3{ meshAsset.Vertices[i0].Pos[0], meshAsset.Vertices[i0].Pos[1], meshAsset.Vertices[i0].Pos[2] };
-                p1[ti] = IB::Float3{ meshAsset.Vertices[i1].Pos[0], meshAsset.Vertices[i1].Pos[1], meshAsset.Vertices[i1].Pos[2] };
-                p2[ti] = IB::Float3{ meshAsset.Vertices[i2].Pos[0], meshAsset.Vertices[i2].Pos[1], meshAsset.Vertices[i2].Pos[2] };
-            }
-
-            meshData->Triangles.add(IB::SimdTriangleSet{ simdSet(p0), simdSet(p1), simdSet(p2) });
-        }
-        meshData->TriangleCount = triangleCount;
-    }
-
-    MeshData* toMeshData(IB::Asset::Handle asset) { return reinterpret_cast<MeshData*>(IB::Asset::toValue(asset)); }
-    IB::Mesh::Handle toMeshHandle(IB::Asset::Handle asset) { return reinterpret_cast<MeshData*>(IB::Asset::toValue(asset))->RendererMesh; }
-
-    IB::ThreadSafePool<MeshData> MeshDataPool;
-    class MeshAssetStreamer : public IB::Asset::IStreamer
-    {
-    public:
-        IB::Asset::LoadContinuation loadAsync(IB::Asset::LoadContext *context) override
-        {
-            enum
-            {
-                Load = 0,
-                Create
-            };
-
-            if (context->State == Load)
-            {
-                MeshData& meshData = MeshDataPool.add();
-
-                IB::MeshAsset::Desc meshAsset;
-                fromBinary(&context->Stream, &meshAsset, context->SaveVersion);
-
-                IB::Job::Handle jobs[2];
-
-                jobs[0] = IB::launchJob([meshAsset, &meshData](IB::Job::Handle /*currentJob*/) {
-                    IB::MeshDesc meshDesc = {};
-                    meshDesc.Vertices.Data = meshAsset.Vertices;
-                    meshDesc.Vertices.Count = meshAsset.VertexCount;
-                    meshDesc.Indices.Data = meshAsset.Indices;
-                    meshDesc.Indices.Count = meshAsset.IndexCount;
-                    meshData.RendererMesh = createMesh(meshDesc);
-
-                    return IB::JobResult::Complete;
-                },
-                                        IB::NoJobType, IB::RendererJobQueueIndex);
-
-                // Store mesh for collision detection
-                jobs[1] = IB::launchJob([meshAsset, &meshData](IB::Job::Handle /*currentJob*/)
+                enum
                 {
-                    setCollisionShape(&meshData, meshAsset);
-                    return IB::JobResult::Complete;
-                });
+                    Load = 0,
+                    Create
+                };
 
-                context->Data = reinterpret_cast<uint64_t>(&meshData);
-                return IB::Asset::wait(jobs, 2, Create);
+                if (context->State == Load)
+                {
+                    ImageAsset image;
+                    fromBinary(&context->Stream, &image, context->SaveVersion);
+
+                    Job::Handle imageCreate = launchJob([image, imageHandle = &context->Data](Job::Handle /*currentJob*/)
+                                                                {
+                                                                    ImageDesc imageDesc = {};
+                                                                    imageDesc.Format = image.Format;
+                                                                    imageDesc.Width = image.Width;
+                                                                    imageDesc.Height = image.Height;
+                                                                    imageDesc.Data = image.Data;
+                                                                    *imageHandle = Image::toValue(createImage(imageDesc));
+
+                                                                    return JobResult::Complete;
+                                                                },
+                                                                NoJobType, RendererJobQueueIndex);
+
+                    return Asset::wait(&imageCreate, 1, Create);
+                }
+                else
+                {
+                    return Asset::complete(Asset::toHandle(context->Data));
+                }
             }
-            else
+
+            void unloadThreadSafe(Asset::Handle) override
             {
-                return IB::Asset::complete(IB::Asset::toHandle(context->Data));
+                // TODO: Handle image destruction
             }
-        }
+        };
+        ImageAssetStreamer ImageStreamer;
 
-        void unloadThreadSafe(IB::Asset::Handle meshAsset) override
+        struct MeshData
         {
-            MeshData* meshData = reinterpret_cast<MeshData*>(IB::Asset::toValue(meshAsset));
+            Mesh::Handle RendererMesh = InvalidMesh;
+            DynamicArray<SimdTriangleSet> Triangles;
+            uint32_t TriangleCount = 0;
+        };
 
-            IB::launchJob([meshHandle = meshData->RendererMesh](IB::Job::Handle /*currentJob*/)
-            {
-                IB::destroyMesh(meshHandle);
-                return IB::JobResult::Complete;
-            },
-                IB::NoJobType, IB::RendererJobQueueIndex);
-
-            MeshDataPool.remove(*meshData);
-        }
-    };
-    MeshAssetStreamer MeshStreamer;
-
-    struct RuntimeMaterial
-    {
-        IB::Material::Handle Material;
-        IB::MaterialAsset::Desc Asset;
-        IB::Resource::Handle AlbedoTexture;
-    };
-
-    IB::ThreadSafePool<RuntimeMaterial> MaterialPool;
-    class MaterialAssetStreamer : public IB::Asset::IStreamer
-    {
-    public:
-        IB::Asset::Handle create() override
+        void setCollisionShape(MeshData *meshData, MeshAsset::Desc meshAsset)
         {
-            RuntimeMaterial &materialData = MaterialPool.add();
-            return IB::Asset::toHandle(reinterpret_cast<uint64_t>(&materialData));
-        }
-        IB::Asset::LoadContinuation loadAsync(IB::Asset::LoadContext *context) override
-        {
-            enum
+            uint32_t triangleCount = meshAsset.IndexCount / 3;
+            meshData->Triangles.reserve(triangleCount / SimdLaneCount + 1);
+            const bool freeMemory = false;
+            meshData->Triangles.clear(freeMemory);
+            for (uint32_t t = 0; t < triangleCount; t += SimdLaneCount)
             {
-                Load = 0,
-                Create
-            };
+                Float3 p0[SimdLaneCount];
+                Float3 p1[SimdLaneCount];
+                Float3 p2[SimdLaneCount];
 
-            if (context->State == Load)
-            {
-                RuntimeMaterial& materialData = *reinterpret_cast<RuntimeMaterial*>(IB::Asset::toValue(context->LoadingAsset));
-                fromBinary(&context->Stream, &materialData.Asset, context->SaveVersion);
+                uint32_t triangleSetCount = min(triangleCount, SimdLaneCount);
+                for (uint32_t ti = 0; ti < triangleSetCount; ti++)
+                {
+                    uint32_t i0 = meshAsset.Indices[(t + ti) * 3 + 0];
+                    uint32_t i1 = meshAsset.Indices[(t + ti) * 3 + 1];
+                    uint32_t i2 = meshAsset.Indices[(t + ti) * 3 + 2];
+                    p0[ti] = Float3{meshAsset.Vertices[i0].Pos[0], meshAsset.Vertices[i0].Pos[1], meshAsset.Vertices[i0].Pos[2]};
+                    p1[ti] = Float3{meshAsset.Vertices[i1].Pos[0], meshAsset.Vertices[i1].Pos[1], meshAsset.Vertices[i1].Pos[2]};
+                    p2[ti] = Float3{meshAsset.Vertices[i2].Pos[0], meshAsset.Vertices[i2].Pos[1], meshAsset.Vertices[i2].Pos[2]};
+                }
 
-                IB::Job::Handle textureJob = IB::Asset::loadResourceAsync(materialData.Asset.AlbedoPath, { IB::ImageType }, &materialData.AlbedoTexture);
-                IB::Job::Handle materialJob = IB::continueJob([materialPtr = &materialData, contextData = &context->Data](IB::Job::Handle /*currentJob*/) {
-                    IB::Resource::Handle textureResource = materialPtr->AlbedoTexture;
-
-                    IB::ForwardDesc materialDesc = {};
-                    materialDesc.AlbedoTint = materialPtr->Asset.AlbedoTint;
-                    materialDesc.AlbedoImage = toImageHandle(IB::Asset::getAssetFromResource(textureResource));
-                    materialPtr->Material = IB::createMaterial(materialDesc);
-                    *contextData = reinterpret_cast<uint64_t>(materialPtr);
-
-                    return IB::JobResult::Complete;
-                },
-                                                            &textureJob, 1, IB::NoJobType, IB::RendererJobQueueIndex);
-
-                return IB::Asset::wait(&materialJob, 1, Create);
+                meshData->Triangles.add(SimdTriangleSet{simdSet(p0), simdSet(p1), simdSet(p2)});
             }
-            else
+            meshData->TriangleCount = triangleCount;
+        }
+
+        MeshData *toMeshData(Asset::Handle asset) { return reinterpret_cast<MeshData *>(Asset::toValue(asset)); }
+        Mesh::Handle toMeshHandle(Asset::Handle asset) { return reinterpret_cast<MeshData *>(Asset::toValue(asset))->RendererMesh; }
+
+        ThreadSafePool<MeshData> MeshDataPool;
+        class MeshAssetStreamer : public Asset::IStreamer
+        {
+        public:
+            Asset::LoadContinuation loadAsync(Asset::LoadContext *context) override
             {
-                return IB::Asset::complete(IB::Asset::toHandle(context->Data));
+                enum
+                {
+                    Load = 0,
+                    Create
+                };
+
+                if (context->State == Load)
+                {
+                    MeshData &meshData = MeshDataPool.add();
+
+                    MeshAsset::Desc meshAsset;
+                    fromBinary(&context->Stream, &meshAsset, context->SaveVersion);
+
+                    Job::Handle jobs[2];
+
+                    jobs[0] = launchJob([meshAsset, &meshData](Job::Handle /*currentJob*/)
+                                            {
+                                                MeshDesc meshDesc = {};
+                                                meshDesc.Vertices.Data = meshAsset.Vertices;
+                                                meshDesc.Vertices.Count = meshAsset.VertexCount;
+                                                meshDesc.Indices.Data = meshAsset.Indices;
+                                                meshDesc.Indices.Count = meshAsset.IndexCount;
+                                                meshData.RendererMesh = createMesh(meshDesc);
+
+                                                return JobResult::Complete;
+                                            },
+                                            NoJobType, RendererJobQueueIndex);
+
+                    // Store mesh for collision detection
+                    jobs[1] = launchJob([meshAsset, &meshData](Job::Handle /*currentJob*/)
+                                            {
+                                                setCollisionShape(&meshData, meshAsset);
+                                                return JobResult::Complete;
+                                            });
+
+                    context->Data = reinterpret_cast<uint64_t>(&meshData);
+                    return Asset::wait(jobs, 2, Create);
+                }
+                else
+                {
+                    return Asset::complete(Asset::toHandle(context->Data));
+                }
             }
-        }
 
-        void saveThreadSafe(IB::Asset::SaveContext *context) override
+            void unloadThreadSafe(Asset::Handle meshAsset) override
+            {
+                MeshData *meshData = reinterpret_cast<MeshData *>(Asset::toValue(meshAsset));
+
+                launchJob([meshHandle = meshData->RendererMesh](Job::Handle /*currentJob*/)
+                              {
+                                  destroyMesh(meshHandle);
+                                  return JobResult::Complete;
+                              },
+                              NoJobType, RendererJobQueueIndex);
+
+                MeshDataPool.remove(*meshData);
+            }
+        };
+        MeshAssetStreamer MeshStreamer;
+
+        struct RuntimeMaterial
         {
-            RuntimeMaterial *material = reinterpret_cast<RuntimeMaterial *>(IB::Asset::toValue(context->Asset));
-            toBinary(context->Stream, material->Asset);
-        }
+            Material::Handle Material;
+            Resource::Handle AlbedoTexture;
+            uint32_t AlbedoTint = 0;
+        };
 
-        void unloadThreadSafe(IB::Asset::Handle asset) override
+        ThreadSafePool<RuntimeMaterial> MaterialPool;
+        class MaterialAssetStreamer : public Asset::IStreamer
         {
-            RuntimeMaterial *material = reinterpret_cast<RuntimeMaterial *>(IB::Asset::toValue(asset));
-            IB::Asset::releaseResourceAsync(material->AlbedoTexture);
-            // TODO: Handle material destruction in renderer backend
-            MaterialPool.remove(*material);
-        }
-    };
-    MaterialAssetStreamer MaterialStreamer;
+        public:
+            Asset::Handle create() override
+            {
+                RuntimeMaterial &materialData = MaterialPool.add();
+                return Asset::toHandle(reinterpret_cast<uint64_t>(&materialData));
+            }
+            Asset::LoadContinuation loadAsync(Asset::LoadContext *context) override
+            {
+                enum
+                {
+                    Load = 0,
+                    Create
+                };
 
-    IB::ShaderAsset *toShaderAsset(IB::Asset::Handle handle)
+                if (context->State == Load)
+                {
+                    RuntimeMaterial &materialData = *reinterpret_cast<RuntimeMaterial *>(Asset::toValue(context->LoadingAsset));
+                   
+                    MaterialAsset::Desc materialDesc;
+                    fromBinary(&context->Stream, &materialDesc, context->SaveVersion);
+
+                    materialData.AlbedoTint = materialDesc.AlbedoTint;
+
+                    Job::Handle textureJob = Asset::loadResourceAsync(materialDesc.AlbedoPath, {ImageType}, &materialData.AlbedoTexture);
+                    Job::Handle materialJob = continueJob([materialPtr = &materialData, contextData = &context->Data](Job::Handle /*currentJob*/)
+                                                                  {
+                                                                      Resource::Handle textureResource = materialPtr->AlbedoTexture;
+
+                                                                      ForwardDesc materialDesc = {};
+                                                                      materialDesc.AlbedoTint = materialPtr->AlbedoTint;
+                                                                      materialDesc.AlbedoImage = toImageHandle(Asset::getAssetFromResource(textureResource));
+                                                                      materialPtr->Material = createMaterial(materialDesc);
+                                                                      *contextData = reinterpret_cast<uint64_t>(materialPtr);
+
+                                                                      return JobResult::Complete;
+                                                                  },
+                                                                  &textureJob, 1, NoJobType, RendererJobQueueIndex);
+
+                    return Asset::wait(&materialJob, 1, Create);
+                }
+                else
+                {
+                    return Asset::complete(Asset::toHandle(context->Data));
+                }
+            }
+
+            void saveThreadSafe(Asset::SaveContext *context) override
+            {
+                RuntimeMaterial *material = reinterpret_cast<RuntimeMaterial *>(Asset::toValue(context->Asset));
+
+                MaterialAsset::Desc desc;
+                desc.AlbedoPath = Asset::getResourcePath(material->AlbedoTexture);
+                desc.AlbedoTint = material->AlbedoTint;
+                toBinary(context->Stream, desc);
+            }
+
+            void unloadThreadSafe(Asset::Handle asset) override
+            {
+                RuntimeMaterial *material = reinterpret_cast<RuntimeMaterial *>(Asset::toValue(asset));
+                Asset::releaseResourceAsync(material->AlbedoTexture);
+                // TODO: Handle material destruction in renderer backend
+                MaterialPool.remove(*material);
+            }
+        };
+        MaterialAssetStreamer MaterialStreamer;
+
+        ShaderAsset *toShaderAsset(Asset::Handle handle)
+        {
+            return reinterpret_cast<ShaderAsset *>(Asset::toValue(handle));
+        }
+
+        class ShaderAssetStreamer : public Asset::IStreamer
+        {
+        public:
+            Asset::LoadContinuation loadAsync(Asset::LoadContext *context) override
+            {
+                ShaderAsset *shaders = allocate<ShaderAsset>();
+                fromBinary(&context->Stream, shaders, context->SaveVersion);
+
+                return Asset::complete(Asset::toHandle(reinterpret_cast<uint64_t>(shaders)));
+            }
+
+            void unloadThreadSafe(Asset::Handle asset) override
+            {
+                deallocate(toShaderAsset(asset));
+            }
+
+            bool memoryMapped() const { return true; }
+        };
+        ShaderAssetStreamer ShaderStreamer;
+
+        constexpr uint32_t FormatStride[ImageFormat::Count] =
+            {
+                4};
+
+    } // namespace
+
+    namespace Editor
     {
-        return reinterpret_cast<IB::ShaderAsset *>(IB::Asset::toValue(handle));
-    }
-
-    class ShaderAssetStreamer : public IB::Asset::IStreamer
-    {
-    public:
-        IB::Asset::LoadContinuation loadAsync(IB::Asset::LoadContext *context) override
+        void materialEditor(Asset::Handle asset, void *)
         {
-            IB::ShaderAsset *shaders = IB::allocate<IB::ShaderAsset>();
-            fromBinary(&context->Stream, shaders, context->SaveVersion);
+            RuntimeMaterial *material = reinterpret_cast<RuntimeMaterial *>(Asset::toValue(asset));
+            if (ImGui::BeginTable("Inspector Table", 2))
+            {
+                ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed);
+                ImGui::TableSetupColumn("Data", ImGuiTableColumnFlags_None);
 
-            return IB::Asset::complete(IB::Asset::toHandle(reinterpret_cast<uint64_t>(shaders)));
+                ImGui::TableNextColumn();
+                ImGui::Text("Albedo");
+
+                ImGui::TableNextColumn();
+                ImGui::SetNextItemWidth(-FLT_MIN);
+                ImGui::Text(Asset::getResourcePath(material->AlbedoTexture));
+
+                ImGui::TableNextColumn();
+                ImGui::Text("Albedo Tint");
+
+                ImGui::TableNextColumn();
+                ImGui::SetNextItemWidth(-FLT_MIN);
+
+                Float4 color = unpackRGBA(material->AlbedoTint);
+                ImGui::ColorEdit4("", &color[0]);
+                material->AlbedoTint = packRGBA(color);
+
+                // TODO: Update the material
+
+                ImGui::EndTable();
+            }
+
+            // TODO: Notify our parent if we've been modified
         }
-
-        void unloadThreadSafe(IB::Asset::Handle asset) override
-        {
-            IB::deallocate(toShaderAsset(asset));
-        }
-
-        bool memoryMapped() const { return true; }
-    };
-    ShaderAssetStreamer ShaderStreamer;
-
-    constexpr uint32_t FormatStride[IB::ImageFormat::Count] =
-    {
-        4 };
-
-} // namespace
+    } // namespace Editor
+} // namespace IB
 
 // Camera property
 namespace IB
@@ -272,23 +322,23 @@ namespace IB
         {
             struct Data
             {
-                IB::Camera Camera;
-                IB::Mat4x4 Projection = IB::Mat4x4::identity();
-                IB::Mat4x4 InvProjection = IB::Mat4x4::identity();
+                Camera Camera;
+                Mat4x4 Projection = Mat4x4::identity();
+                Mat4x4 InvProjection = Mat4x4::identity();
             };
         }
     }
 
     namespace
     {
-        void updateCameraProjection(IB::CameraProperty::Data* cameraProperty)
+        void updateCameraProjection(CameraProperty::Data* cameraProperty)
         {
-            float fov = 1.0f / tanf(cameraProperty->Camera.FOV * IB::DegToRad * 0.5f);
+            float fov = 1.0f / tanf(cameraProperty->Camera.FOV * DegToRad * 0.5f);
             const float f = cameraProperty->Camera.Far;
             const float n = cameraProperty->Camera.Near;
             const float a = cameraProperty->Camera.Aspect;
             cameraProperty->Projection =
-                IB::Mat4x4{
+                Mat4x4{
                     {{fov / a, 0.0f, 0.0f, 0.0f},
                      {0.0f, -fov, 0.0f, 0.0f},
                      {0.0f, 0.0f, f / (f - n), -n * f / (f - n)},
@@ -296,7 +346,7 @@ namespace IB
             };
 
             cameraProperty->InvProjection =
-                IB::Mat4x4{
+                Mat4x4{
                     {{a / fov, 0.0f, 0.0f, 0.0f},
                      {0.0f, -1.0f / fov, 0.0f, 0.0f},
                      {0.0f, 0.0f, 0.0f, 1.0f},
@@ -304,50 +354,50 @@ namespace IB
             };
         }
 
-        IB::CameraProperty::Data* toCameraProperty(IB::CameraProperty::Handle handle) { return reinterpret_cast<IB::CameraProperty::Data*>(IB::CameraProperty::toValue(handle)); }
-        IB::CameraProperty::Data* toCameraProperty(IB::Asset::Handle asset) { return reinterpret_cast<IB::CameraProperty::Data*>(IB::Asset::toValue(asset)); }
+        CameraProperty::Data* toCameraProperty(CameraProperty::Handle handle) { return reinterpret_cast<CameraProperty::Data*>(CameraProperty::toValue(handle)); }
+        CameraProperty::Data* toCameraProperty(Asset::Handle asset) { return reinterpret_cast<CameraProperty::Data*>(Asset::toValue(asset)); }
 
-        IB::ThreadSafePool<IB::CameraProperty::Data> CameraProperties;
-        class CameraPropertyStreamer : public IB::Asset::IStreamer
+        ThreadSafePool<CameraProperty::Data> CameraProperties;
+        class CameraPropertyStreamer : public Asset::IStreamer
         {
         public:
-            IB::Asset::Handle create() override
+            Asset::Handle create() override
             {
-                IB::CameraProperty::Data& camera = CameraProperties.add();
+                CameraProperty::Data& camera = CameraProperties.add();
                 updateCameraProjection(&camera);
 
-                return IB::Asset::toHandle(reinterpret_cast<uint64_t>(&camera));
+                return Asset::toHandle(reinterpret_cast<uint64_t>(&camera));
             }
 
-            IB::Asset::LoadContinuation loadAsync(IB::Asset::LoadContext *context) override
+            Asset::LoadContinuation loadAsync(Asset::LoadContext *context) override
             {
-                IB::Camera baseCamera = {};
-                if (context->BaseAsset != IB::InvalidAsset)
+                Camera baseCamera = {};
+                if (context->BaseAsset != InvalidAsset)
                 {
                     baseCamera = toCameraProperty(context->BaseAsset)->Camera;
                 }
 
-                IB::CameraProperty::Data& cameraProperty = *toCameraProperty(context->LoadingAsset);
-                IB::Serialization::Delta::fromBinary(&context->Stream, &cameraProperty.Camera, baseCamera);
+                CameraProperty::Data& cameraProperty = *toCameraProperty(context->LoadingAsset);
+                Serialization::Delta::fromBinary(&context->Stream, &cameraProperty.Camera, baseCamera);
 
                 updateCameraProjection(&cameraProperty);
 
-                return IB::Asset::complete(IB::Asset::toHandle(reinterpret_cast<uint64_t>(&cameraProperty)));
+                return Asset::complete(Asset::toHandle(reinterpret_cast<uint64_t>(&cameraProperty)));
             }
 
-            void saveThreadSafe(IB::Asset::SaveContext *context) override
+            void saveThreadSafe(Asset::SaveContext *context) override
             {
-                IB::Camera baseCamera = {};
-                if (context->BaseAsset != IB::InvalidAsset)
+                Camera baseCamera = {};
+                if (context->BaseAsset != InvalidAsset)
                 {
                     baseCamera = toCameraProperty(context->BaseAsset)->Camera;
                 }
 
-                IB::CameraProperty::Data& cameraProperty = *toCameraProperty(context->Asset);
-                IB::Serialization::Delta::toBinary(context->Stream, cameraProperty.Camera, baseCamera);
+                CameraProperty::Data& cameraProperty = *toCameraProperty(context->Asset);
+                Serialization::Delta::toBinary(context->Stream, cameraProperty.Camera, baseCamera);
             }
 
-            void unloadThreadSafe(IB::Asset::Handle assetHandle) override
+            void unloadThreadSafe(Asset::Handle assetHandle) override
             {
                 CameraProperties.remove(*toCameraProperty(assetHandle));
             }
@@ -469,26 +519,26 @@ namespace IB
     {
         struct RendererProperty
         {
-            IB::Resource::Handle MeshResource;
-            IB::Resource::Handle MaterialResource;
+            Resource::Handle MeshResource;
+            Resource::Handle MaterialResource;
         };
         RendererProperty constexpr EmptyRendererProperty = {};
 
-        RendererProperty* toRendererProperty(IB::Asset::Handle assetHandle) { return reinterpret_cast<RendererProperty *>(IB::Asset::toValue(assetHandle)); }
-        RendererProperty* toRendererProperty(IB::Property::Handle propertyHandle) { return reinterpret_cast<RendererProperty *>(IB::Property::toValue(propertyHandle)); }
+        RendererProperty* toRendererProperty(Asset::Handle assetHandle) { return reinterpret_cast<RendererProperty *>(Asset::toValue(assetHandle)); }
+        RendererProperty* toRendererProperty(Property::Handle propertyHandle) { return reinterpret_cast<RendererProperty *>(Property::toValue(propertyHandle)); }
 
-        IB::ThreadSafePool<RendererProperty> RendererProperties;
+        ThreadSafePool<RendererProperty> RendererProperties;
 
-        class RendererPropertyAssetStreamer : public IB::Asset::IStreamer
+        class RendererPropertyAssetStreamer : public Asset::IStreamer
         {
         public:
-            IB::Asset::Handle create() override
+            Asset::Handle create() override
             {
                 RendererProperty &renderer = RendererProperties.add();
-                return IB::Asset::toHandle(reinterpret_cast<uint64_t>(&renderer));
+                return Asset::toHandle(reinterpret_cast<uint64_t>(&renderer));
             }
 
-            IB::Asset::LoadContinuation loadAsync(IB::Asset::LoadContext *context) override
+            Asset::LoadContinuation loadAsync(Asset::LoadContext *context) override
             {
                 enum
                 {
@@ -499,7 +549,7 @@ namespace IB
                 if (context->State == LoadMesh)
                 {
                     RendererProperty const* baseRenderer = &EmptyRendererProperty;
-                    if (context->BaseAsset != IB::InvalidAsset)
+                    if (context->BaseAsset != InvalidAsset)
                     {
                         baseRenderer = toRendererProperty(context->BaseAsset);
                     }
@@ -508,21 +558,21 @@ namespace IB
 
                     // Unload our current resources if we had existing data.
                     {
-                        IB::Asset::releaseResourceAsync(renderer.MeshResource);
-                        IB::Asset::releaseResourceAsync(renderer.MaterialResource);
+                        Asset::releaseResourceAsync(renderer.MeshResource);
+                        Asset::releaseResourceAsync(renderer.MaterialResource);
                     }
 
                     context->Data = reinterpret_cast<uint64_t>(&renderer);
 
-                    char const *baseMeshPath = IB::Asset::getResourcePath(baseRenderer->MeshResource);
+                    char const *baseMeshPath = Asset::getResourcePath(baseRenderer->MeshResource);
 
                     char const *meshPath;
-                    IB::Serialization::Delta::fromBinary(&context->Stream, &meshPath, baseMeshPath);
+                    Serialization::Delta::fromBinary(&context->Stream, &meshPath, baseMeshPath);
 
-                    char const *baseMaterialPath = IB::Asset::getResourcePath(baseRenderer->MaterialResource);
+                    char const *baseMaterialPath = Asset::getResourcePath(baseRenderer->MaterialResource);
 
                     char const *materialPath;
-                    IB::Serialization::Delta::fromBinary(&context->Stream, &materialPath, baseMaterialPath);
+                    Serialization::Delta::fromBinary(&context->Stream, &materialPath, baseMaterialPath);
 
                     enum
                     {
@@ -530,63 +580,63 @@ namespace IB
                         MaterialJob,
                         JobCount
                     };
-                    IB::Job::Handle jobs[JobCount];
+                    Job::Handle jobs[JobCount];
 
-                    jobs[MeshJob] = IB::Asset::loadResourceAsync(meshPath, { IB::MeshType },
-                        [](void *data, IB::Resource::Handle resource, IB::Asset::ResourceLoad::State loadState)
+                    jobs[MeshJob] = Asset::loadResourceAsync(meshPath, { MeshType },
+                        [](void *data, Resource::Handle resource, Asset::ResourceLoad::State loadState)
                     {
                         // Assign our mesh resource even when it's loading
                         // We want to gracefully handle the resource not being available yet.
-                        if (loadState >= IB::Asset::ResourceLoad::Loading)
+                        if (loadState >= Asset::ResourceLoad::Loading)
                         {
-                            *reinterpret_cast<IB::Resource::Handle *>(data) = resource;
+                            *reinterpret_cast<Resource::Handle *>(data) = resource;
                         }
                     },
                         &renderer.MeshResource);
 
-                    jobs[MaterialJob] = IB::Asset::loadResourceAsync(materialPath, { IB::MaterialType },
-                        [](void *data, IB::Resource::Handle resource, IB::Asset::ResourceLoad::State loadState)
+                    jobs[MaterialJob] = Asset::loadResourceAsync(materialPath, { MaterialType },
+                        [](void *data, Resource::Handle resource, Asset::ResourceLoad::State loadState)
                     {
                         // Assign our mesh resource even when it's loading
                         // We want to gracefully handle the resource not being available yet.
-                        if (loadState >= IB::Asset::ResourceLoad::Loading)
+                        if (loadState >= Asset::ResourceLoad::Loading)
                         {
-                            *reinterpret_cast<IB::Resource::Handle *>(data) = resource;
+                            *reinterpret_cast<Resource::Handle *>(data) = resource;
                         }
                     },
                         &renderer.MaterialResource);
 
-                    return IB::Asset::wait(jobs, JobCount, Complete);
+                    return Asset::wait(jobs, JobCount, Complete);
                 }
                 else
                 {
-                    return IB::Asset::complete(IB::Asset::toHandle(context->Data));
+                    return Asset::complete(Asset::toHandle(context->Data));
                 }
             }
 
-            void saveThreadSafe(IB::Asset::SaveContext *context) override
+            void saveThreadSafe(Asset::SaveContext *context) override
             {
                 RendererProperty const* baseRenderer = &EmptyRendererProperty;
-                if (context->BaseAsset != IB::InvalidAsset)
+                if (context->BaseAsset != InvalidAsset)
                 {
                     baseRenderer = toRendererProperty(context->BaseAsset);
                 }
 
                 RendererProperty *renderer = toRendererProperty(context->Asset);
-                char const *meshPath = IB::Asset::getResourcePath(renderer->MeshResource);
-                char const *baseMeshPath = IB::Asset::getResourcePath(baseRenderer->MeshResource);
-                IB::Serialization::Delta::toBinary(context->Stream, meshPath, baseMeshPath);
+                char const *meshPath = Asset::getResourcePath(renderer->MeshResource);
+                char const *baseMeshPath = Asset::getResourcePath(baseRenderer->MeshResource);
+                Serialization::Delta::toBinary(context->Stream, meshPath, baseMeshPath);
 
-                char const *materialPath = IB::Asset::getResourcePath(renderer->MaterialResource);
-                char const *baseMaterialPath = IB::Asset::getResourcePath(baseRenderer->MaterialResource);
-                IB::Serialization::Delta::toBinary(context->Stream, materialPath, baseMaterialPath);
+                char const *materialPath = Asset::getResourcePath(renderer->MaterialResource);
+                char const *baseMaterialPath = Asset::getResourcePath(baseRenderer->MaterialResource);
+                Serialization::Delta::toBinary(context->Stream, materialPath, baseMaterialPath);
             }
 
-            void unloadThreadSafe(IB::Asset::Handle asset) override
+            void unloadThreadSafe(Asset::Handle asset) override
             {
                 RendererProperty *renderer = toRendererProperty(asset);
-                IB::Asset::releaseResourceAsync(renderer->MeshResource);
-                IB::Asset::releaseResourceAsync(renderer->MaterialResource);
+                Asset::releaseResourceAsync(renderer->MeshResource);
+                Asset::releaseResourceAsync(renderer->MaterialResource);
                 RendererProperties.remove(*renderer);
             }
         };
@@ -632,26 +682,26 @@ namespace IB
     Property::Handle createRendererProperty(char const *meshPath, char const *materialPath)
     {
         RendererProperty &renderer = RendererProperties.add();
-        IB::Asset::loadResourceAsync(meshPath, { IB::MeshType },
-            [](void *data, IB::Resource::Handle resource, IB::Asset::ResourceLoad::State loadState)
+        Asset::loadResourceAsync(meshPath, { MeshType },
+            [](void *data, Resource::Handle resource, Asset::ResourceLoad::State loadState)
         {
             // Assign our mesh resource even when it's loading
             // We want to gracefully handle the resource not being available yet.
-            if (loadState >= IB::Asset::ResourceLoad::Loading)
+            if (loadState >= Asset::ResourceLoad::Loading)
             {
-                *reinterpret_cast<IB::Resource::Handle *>(data) = resource;
+                *reinterpret_cast<Resource::Handle *>(data) = resource;
             }
         },
             &renderer.MeshResource);
 
-        IB::Asset::loadResourceAsync(materialPath, { IB::MaterialType },
-            [](void *data, IB::Resource::Handle resource, IB::Asset::ResourceLoad::State loadState)
+        Asset::loadResourceAsync(materialPath, { MaterialType },
+            [](void *data, Resource::Handle resource, Asset::ResourceLoad::State loadState)
         {
             // Assign our mesh resource even when it's loading
             // We want to gracefully handle the resource not being available yet.
-            if (loadState >= IB::Asset::ResourceLoad::Loading)
+            if (loadState >= Asset::ResourceLoad::Loading)
             {
-                *reinterpret_cast<IB::Resource::Handle *>(data) = resource;
+                *reinterpret_cast<Resource::Handle *>(data) = resource;
             }
         },
             &renderer.MaterialResource);
@@ -702,7 +752,7 @@ namespace IB
         initRenderer(rendererDesc);
 
         Asset::loadResourceAsync("SampleForward.shdr", { ShaderType },
-                                 [](void*, Resource::Handle resource, IB::Asset::ResourceLoad::State loadState) {
+                                 [](void*, Resource::Handle resource, Asset::ResourceLoad::State loadState) {
                                      if (loadState == Asset::ResourceLoad::Available)
                                      {
                                          launchJob([resource](Job::Handle /*currentJob*/) {
@@ -723,6 +773,7 @@ namespace IB
 
         Editor::addAssetEditor(RendererPropertyType, &Editor::rendererEditor);
         Editor::addAssetEditor(CameraPropertyType, &Editor::cameraEditor);
+        Editor::addAssetEditor(MaterialType, &Editor::materialEditor);
     }
 
     void killRendererFrontend()
@@ -737,15 +788,15 @@ namespace IB
     MaterialAsset::Handle createMaterialAsset(MaterialAsset::Desc asset)
     {
         RuntimeMaterial &materialData = MaterialPool.add();
-        materialData.Asset = asset;
+        materialData.AlbedoTint = asset.AlbedoTint;
         Job::Handle textureJob = Asset::loadResourceAsync(asset.AlbedoPath, { ImageType }, &materialData.AlbedoTexture);
         continueJob([materialPtr = &materialData](Job::Handle /*currentJob*/) {
-            IB::Resource::Handle textureResource = materialPtr->AlbedoTexture;
-            IB::ForwardDesc materialDesc = {};
-            materialDesc.AlbedoTint = materialPtr->Asset.AlbedoTint;
-            materialDesc.AlbedoImage = toImageHandle(IB::Asset::getAssetFromResource(textureResource));
-            materialPtr->Material = IB::createMaterial(materialDesc);
-            return IB::JobResult::Complete;
+            Resource::Handle textureResource = materialPtr->AlbedoTexture;
+            ForwardDesc materialDesc = {};
+            materialDesc.AlbedoTint = materialPtr->AlbedoTint;
+            materialDesc.AlbedoImage = toImageHandle(Asset::getAssetFromResource(textureResource));
+            materialPtr->Material = createMaterial(materialDesc);
+            return JobResult::Complete;
         },
                     &textureJob, 1, NoJobType, RendererJobQueueIndex);
 
@@ -757,16 +808,16 @@ namespace IB
         MeshData& meshData = MeshDataPool.add();
         Job::Handle job = launchJob([meshAsset, &meshData](Job::Handle /*currentJob*/)
         {
-            IB::MeshDesc meshDesc = {};
+            MeshDesc meshDesc = {};
             meshDesc.Vertices.Data = meshAsset.Vertices;
             meshDesc.Vertices.Count = meshAsset.VertexCount;
             meshDesc.Indices.Data = meshAsset.Indices;
             meshDesc.Indices.Count = meshAsset.IndexCount;
             meshData.RendererMesh = createMesh(meshDesc);
 
-            return IB::JobResult::Complete;
+            return JobResult::Complete;
         },
-            IB::NoJobType, IB::RendererJobQueueIndex);
+            NoJobType, RendererJobQueueIndex);
 
         setCollisionShape(&meshData, meshAsset);
 
@@ -784,16 +835,16 @@ namespace IB
         MeshData* meshData = reinterpret_cast<MeshData*>(MeshAsset::toValue(mesh));
         Job::Handle job = launchJob([meshAsset, meshData](Job::Handle /*currentJob*/)
         {
-            IB::MeshDesc meshDesc = {};
+            MeshDesc meshDesc = {};
             meshDesc.Vertices.Data = meshAsset.Vertices;
             meshDesc.Vertices.Count = meshAsset.VertexCount;
             meshDesc.Indices.Data = meshAsset.Indices;
             meshDesc.Indices.Count = meshAsset.IndexCount;
             updateMesh(meshData->RendererMesh, meshDesc);
 
-            return IB::JobResult::Complete;
+            return JobResult::Complete;
         },
-            IB::NoJobType, IB::RendererJobQueueIndex);
+            NoJobType, RendererJobQueueIndex);
 
         setCollisionShape(meshData, meshAsset);
 
@@ -1047,7 +1098,7 @@ namespace IB
 
             if (rendererCount > 0)
             {
-                IB::ViewDesc::ForwardPass gizmoPass;
+                ViewDesc::ForwardPass gizmoPass;
                 gizmoPass.Batches = gizmoMeshBatch;
                 gizmoPass.BatchCount = 1;
                 viewDesc.Forward.Passes[ViewDesc::ForwardPass::DebugOverlay] = gizmoPass;

@@ -211,6 +211,7 @@ namespace IB
 
     inline Float4 operator/(Float4 left, float right);
     inline uint32_t packRGBA(Float4 color);
+    inline Float4 unpackRGBA(uint32_t rgba);
     inline Half4 toHalf4(Float4 value);
 
     inline Float3 operator+(Float3 left, Float3 right);
@@ -369,6 +370,15 @@ namespace IB
             | static_cast<uint8_t>(min(color.y * 255.0f, 255.0f)) << 16
             | static_cast<uint8_t>(min(color.z * 255.0f, 255.0f)) << 8
             | static_cast<uint8_t>(min(color.w * 255.0f, 255.0f));
+    }
+
+    inline Float4 unpackRGBA(uint32_t rgba)
+    {
+        float r = static_cast<float>((rgba >> 24) & 0xFF) / 255.0f;
+        float g = static_cast<float>((rgba >> 16) & 0xFF) / 255.0f;
+        float b = static_cast<float>((rgba >> 8) & 0xFF) / 255.0f;
+        float a = static_cast<float>((rgba) & 0xFF) / 255.0f;
+        return Float4{r, g, b, a};
     }
 
     inline Half4 toHalf4(Float4 value)

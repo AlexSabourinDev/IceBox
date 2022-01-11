@@ -20,7 +20,7 @@ namespace IB
         enum class Handle : uint64_t;
         constexpr Handle toHandle(uint64_t value);
         constexpr uint64_t toValue(Handle handle);
-    }
+    } // namespace Asset
 
     namespace Resource
     {
@@ -46,7 +46,7 @@ namespace IB
         constexpr Handle toHandle(uint64_t value) { return static_cast<Handle>(value); }
         constexpr uint64_t toValue(Handle handle) { return static_cast<uint64_t>(handle); }
     };
-    constexpr Entity::Handle InvalidEntity = Entity::toHandle(0);
+    constexpr Entity::Handle InvalidEntity = Entity::toHandle(UINT64_MAX);
 
     inline Entity::Handle toEntityHandle(Asset::Handle asset) { return Entity::toHandle(Asset::toValue(asset)); }
     inline Asset::Handle toAssetHandle(Entity::Handle entity) { return Asset::toHandle(Entity::toValue(entity)); }
