@@ -92,7 +92,7 @@ That's pretty much it!
 extern LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam); // ImGui window
 namespace
 {
-    void VulkanCheck(VkResult result)
+    void vulkanCheck(VkResult result)
     {
         if (VK_SUCCESS != result)
         {
@@ -100,7 +100,7 @@ namespace
         }
     }
 
-#define IB_VKCHECK(call) VulkanCheck(call);
+#define IB_VKCHECK(call) vulkanCheck(call);
 
     // Utilities
     template <typename T, uint32_t Count>
@@ -1821,7 +1821,7 @@ namespace IB
             initInfo.Allocator = NoAllocator;
             initInfo.MinImageCount = FrameBufferCount;
             initInfo.ImageCount = FrameBufferCount;
-            initInfo.CheckVkResultFn = &VulkanCheck;
+            initInfo.CheckVkResultFn = &vulkanCheck;
             ImGui_ImplVulkan_Init(&initInfo, ImGuiPass.RenderPass);
 
             // Upload ImGui font

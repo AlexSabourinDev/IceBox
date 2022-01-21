@@ -278,8 +278,10 @@ namespace IB
 
     namespace Editor
     {
-        void materialEditor(Asset::Handle asset, void *)
+        void materialEditor(Asset::Handle asset, void * data)
         {
+            bool *assetModified = reinterpret_cast<bool *>(data);
+
             RuntimeMaterial *material = reinterpret_cast<RuntimeMaterial *>(Asset::toValue(asset));
             if (ImGui::BeginTable("Inspector Table", 2))
             {
@@ -300,15 +302,13 @@ namespace IB
                 ImGui::SetNextItemWidth(-FLT_MIN);
 
                 Float4 color = unpackRGBA(material->AlbedoTint);
-                ImGui::ColorEdit4("", &color[0]);
+                *assetModified |= ImGui::ColorEdit4("", &color[0]);
                 material->AlbedoTint = packRGBA(color);
 
                 // TODO: Update the material
 
                 ImGui::EndTable();
             }
-
-            // TODO: Notify our parent if we've been modified
         }
     } // namespace Editor
 } // namespace IB

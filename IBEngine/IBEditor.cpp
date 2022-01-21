@@ -158,13 +158,15 @@ namespace IB
             Entity::Handle CellSelectedEntity = InvalidEntity;
             struct
             {
+                Resource::Handle Resource = InvalidResource;
                 Asset::Handle Asset = InvalidAsset;
                 Asset::FourCC Type = InvalidFourCC;
             } InspectorSelection;
 
-            void selectCellEntity(Entity::Handle entity)
+            void selectCellEntity(Resource::Handle cellResource, Entity::Handle entity)
             {
                 CellSelectedEntity = entity;
+                InspectorSelection.Resource = cellResource;
                 InspectorSelection.Asset = toAssetHandle(entity);
                 InspectorSelection.Type = EntityType;
             }
@@ -227,6 +229,7 @@ namespace IB
 
                             if (assetBrowser->SelectedResource != InvalidResource)
                             {
+                                InspectorSelection.Resource = assetBrowser->SelectedResource;
                                 InspectorSelection.Asset = Asset::getAssetFromResource(assetBrowser->SelectedResource);
                                 InspectorSelection.Type = resourceType;
                             }
@@ -258,6 +261,9 @@ namespace IB
             AssetEditorCallback* Callback;
         };
         DynamicArray<AssetEditor> AssetEditors;
+
+        // Track the resources that we need to keep loaded since they were modified
+        DynamicArray<Resource::Handle> ModifiedResources;
 
         void addAssetEditor(Asset::FourCC type, AssetEditorCallback* frame)
         {
@@ -346,6 +352,13 @@ namespace IB
             {
                 if (ImGui::Button("Yes", ImVec2(120, 0)))
                 {
+                    for (uint32_t i = 0; i < ModifiedResources.count(); i++)
+                    {
+                        wait(Asset::saveResourceAsync(ModifiedResources[i]));
+                        Asset::releaseResourceAsync(ModifiedResources[i]);
+                    }
+                    ModifiedResources.clear();
+
                     wait(Asset::saveResourceAsync(*state->CellResource));
                     ImGui::CloseCurrentPopup();
                 }
@@ -406,7 +419,7 @@ namespace IB
                         ImGui::TreeNodeEx(getEntityName(entities[i]), ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen);
                         if (ImGui::IsItemClicked())
                         {
-                            selectCellEntity(entities[i]);
+                            selectCellEntity(*state->CellResource, entities[i]);
                         }
                     }
 
@@ -427,7 +440,26 @@ namespace IB
             {
                 if (InspectorSelection.Asset != InvalidAsset)
                 {
-                    drawAssetEditor(InspectorSelection.Type, InspectorSelection.Asset);
+                    bool assetModified = false;
+                    drawAssetEditor(InspectorSelection.Type, InspectorSelection.Asset, &assetModified);
+                    if (assetModified)
+                    {
+                        bool found = false;
+                        for (uint32_t i = 0; i < ModifiedResources.count(); i++)
+                        {
+                            if (ModifiedResources[i] == InspectorSelection.Resource)
+                            {
+                                found = true;
+                                break;
+                            }
+                        }
+
+                        if (!found)
+                        {
+                            Asset::acquireResource(InspectorSelection.Resource);
+                            ModifiedResources.add(InspectorSelection.Resource);
+                        }
+                    }
                 }
             }
             ImGui::End();
@@ -660,7 +692,7 @@ namespace IB
                             }
                         }
 
-                        selectCellEntity(closestEntity);
+                        selectCellEntity(*state->CellResource, closestEntity);
                     }
                 }
 
