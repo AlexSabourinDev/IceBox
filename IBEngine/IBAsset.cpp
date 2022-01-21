@@ -491,11 +491,10 @@ namespace IB
 
         Job::Handle saveResourceAsync(Resource::Handle resourceHandle)
         {
-            return launchJob([resourceHandle](Job::Handle /*currentJob*/) {
-                uint32_t hashTableIndex = Resource::toValue(resourceHandle) % MaxTableEntries;
+            uint32_t hashTableIndex = Resource::toValue(resourceHandle) % MaxTableEntries;
+            atomicIncrement(&ResourceHashTable[hashTableIndex].RefCount); // Keep a reference count as we save, we don't want to dump our asset
 
-                atomicIncrement(&ResourceHashTable[hashTableIndex].RefCount); // Keep a reference count as we save, we don't want to dump our asset
-
+            return launchJob([hashTableIndex, resourceHandle](Job::Handle /*currentJob*/) {
                 IB_ASSERT(volatileLoad(&ResourceHashTable[hashTableIndex].Resource) != nullptr, "Asset should be in our table!");
                 IB::Resource::Data *resource = volatileLoad(&ResourceHashTable[hashTableIndex].Resource);
                 // Assure we don't move our resource reads/writes past this point.

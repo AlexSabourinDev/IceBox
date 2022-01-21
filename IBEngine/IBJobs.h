@@ -104,7 +104,8 @@ namespace IB
 
     // TODO: If you end up waiting on a job that can only occur on a particular worker,
     // and the wait is also on that worker, you can end up deadlocking...
-    IB_API void wait(Job::Handle handle);
+    IB_API void wait(Job::Handle* handles, uint32_t count);
+    inline void wait(Job::Handle handle) { wait(&handle, 1); }
 
     // Utility API
 

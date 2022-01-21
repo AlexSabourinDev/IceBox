@@ -666,7 +666,7 @@ namespace IB
         return Job::toHandle((static_cast<uint64_t>(jobGeneration) << 32) | static_cast<uint32_t>(job - JobPool));
     }
 
-    void wait(Job::Handle handle)
+    void wait(Job::Handle* handles, uint32_t count)
     {
         // TODO: Consider avoiding creating a new event every time.
         ThreadEvent threadEvent = IB::createThreadEvent();
@@ -674,7 +674,7 @@ namespace IB
         {
             IB::signalThreadEvent(threadEvent);
             return JobResult::Complete;
-        }, &handle, 1);
+        }, handles, count);
         waitOnThreadEvent(threadEvent);
         destroyThreadEvent(threadEvent);
     }

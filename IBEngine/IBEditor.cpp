@@ -352,14 +352,21 @@ namespace IB
             {
                 if (ImGui::Button("Yes", ImVec2(120, 0)))
                 {
+                    DynamicArray<Job::Handle> saveJobs;
+                    saveJobs.reserve(ModifiedResources.count() + 1);
+                    if (*state->CellResource != InvalidResource)
+                    {
+                        saveJobs.add(Asset::saveResourceAsync(*state->CellResource));
+                    }
+
                     for (uint32_t i = 0; i < ModifiedResources.count(); i++)
                     {
-                        wait(Asset::saveResourceAsync(ModifiedResources[i]));
+                        saveJobs.add(Asset::saveResourceAsync(ModifiedResources[i]));
                         Asset::releaseResourceAsync(ModifiedResources[i]);
                     }
                     ModifiedResources.clear();
 
-                    wait(Asset::saveResourceAsync(*state->CellResource));
+                    wait(saveJobs.data(), saveJobs.count());
                     ImGui::CloseCurrentPopup();
                 }
 
@@ -445,6 +452,7 @@ namespace IB
                     if (assetModified)
                     {
                         bool found = false;
+                        // TODO: could be a hashmap
                         for (uint32_t i = 0; i < ModifiedResources.count(); i++)
                         {
                             if (ModifiedResources[i] == InspectorSelection.Resource)
