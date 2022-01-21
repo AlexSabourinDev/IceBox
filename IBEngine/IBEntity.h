@@ -15,26 +15,26 @@ namespace IB
     namespace Asset
     {
         enum class FourCC : uint32_t;
-        constexpr FourCC toFourCC(char const (&text)[5]);
+        FourCC constexpr toFourCC(char const (&text)[5]);
 
         enum class Handle : uint64_t;
-        constexpr Handle toHandle(uint64_t value);
-        constexpr uint64_t toValue(Handle handle);
+        Handle constexpr toHandle(uint64_t value);
+        uint64_t constexpr toValue(Handle handle);
     } // namespace Asset
 
     namespace Resource
     {
         enum class Handle : uint32_t;
-        constexpr Handle toHandle(uint32_t value);
+        Handle constexpr toHandle(uint32_t value);
     }
 
     namespace Property
     {
         enum class Handle : uint64_t { };
-        constexpr Handle toHandle(uint64_t value) { return static_cast<Handle>(value); }
-        constexpr uint64_t toValue(Handle handle) { return static_cast<uint64_t>(handle); }
-    };
-    constexpr Property::Handle InvalidProperty = Property::toHandle(UINT64_MAX);
+        Handle constexpr toHandle(uint64_t value) { return static_cast<Handle>(value); }
+        uint64_t constexpr toValue(Handle handle) { return static_cast<uint64_t>(handle); }
+    }; // namespace Property
+    Property::Handle constexpr InvalidProperty = Property::toHandle(UINT64_MAX);
 
     inline Property::Handle toPropertyHandle(Asset::Handle asset) { return Property::toHandle(Asset::toValue(asset)); }
     inline Asset::Handle toAssetHandle(Property::Handle property) { return Asset::toHandle(Property::toValue(property)); }
@@ -43,10 +43,10 @@ namespace IB
     namespace Entity
     {
         enum class Handle : uint64_t {};
-        constexpr Handle toHandle(uint64_t value) { return static_cast<Handle>(value); }
-        constexpr uint64_t toValue(Handle handle) { return static_cast<uint64_t>(handle); }
-    };
-    constexpr Entity::Handle InvalidEntity = Entity::toHandle(UINT64_MAX);
+        Handle constexpr toHandle(uint64_t value) { return static_cast<Handle>(value); }
+        uint64_t constexpr toValue(Handle handle) { return static_cast<uint64_t>(handle); }
+    }; // namespace Entity
+    Entity::Handle constexpr InvalidEntity = Entity::toHandle(UINT64_MAX);
 
     inline Entity::Handle toEntityHandle(Asset::Handle asset) { return Entity::toHandle(Asset::toValue(asset)); }
     inline Asset::Handle toAssetHandle(Entity::Handle entity) { return Asset::toHandle(Entity::toValue(entity)); }
@@ -89,10 +89,10 @@ namespace IB
     namespace Cell
     {
         enum class Handle : uint64_t {};
-        constexpr Handle toHandle(uint64_t value) { return static_cast<Handle>(value); }
-        constexpr uint64_t toValue(Handle handle) { return static_cast<uint64_t>(handle); }
-    };
-    constexpr Cell::Handle InvalidCell = Cell::toHandle(UINT64_MAX);
+        Handle constexpr toHandle(uint64_t value) { return static_cast<Handle>(value); }
+        uint64_t constexpr toValue(Handle handle) { return static_cast<uint64_t>(handle); }
+    }; // namespace Cell
+    Cell::Handle constexpr InvalidCell = Cell::toHandle(UINT64_MAX);
 
     inline Cell::Handle toCellHandle(Asset::Handle asset) { return Cell::toHandle(Asset::toValue(asset)); }
     inline Asset::Handle toAssetHandle(Cell::Handle cell) { return Asset::toHandle(Cell::toValue(cell)); }

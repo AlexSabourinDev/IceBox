@@ -34,7 +34,7 @@ namespace
         void *State = nullptr;
     };
 
-    constexpr uint32_t MaxActiveWindows = 10;
+    uint32_t constexpr MaxActiveWindows = 10;
     ActiveWindow ActiveWindows[MaxActiveWindows] = {};
 
     LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
@@ -274,10 +274,10 @@ namespace
         void *Mapping = nullptr;
     };
 
-    constexpr uint32_t MaxMemoryFileMappingCount = 1024;
+    uint32_t constexpr MaxMemoryFileMappingCount = 1024;
     ActiveFileMapping ActiveMemoryFileMappings[MaxMemoryFileMappingCount];
 
-    constexpr uint32_t MaxFileMappingCount = 1024;
+    uint32_t constexpr MaxFileMappingCount = 1024;
     ActiveFileMapping ActiveFileMappings[MaxFileMappingCount];
 
     struct ActiveThread
@@ -286,7 +286,7 @@ namespace
         void *Data = nullptr;
         HANDLE Thread = NULL;
     };
-    constexpr uint32_t MaxThreadCount = 1024;
+    uint32_t constexpr MaxThreadCount = 1024;
     ActiveThread ActiveThreads[MaxThreadCount];
 
     DWORD WINAPI ThreadProc(LPVOID data)

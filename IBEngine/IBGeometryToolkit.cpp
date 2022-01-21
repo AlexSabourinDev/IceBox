@@ -68,7 +68,7 @@ namespace IB
             }
 
             // Starting face
-            constexpr uint32_t quadIndexCount = 6;
+            uint32_t constexpr quadIndexCount = 6;
             {
                 uint16_t indices[] =
                 {

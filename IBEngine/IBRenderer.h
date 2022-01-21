@@ -79,11 +79,11 @@ namespace IB
     namespace Mesh
     {
         enum class Handle : uint32_t;
-        constexpr Handle toHandle(uint32_t value) { return static_cast<Handle>(value); }
-        constexpr uint32_t toValue(Handle handle) { return static_cast<uint32_t>(handle); }
+        Handle constexpr toHandle(uint32_t value) { return static_cast<Handle>(value); }
+        uint32_t constexpr toValue(Handle handle) { return static_cast<uint32_t>(handle); }
     };
 
-    constexpr Mesh::Handle InvalidMesh = Mesh::toHandle(UINT32_MAX);
+    Mesh::Handle constexpr InvalidMesh = Mesh::toHandle(UINT32_MAX);
 
 
     namespace ImageFormat
@@ -106,13 +106,13 @@ namespace IB
     namespace Image
     {
         enum class Handle : uint32_t;
-        constexpr Handle toHandle(uint32_t value) { return static_cast<Handle>(value); }
-        constexpr uint32_t toValue(Handle handle) { return static_cast<uint32_t>(handle); }
+        Handle constexpr toHandle(uint32_t value) { return static_cast<Handle>(value); }
+        uint32_t constexpr toValue(Handle handle) { return static_cast<uint32_t>(handle); }
     };
 
-    constexpr Image::Handle InvalidImage = Image::toHandle(UINT32_MAX);
+    Image::Handle constexpr InvalidImage = Image::toHandle(UINT32_MAX);
 
-    constexpr uint32_t toRGBA(float r, float g, float b, float a)
+    uint32_t constexpr toRGBA(float r, float g, float b, float a)
     { 
         return (static_cast<uint32_t>(r * 255.99f) << 24)
              | (static_cast<uint32_t>(g * 255.99f) << 16)
@@ -129,11 +129,11 @@ namespace IB
     namespace Material
     {
         enum class Handle : uint32_t;
-        constexpr Handle toHandle(uint32_t value) { return static_cast<Handle>(value); }
-        constexpr uint32_t toValue(Handle handle) { return static_cast<uint32_t>(handle); }
+        Handle constexpr toHandle(uint32_t value) { return static_cast<Handle>(value); }
+        uint32_t constexpr toValue(Handle handle) { return static_cast<uint32_t>(handle); }
     };
 
-    constexpr Material::Handle InvalidMaterial = Material::toHandle(UINT32_MAX);
+    Material::Handle constexpr InvalidMaterial = Material::toHandle(UINT32_MAX);
 
     struct DirectionalLightDesc
     {
@@ -145,11 +145,11 @@ namespace IB
     namespace Light
     {
         enum class Handle : uint32_t;
-        constexpr Handle toHandle(uint32_t value) { return static_cast<Handle>(value); }
-        constexpr uint32_t toValue(Handle handle) { return static_cast<uint32_t>(handle); }
+        Handle constexpr toHandle(uint32_t value) { return static_cast<Handle>(value); }
+        uint32_t constexpr toValue(Handle handle) { return static_cast<uint32_t>(handle); }
     };
 
-    constexpr Light::Handle InvalidLight = Light::toHandle(UINT32_MAX);
+    Light::Handle constexpr InvalidLight = Light::toHandle(UINT32_MAX);
 
     struct ViewDesc
     {

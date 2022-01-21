@@ -13,10 +13,10 @@ namespace IB
     namespace Asset
     {
         enum class Handle : uint64_t;
-        constexpr Handle toHandle(uint64_t value);
+        Handle constexpr toHandle(uint64_t value);
 
         enum class FourCC : uint32_t;
-        constexpr FourCC toFourCC(char const (&text)[5]);
+        FourCC constexpr toFourCC(char const (&text)[5]);
     }
 
     namespace Resource
@@ -27,8 +27,8 @@ namespace IB
     namespace Property
     {
         enum class Handle : uint64_t;
-        constexpr Handle toHandle(uint64_t value);
-        constexpr uint64_t toValue(Handle handle);
+        Handle constexpr toHandle(uint64_t value);
+        uint64_t constexpr toValue(Handle handle);
     }
 
     namespace Cell
@@ -49,7 +49,7 @@ namespace IB
     struct ViewDesc;
     struct MeshDesc;
 
-    constexpr uint32_t RendererJobQueueIndex = 1;
+    uint32_t constexpr RendererJobQueueIndex = 1;
 
     namespace Serialization
     {
@@ -71,10 +71,10 @@ namespace IB
             uint32_t IndexCount;
         };
 
-        constexpr Handle toHandle(uint64_t value) { return static_cast<Handle>(value); }
-        constexpr uint64_t toValue(Handle handle) { return static_cast<uint64_t>(handle); }
-    };
-    constexpr MeshAsset::Handle InvalidMeshAsset = MeshAsset::toHandle(UINT64_MAX);
+        Handle constexpr toHandle(uint64_t value) { return static_cast<Handle>(value); }
+        uint64_t constexpr toValue(Handle handle) { return static_cast<uint64_t>(handle); }
+    }; // namespace MeshAsset
+    MeshAsset::Handle constexpr InvalidMeshAsset = MeshAsset::toHandle(UINT64_MAX);
     Asset::FourCC const MeshType = Asset::toFourCC("MESH");
     inline Asset::Handle toAssetHandle(MeshAsset::Handle handle) { return Asset::toHandle(static_cast<uint64_t>(handle)); };
 
@@ -98,8 +98,8 @@ namespace IB
             uint32_t AlbedoTint;
         };
 
-        constexpr Handle toHandle(uint64_t value) { return static_cast<Handle>(value); }
-        constexpr uint64_t toValue(Handle handle) { return static_cast<uint64_t>(handle); }
+        Handle constexpr toHandle(uint64_t value) { return static_cast<Handle>(value); }
+        uint64_t constexpr toValue(Handle handle) { return static_cast<uint64_t>(handle); }
     };
 
     Asset::FourCC const MaterialType = Asset::toFourCC("MATE");
@@ -164,10 +164,10 @@ namespace IB
     namespace CameraProperty
     {
         enum class Handle : uint64_t;
-        constexpr Handle toHandle(uint64_t value) { return static_cast<Handle>(value); }
-        constexpr uint64_t toValue(Handle handle) { return static_cast<uint64_t>(handle); }
-    }
-    constexpr CameraProperty::Handle InvalidCameraProperty = CameraProperty::toHandle(UINT64_MAX);
+        Handle constexpr toHandle(uint64_t value) { return static_cast<Handle>(value); }
+        uint64_t constexpr toValue(Handle handle) { return static_cast<uint64_t>(handle); }
+    } // namespace CameraProperty
+    CameraProperty::Handle constexpr InvalidCameraProperty = CameraProperty::toHandle(UINT64_MAX);
 
     inline Property::Handle toPropertyHandle(CameraProperty::Handle cameraHandle) { return Property::toHandle(CameraProperty::toValue(cameraHandle)); }
     inline CameraProperty::Handle toCameraHandle(Property::Handle cameraHandle) { return CameraProperty::toHandle(Property::toValue(cameraHandle)); }

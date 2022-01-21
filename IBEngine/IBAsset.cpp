@@ -31,7 +31,7 @@ namespace IB
 {
     namespace
     {
-        constexpr char AssetPath[] = "../Assets/Compiled";
+        char constexpr AssetPath[] = "../Assets/Compiled";
 
         char const *fileExtension(char const *filepath)
         {
@@ -71,7 +71,7 @@ namespace IB
             IB::Asset::FourCC Type = IB::InvalidFourCC;
         };
 
-        constexpr uint32_t MaxStreamerCount = 100;
+        uint32_t constexpr MaxStreamerCount = 100;
         StreamerData Streamers[MaxStreamerCount];
 
         struct LoadResult
@@ -86,7 +86,7 @@ namespace IB
             IB::Resource::Data *Resource;
         };
 
-        constexpr uint32_t MaxTableEntries = 1024 * 1024;
+        uint32_t constexpr MaxTableEntries = 1024 * 1024;
         ResourceEntry ResourceHashTable[MaxTableEntries];
 
         IB::Asset::IStreamer *getStreamer(IB::Asset::FourCC type)

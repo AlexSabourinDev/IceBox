@@ -247,22 +247,22 @@ int main()
     // Create our gizmo
     IB::Mesh::Handle gizmoMesh;
     {
-        constexpr uint32_t cylinderSegments = 8;
-        constexpr float cylinderLength = 0.75f;
-        constexpr float cylinderRadius = 0.035f;
+        uint32_t constexpr cylinderSegments = 8;
+        float constexpr cylinderLength = 0.75f;
+        float constexpr cylinderRadius = 0.035f;
 
-        constexpr uint32_t cylinderVertexCount = cylinderSegments * 2;
-        constexpr uint32_t cylinderIndexCount = cylinderSegments * 6;
+        uint32_t constexpr cylinderVertexCount = cylinderSegments * 2;
+        uint32_t constexpr cylinderIndexCount = cylinderSegments * 6;
 
-        constexpr uint32_t coneSegmentCount = 8;
-        constexpr float coneHeight = 0.25f;
-        constexpr float coneRadius = 0.1f;
+        uint32_t constexpr coneSegmentCount = 8;
+        float constexpr coneHeight = 0.25f;
+        float constexpr coneRadius = 0.1f;
 
-        constexpr uint32_t coneVertexCount = coneSegmentCount + 2;
-        constexpr uint32_t coneIndexCount = coneSegmentCount * 3 + coneSegmentCount * 3;
+        uint32_t constexpr coneVertexCount = coneSegmentCount + 2;
+        uint32_t constexpr coneIndexCount = coneSegmentCount * 3 + coneSegmentCount * 3;
 
-        constexpr uint32_t axisVertexCount = (cylinderVertexCount + coneVertexCount);
-        constexpr uint32_t axisIndexCount = (cylinderIndexCount + coneIndexCount);
+        uint32_t constexpr axisVertexCount = (cylinderVertexCount + coneVertexCount);
+        uint32_t constexpr axisIndexCount = (cylinderIndexCount + coneIndexCount);
 
         IB::Vertex vertices[axisVertexCount * 3];
         uint16_t indices[axisIndexCount * 3];

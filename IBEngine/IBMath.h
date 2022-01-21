@@ -7,10 +7,10 @@
 
 namespace IB
 {
-    constexpr float Pi = 3.1415926535f;
-    constexpr float Tao = 2.0f * Pi;
-    constexpr float DegToRad = Pi / 180.0f;
-    constexpr float RadToDeg = 180.0f / Pi;
+    float constexpr Pi = 3.1415926535f;
+    float constexpr Tao = 2.0f * Pi;
+    float constexpr DegToRad = Pi / 180.0f;
+    float constexpr RadToDeg = 180.0f / Pi;
 
     template<typename T>
     inline T min(T left, T right) { return left < right ? left : right; }
@@ -102,7 +102,7 @@ namespace IB
         float operator[](uint32_t i) const { return (&x)[i]; }
         float x, y, z, w;
 
-        static constexpr Quaternion identity() { return Quaternion{ 0.0f, 0.0f, 0.0f, 1.0f }; }
+        static Quaternion constexpr identity() { return Quaternion{0.0f, 0.0f, 0.0f, 1.0f}; }
     };
 
     inline bool operator!=(Quaternion const& lhs, Quaternion const& rhs)
@@ -119,7 +119,7 @@ namespace IB
         Float4 operator[](uint32_t i) const { return Values[i]; }
         Float4 Values[4];
 
-        static constexpr Mat4x4 identity()
+        static Mat4x4 constexpr identity()
         {
             return Mat4x4{
                 {
@@ -138,7 +138,7 @@ namespace IB
         Float4 operator[](uint32_t i) const { return Values[i]; }
         Float4 Values[3];
 
-        static constexpr Mat3x4 identity()
+        static Mat3x4 constexpr identity()
         {
             return Mat3x4{
                 {
@@ -156,7 +156,7 @@ namespace IB
         Float3 operator[](uint32_t i) const { return Values[i]; }
         Float3 Values[3];
 
-        static constexpr Mat3x3 identity()
+        static Mat3x3 constexpr identity()
         {
             return Mat3x3{
                 {
@@ -799,7 +799,7 @@ namespace IB
 namespace IB
 {
     // Simd API
-    constexpr uint32_t SimdLaneCount = 4;
+    uint32_t constexpr SimdLaneCount = 4;
 
     struct alignas(16) SimdFloat
     {

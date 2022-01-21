@@ -29,19 +29,19 @@ namespace IB
     namespace Job
     {
         enum class Handle : uint64_t {};
-        constexpr Handle toHandle(uint64_t value) { return static_cast<Handle>(value); }
-        constexpr uint64_t toValue(Handle handle) { return static_cast<uint64_t>(handle); }
+        Handle constexpr toHandle(uint64_t value) { return static_cast<Handle>(value); }
+        uint64_t constexpr toValue(Handle handle) { return static_cast<uint64_t>(handle); }
     }
 
-    constexpr uint32_t NoJobType = UINT32_MAX;
-    constexpr uint32_t AllJobQueues = UINT32_MAX;
+    uint32_t constexpr NoJobType = UINT32_MAX;
+    uint32_t constexpr AllJobQueues = UINT32_MAX;
     enum class JobResult
     {
         Complete,
         Sleep
     };
 
-    constexpr size_t MaxJobDataSize = 128;
+    size_t constexpr MaxJobDataSize = 128;
     using JobFunc = JobResult(void *data, Job::Handle currentJobHandle);
 
     struct JobDesc
@@ -52,7 +52,7 @@ namespace IB
         uint32_t QueueIndex = AllJobQueues;
     };
 
-    constexpr Job::Handle InvalidJob = Job::toHandle(UINT64_MAX);
+    Job::Handle constexpr InvalidJob = Job::toHandle(UINT64_MAX);
 
     IB_API void initJobSystem();
     IB_API void killJobSystem();

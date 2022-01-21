@@ -10,7 +10,7 @@ namespace IB
     namespace Asset
     {
         enum class FourCC : uint32_t;
-        constexpr FourCC toFourCC(char const (&text)[5]);
+        FourCC constexpr toFourCC(char const (&text)[5]);
     }
 
     namespace Property

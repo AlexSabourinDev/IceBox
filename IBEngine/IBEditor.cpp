@@ -746,7 +746,7 @@ namespace IB
     {
         namespace
         {
-            constexpr float RotationCircleRadius = 1.0f;
+            float constexpr RotationCircleRadius = 1.0f;
 
             Mesh::Handle TranslationGizmoMesh = InvalidMesh;
             Mesh::Handle RotationGizmoMesh = InvalidMesh;
@@ -826,22 +826,22 @@ namespace IB
             launchJob([](Job::Handle /*currentJob*/)
             {
                 // Mesh
-                constexpr uint16_t cylinderSegments = 8;
-                constexpr float cylinderLength = 0.75f;
-                constexpr float cylinderRadius = 0.035f;
+                uint16_t constexpr cylinderSegments = 8;
+                float constexpr cylinderLength = 0.75f;
+                float constexpr cylinderRadius = 0.035f;
 
-                constexpr uint16_t cylinderVertexCount = cylinderSegments * 2;
-                constexpr uint16_t cylinderIndexCount = cylinderSegments * 6;
+                uint16_t constexpr cylinderVertexCount = cylinderSegments * 2;
+                uint16_t constexpr cylinderIndexCount = cylinderSegments * 6;
 
-                constexpr uint16_t coneSegmentCount = 8;
-                constexpr float coneHeight = 0.25f;
-                constexpr float coneRadius = 0.1f;
+                uint16_t constexpr coneSegmentCount = 8;
+                float constexpr coneHeight = 0.25f;
+                float constexpr coneRadius = 0.1f;
 
-                constexpr uint16_t coneVertexCount = coneSegmentCount + 2;
-                constexpr uint16_t coneIndexCount = coneSegmentCount * 3 + coneSegmentCount * 3;
+                uint16_t constexpr coneVertexCount = coneSegmentCount + 2;
+                uint16_t constexpr coneIndexCount = coneSegmentCount * 3 + coneSegmentCount * 3;
 
-                constexpr uint16_t axisVertexCount = (cylinderVertexCount + coneVertexCount);
-                constexpr uint16_t axisIndexCount = (cylinderIndexCount + coneIndexCount);
+                uint16_t constexpr axisVertexCount = (cylinderVertexCount + coneVertexCount);
+                uint16_t constexpr axisIndexCount = (cylinderIndexCount + coneIndexCount);
 
                 Vertex vertices[axisVertexCount * 3];
                 uint16_t indices[axisIndexCount * 3];
@@ -887,16 +887,16 @@ namespace IB
             // Rotation Gizmo
             launchJob([](Job::Handle /*currentJob*/)
             {
-                constexpr uint32_t circleSegments = 180;
-                constexpr uint32_t circleTriangleCount = circleSegments * 2;
-                constexpr uint32_t circleVertexCount = circleSegments * 4;
-                constexpr uint32_t circleIndexCount = circleTriangleCount * 3;
-                constexpr float circleThickness = 0.15f;
-                constexpr float circleInnerRadius = RotationCircleRadius - circleThickness;
+                uint32_t constexpr circleSegments = 180;
+                uint32_t constexpr circleTriangleCount = circleSegments * 2;
+                uint32_t constexpr circleVertexCount = circleSegments * 4;
+                uint32_t constexpr circleIndexCount = circleTriangleCount * 3;
+                float constexpr circleThickness = 0.15f;
+                float constexpr circleInnerRadius = RotationCircleRadius - circleThickness;
                 Vertex vertices[circleVertexCount * 3];
                 uint16_t indices[circleIndexCount * 3];
 
-                constexpr uint32_t axisIndices[3][2] = 
+                uint32_t constexpr axisIndices[3][2] = 
                 {
                     {0, 1},
                     {1, 2},
@@ -1225,9 +1225,9 @@ namespace IB
     {
         namespace
         {
-            constexpr uint32_t FrameBufferCount = 2;
-            constexpr uint32_t MaxDynamicVertexCount = 100000;
-            constexpr uint32_t MaxDynamicIndexCount = 100000;
+            uint32_t constexpr FrameBufferCount = 2;
+            uint32_t constexpr MaxDynamicVertexCount = 100000;
+            uint32_t constexpr MaxDynamicIndexCount = 100000;
             Vertex DynamicVertices[FrameBufferCount][MaxDynamicVertexCount];
             uint16_t DynamicIndices[FrameBufferCount][MaxDynamicIndexCount];
 
@@ -1425,7 +1425,7 @@ namespace IB
 
         void grid(State* state, uint32_t rowCount, uint32_t columnCount, float spacing)
         {
-            constexpr float gridRadius = 0.02f;
+            float constexpr gridRadius = 0.02f;
             Transform const previousTransform = state->Transform;
 
             for (uint32_t y = 0; y <= columnCount; y++)

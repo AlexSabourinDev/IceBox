@@ -127,8 +127,8 @@ namespace IB
     namespace Window
     {
         enum class Handle : uintptr_t {};
-        constexpr Handle toHandle(uintptr_t value) { return static_cast<Handle>(value); }
-        constexpr uintptr_t toValue(Handle handle) { return static_cast<uintptr_t>(handle); }
+        Handle constexpr toHandle(uintptr_t value) { return static_cast<Handle>(value); }
+        uintptr_t constexpr toValue(Handle handle) { return static_cast<uintptr_t>(handle); }
     };
     struct WindowDesc
     {
@@ -243,10 +243,10 @@ namespace IB
     namespace File
     {
         enum class Handle : uintptr_t {};
-        constexpr Handle toHandle(uintptr_t value) { return static_cast<Handle>(value); }
-        constexpr uintptr_t toValue(Handle handle) { return static_cast<uintptr_t>(handle); }
-    };
-    constexpr File::Handle InvalidFile = File::toHandle(0);
+        Handle constexpr toHandle(uintptr_t value) { return static_cast<Handle>(value); }
+        uintptr_t constexpr toValue(Handle handle) { return static_cast<uintptr_t>(handle); }
+    }; // namespace File
+    File::Handle constexpr InvalidFile = File::toHandle(0);
 
     struct OpenFileOptions
     {
@@ -278,7 +278,7 @@ namespace IB
         uintptr_t State = 0;
     };
 
-    constexpr uint32_t MaxFilePath = 260;
+    uint32_t constexpr MaxFilePath = 260;
     struct FileInfo
     {
         char Path[MaxFilePath];

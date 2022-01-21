@@ -145,7 +145,7 @@ namespace
 {
     uint32_t const WorkerCount = IB::processorCount();
 
-    constexpr uint32_t MaxJobCount = 1024;
+    uint32_t constexpr MaxJobCount = 1024;
 
     struct JobQueue
     {
@@ -162,7 +162,7 @@ namespace
         uint32_t Index;
         bool Alive = false;
     };
-    constexpr uint32_t MaxWorkerCount = 64;
+    uint32_t constexpr MaxWorkerCount = 64;
     WorkerThread Workers[MaxWorkerCount];
 
     uint64_t JobTypeLocks = 0;
@@ -185,13 +185,13 @@ namespace
         }
     }
 
-    constexpr uint32_t MaxJobPoolCount = MaxJobCount * MaxWorkerCount;
+    uint32_t constexpr MaxJobPoolCount = MaxJobCount * MaxWorkerCount;
     IB::Job::Data JobPool[MaxJobPoolCount] = {};
     IB::Job::Data EmptyJob = { {}, +[](void*, IB::Job::Handle) { return IB::JobResult::Complete; } };
     IB::Job::Handle toJobHandle(IB::Job::Data const* job) { return IB::Job::toHandle((static_cast<uint64_t>(job->Generation) << 32) | static_cast<uint32_t>(job - JobPool)); }
 
-    constexpr uint32_t MaxWaitCount = 1 << 16;
-    constexpr uint32_t MaxJobWaiters = 10;
+    uint32_t constexpr MaxWaitCount = 1 << 16;
+    uint32_t constexpr MaxJobWaiters = 10;
     struct
     {
         uint64_t Waiters[MaxJobPoolCount][MaxJobWaiters];
@@ -492,7 +492,7 @@ namespace
                     //     and return to the iteration to wait for the next signal
                     // There are no states (that I can think of) that will leave us waiting for a signal
                     // even if there is work available.
-                    constexpr uint32_t wait = 1; // Wait for 1 millisecond
+                    uint32_t constexpr wait = 1; // Wait for 1 millisecond
                     waitOnThreadEvent(worker->SleepEvent, wait);
                     IB::threadAcquire(); // Assure our loads aren't run before this event
                 }

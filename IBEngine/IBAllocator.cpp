@@ -180,14 +180,14 @@ namespace
 
     // Small Memory Allocations
 
-    constexpr size_t SmallMemoryBoundary = 512;
-    constexpr uint64_t NoSlot = 0xFFFFFFFFFFFFFFFF;
+    size_t constexpr SmallMemoryBoundary = 512;
+    uint64_t constexpr NoSlot = 0xFFFFFFFFFFFFFFFF;
 
     // BlockCount * 1/8 + BlockCount * BlockSize = PageSize
     // (BlockCount)(1/8 + BlockSize) = PageSize
     // BlockCount = PageSize*8/(1 + 8*BlockSize)
 
-    constexpr uint32_t LockPageCount = 64;
+    uint32_t constexpr LockPageCount = 64;
     struct PageTable
     {
         alignas(64) uint32_t LockedPages[LockPageCount] = {};
@@ -458,11 +458,11 @@ namespace
         return IB::popCount(value) - 1;
     }
 
-    constexpr uint32_t MaxBuddyBlockCount = 4096; // Maximum block size is 4096 * SmallestBuddyChunkSize (4096 * 1024 = 4MB)
-    constexpr size_t SmallestBuddyBlockSize = SmallMemoryBoundary * 2;
-    constexpr size_t BuddyChunkSize = MaxBuddyBlockCount * SmallestBuddyBlockSize;
-    constexpr size_t MediumMemoryBoundary = MaxBuddyBlockCount * SmallestBuddyBlockSize / 2; // We don't want to be able to allocate a whole buddy chunk.
-    constexpr uint32_t BuddyChunkCount = 1024;                                               // arbitrary. Is roughly 4GB with MaxBuddyBlockCount of 4096 and SmallestBuddyChunkSize of 1024
+    uint32_t constexpr MaxBuddyBlockCount = 4096; // Maximum block size is 4096 * SmallestBuddyChunkSize (4096 * 1024 = 4MB)
+    size_t constexpr SmallestBuddyBlockSize = SmallMemoryBoundary * 2;
+    size_t constexpr BuddyChunkSize = MaxBuddyBlockCount * SmallestBuddyBlockSize;
+    size_t constexpr MediumMemoryBoundary = MaxBuddyBlockCount * SmallestBuddyBlockSize / 2; // We don't want to be able to allocate a whole buddy chunk.
+    uint32_t constexpr BuddyChunkCount = 1024;                                               // arbitrary. Is roughly 4GB with MaxBuddyBlockCount of 4096 and SmallestBuddyChunkSize of 1024
 
     struct BuddyBlock
     {

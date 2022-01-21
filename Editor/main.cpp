@@ -20,7 +20,7 @@ namespace
     // Global until we figure out state storage.
     Resource::Handle CellResource = {};
     bool EditorAlive = true;
-    constexpr uint32_t PlatformJobQueue = 0;
+    uint32_t constexpr PlatformJobQueue = 0;
     Window::Handle WindowHandle;
 
     bool primaryWindowHandler(void *data, WindowMessage message, WindowMessagePlatformData const *platformData)
@@ -52,7 +52,7 @@ namespace IB
     {
         uint32_t QueuedFrameCount = 0;
         uint32_t CommitedFrameCount = 0;
-        constexpr uint32_t MaxPendingFrameCount = 2;
+        uint32_t constexpr MaxPendingFrameCount = 2;
         IB::ThreadEvent PendingFrameEvent;
 
         StackAllocator RenderFrameAllocators[MaxPendingFrameCount];
@@ -66,8 +66,8 @@ namespace IB
             PendingFrameEvent = IB::createThreadEvent();
             for (uint32_t i = 0; i < MaxPendingFrameCount; i++)
             {
-                constexpr uint32_t maxStackFrameSize = 1024 * 1024;
-                constexpr uint32_t maxAlignment = 16;
+                uint32_t constexpr maxStackFrameSize = 1024 * 1024;
+                uint32_t constexpr maxAlignment = 16;
                 RenderFrameAllocators[i] = createStackAllocator(memoryAllocate(maxStackFrameSize, maxAlignment), maxStackFrameSize);
             }
         }

@@ -17,7 +17,7 @@ namespace IB
 {
     namespace
     {
-        constexpr uint32_t InitPassesJobTypeIndex = 1;
+        uint32_t constexpr InitPassesJobTypeIndex = 1;
 
         Image::Handle toImageHandle(Asset::Handle asset) { return Image::toHandle(static_cast<uint32_t>(Asset::toValue(asset))); }
 
@@ -270,7 +270,7 @@ namespace IB
         };
         ShaderAssetStreamer ShaderStreamer;
 
-        constexpr uint32_t FormatStride[ImageFormat::Count] =
+        uint32_t constexpr FormatStride[ImageFormat::Count] =
             {
                 4};
 
@@ -450,7 +450,7 @@ namespace IB
     {
         CameraProperty::Data* camera = toCameraProperty(cameraHandle);
         Mat3x4 worldFromViewZUp = toMatrix(worldTransform);
-        constexpr Mat4x4 viewZUpFromViewYUp =
+        Mat4x4 constexpr viewZUpFromViewYUp =
         { {
             {1.0f, 0.0f, 0.0f, 0.0f},
             {0.0f, 0.0f, 1.0f, 0.0f},

@@ -15,29 +15,29 @@ namespace IB
     namespace Resource
     {
         enum class Handle : uint32_t {};
-        constexpr Handle toHandle(uint32_t value) { return static_cast<Handle>(value); }
-        constexpr uint32_t toValue(Handle handle) { return static_cast<uint32_t>(handle); }
-    }
-    constexpr Resource::Handle InvalidResource = Resource::toHandle(0);
+        Handle constexpr toHandle(uint32_t value) { return static_cast<Handle>(value); }
+        uint32_t constexpr toValue(Handle handle) { return static_cast<uint32_t>(handle); }
+    } // namespace Resource
+    Resource::Handle constexpr InvalidResource = Resource::toHandle(0);
 
     namespace Asset
     {
         enum class FourCC : uint32_t;
-        constexpr FourCC toFourCC(uint32_t value) { return static_cast<FourCC>(value); }
+        FourCC constexpr toFourCC(uint32_t value) { return static_cast<FourCC>(value); }
 
-        constexpr FourCC toFourCC(char const (&text)[5]) // Char array is of 5 due to null terminator
+        FourCC constexpr toFourCC(char const (&text)[5]) // Char array is of 5 due to null terminator
         {
             return toFourCC(text[0] | (text[1] << 8) | (text[2] << 16) | (text[3] << 24));
         }
 
         // Asset handle
         enum class Handle : uint64_t {};
-        constexpr Handle toHandle(uint64_t value) { return static_cast<Handle>(value); }
-        constexpr uint64_t toValue(Handle handle) { return static_cast<uint64_t>(handle); }
+        Handle constexpr toHandle(uint64_t value) { return static_cast<Handle>(value); }
+        uint64_t constexpr toValue(Handle handle) { return static_cast<uint64_t>(handle); }
     }
 
-    constexpr Asset::FourCC InvalidFourCC = Asset::toFourCC(0);
-    constexpr Asset::Handle InvalidAsset = Asset::toHandle(UINT64_MAX);
+    Asset::FourCC constexpr InvalidFourCC = Asset::toFourCC(0);
+    Asset::Handle constexpr InvalidAsset = Asset::toHandle(UINT64_MAX);
 
     namespace Asset
     {
@@ -59,7 +59,7 @@ namespace IB
             Asset::Handle BaseAsset = InvalidAsset;
         };
 
-        constexpr uint32_t MaxDependencyCount = 32;
+        uint32_t constexpr MaxDependencyCount = 32;
         struct LoadContinuation
         {
             enum
@@ -130,7 +130,7 @@ namespace IB
             Asset::Handle BaseAsset = InvalidAsset;
         };
 
-        constexpr size_t MaxSubAssetLoadDataSize = 32;
+        size_t constexpr MaxSubAssetLoadDataSize = 32;
         struct OnSubAssetLoad
         {
             using FuncType = void(void* functorData, Asset::Handle asset);

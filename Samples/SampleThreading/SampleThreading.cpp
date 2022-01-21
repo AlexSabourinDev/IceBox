@@ -12,7 +12,7 @@ int main()
     IB::initJobSystem();
 
     // Test simple jobs incrementing a global counter.
-    constexpr uint32_t iterations = 1024 * 10;
+    uint32_t constexpr iterations = 1024 * 10;
     for (uint32_t i = 0; i < iterations; i++)
     {
         IB::launchJob([](IB::Job::Handle /*currentJob*/)

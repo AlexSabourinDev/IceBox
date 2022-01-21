@@ -163,7 +163,7 @@ namespace IB
     {
         namespace
         {
-            constexpr uint32_t MaxNameLength = 64;
+            uint32_t constexpr MaxNameLength = 64;
             struct EntityName
             {
                 char String[MaxNameLength] = {};
@@ -578,7 +578,7 @@ namespace IB
 
         // Since we don't expect to have many cells, a simple threadsafe allocation scheme is fine
 
-        constexpr uint32_t MaxCellCount = 32;
+        uint32_t constexpr MaxCellCount = 32;
         CellAsset Cells[MaxCellCount];
         uint32_t CellAllocations[MaxCellCount] = {};
 

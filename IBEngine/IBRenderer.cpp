@@ -104,17 +104,17 @@ namespace
 
     // Utilities
     template <typename T, uint32_t Count>
-    constexpr uint32_t arrayCount(T (&arr)[Count])
+    uint32_t constexpr arrayCount(T (&arr)[Count])
     {
         (void)arr;
         return Count;
     }
-    constexpr VkAllocationCallbacks *NoAllocator = nullptr;
+    VkAllocationCallbacks *constexpr NoAllocator = nullptr;
 
     // Allocator
 
-    constexpr uint32_t MaxAllocatorPools = 10;
-    constexpr uint32_t MaxMemoryBlocks = 1000;
+    uint32_t constexpr MaxAllocatorPools = 10;
+    uint32_t constexpr MaxMemoryBlocks = 1000;
 
     struct AllocationCategory
     {
@@ -128,7 +128,7 @@ namespace
         };
     };
 
-    constexpr uint32_t MaxAllocatorPoolSizes[AllocationCategory::Count] = {
+    uint32_t constexpr MaxAllocatorPoolSizes[AllocationCategory::Count] = {
         1024 * 1024 * 16,
         1024 * 1024 * 16,
         1024 * 1024 * 64,
@@ -493,11 +493,11 @@ namespace
         };
     };
 
-    constexpr uint32_t MaxImageCount = 100;
-    constexpr uint32_t MaxSamplerCount = 1000;
-    constexpr uint32_t FrameBufferCount = 2;
-    constexpr uint32_t MaxPhysicalImageCount = 10;
-    constexpr uint32_t MaxPipelineCleanups = 10;
+    uint32_t constexpr MaxImageCount = 100;
+    uint32_t constexpr MaxSamplerCount = 1000;
+    uint32_t constexpr FrameBufferCount = 2;
+    uint32_t constexpr MaxPhysicalImageCount = 10;
+    uint32_t constexpr MaxPipelineCleanups = 10;
     struct Context
     {
         VkInstance VulkanInstance;
@@ -560,10 +560,10 @@ namespace
         } Cleanup;
     };
 
-    constexpr uint32_t StagingSize = 10 * 1024 * 1024; // 10MB of staging space
-    constexpr uint32_t MaxStagingFenceCount = 128;
-    constexpr uint32_t MaxTransferCount = 128;
-    constexpr uint32_t MaxDescriptorUpdateCount = 128;
+    uint32_t constexpr StagingSize = 10 * 1024 * 1024; // 10MB of staging space
+    uint32_t constexpr MaxStagingFenceCount = 128;
+    uint32_t constexpr MaxTransferCount = 128;
+    uint32_t constexpr MaxDescriptorUpdateCount = 128;
     struct Staging
     {
         VkBuffer Buffer;
@@ -616,10 +616,10 @@ namespace
         return stagingBuffer;
     }
 
-    constexpr uint32_t MeshBufferChunkCount = FrameBufferCount;
-    constexpr uint32_t MaxMeshCount = 1000;
-    constexpr uint32_t MeshBufferChunkSize = 1024 * 1024 * 16;
-    constexpr uint32_t MeshBufferSize = MeshBufferChunkSize * MeshBufferChunkCount;
+    uint32_t constexpr MeshBufferChunkCount = FrameBufferCount;
+    uint32_t constexpr MaxMeshCount = 1000;
+    uint32_t constexpr MeshBufferChunkSize = 1024 * 1024 * 16;
+    uint32_t constexpr MeshBufferSize = MeshBufferChunkSize * MeshBufferChunkCount;
     struct Geometry
     {
         struct
@@ -641,7 +641,7 @@ namespace
         Allocation Allocation;
     };
 
-    constexpr uint32_t MaxIndirectDraws = 1024;
+    uint32_t constexpr MaxIndirectDraws = 1024;
     struct PerFrameData
     {
         IB::Mat4x4 VP;
@@ -655,7 +655,7 @@ namespace
         uint32_t MaterialIndex;
     };
 
-    constexpr uint32_t MaxPerFrameDrawDataSize = sizeof(PerFrameData) + sizeof(PerInstanceData) * MaxIndirectDraws;
+    uint32_t constexpr MaxPerFrameDrawDataSize = sizeof(PerFrameData) + sizeof(PerInstanceData) * MaxIndirectDraws;
     struct IndirectDraw
     {
         struct
@@ -680,10 +680,10 @@ namespace
         uint32_t AlbedoIndex;
     };
 
-    constexpr uint32_t MaxMaterialInstanceCount = 100;
+    uint32_t constexpr MaxMaterialInstanceCount = 100;
     struct ForwardPass
     {
-        static constexpr uint32_t SubpassCount = 2;
+        static uint32_t constexpr SubpassCount = 2;
 
         VkDescriptorSetLayout ShaderLayout;
 
@@ -718,7 +718,7 @@ namespace
         } FrameBuffer[FrameBufferCount];
     };
 
-    constexpr uint32_t MaxLightCount = 32;
+    uint32_t constexpr MaxLightCount = 32;
     struct DirectionalLight
     {
         IB::Float4 DirectionAndRadiance;
@@ -1036,8 +1036,8 @@ namespace IB
 
         // Device
         {
-            constexpr uint32_t maxPhysicalDeviceCount = 10;
-            constexpr uint32_t maxPhysicalDeviceProperties = 100;
+            uint32_t constexpr maxPhysicalDeviceCount = 10;
+            uint32_t constexpr maxPhysicalDeviceProperties = 100;
 
             uint32_t physicalDeviceCount;
             VkPhysicalDevice physicalDevices[maxPhysicalDeviceCount];
@@ -1195,12 +1195,12 @@ namespace IB
 
         // Create the descriptor pools
         {
-            constexpr uint32_t maxUniformBufferCount = 1000;
-            constexpr uint32_t maxStorageBufferCount = 1000;
-            constexpr uint32_t maxStorageImageCount = 100;
-            constexpr uint32_t maxImageSamplerCount = 1000;
-            constexpr uint32_t maxDescriptorSetCount = 1000;
-            constexpr uint32_t maxSampledImageCount = 1000;
+            uint32_t constexpr maxUniformBufferCount = 1000;
+            uint32_t constexpr maxStorageBufferCount = 1000;
+            uint32_t constexpr maxStorageImageCount = 100;
+            uint32_t constexpr maxImageSamplerCount = 1000;
+            uint32_t constexpr maxDescriptorSetCount = 1000;
+            uint32_t constexpr maxSampledImageCount = 1000;
 
             VkDescriptorPoolSize descriptorPoolSizes[5];
             descriptorPoolSizes[0] = VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, maxUniformBufferCount};
@@ -1260,7 +1260,7 @@ namespace IB
         }
 
         {
-            constexpr uint32_t maxSurfaceFormatCount = 100;
+            uint32_t constexpr maxSurfaceFormatCount = 100;
             uint32_t surfaceFormatCount;
             VkSurfaceFormatKHR surfaceFormats[maxSurfaceFormatCount];
 
@@ -1298,10 +1298,10 @@ namespace IB
 
         RendererContext.Present.PresentMode = VK_PRESENT_MODE_FIFO_KHR;
 
-        constexpr bool useVSync = true;
+        bool constexpr useVSync = true;
         if (!useVSync)
         {
-            constexpr uint32_t maxPresentModes = 100;
+            uint32_t constexpr maxPresentModes = 100;
             uint32_t presentModeCount;
             VkPresentModeKHR presentModes[maxPresentModes];
 
