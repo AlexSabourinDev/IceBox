@@ -200,11 +200,13 @@ namespace IB
     IB_API void initForwardPass(ForwardPassDesc const &desc);
 
     IB_API Mesh::Handle createMesh(MeshDesc const &desc);
-    IB_API void updateMesh(Mesh::Handle mesh, MeshDesc const &desc);
+    IB_API Mesh::Handle updateMesh(Mesh::Handle mesh, MeshDesc const &desc);
     IB_API void destroyMesh(Mesh::Handle mesh);
 
     IB_API Image::Handle createImage(ImageDesc const &desc);
     IB_API Material::Handle createMaterial(ForwardDesc const &desc);
+    IB_API Material::Handle updateMaterial(Material::Handle material, ForwardDesc const &desc);
+    IB_API void destroyMaterial(Material::Handle material);
     IB_API Light::Handle createLight(DirectionalLightDesc const& desc);
 
     IB_API void newImGuiFrame();

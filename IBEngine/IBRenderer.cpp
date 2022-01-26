@@ -1,6 +1,7 @@
 #include "IBRenderer.h"
 #include "IBLogging.h"
 #include "IBPlatform.h"
+#include "IBBinary.h"
 
 #include <stdlib.h>
 
@@ -109,7 +110,7 @@ namespace
         (void)arr;
         return Count;
     }
-    VkAllocationCallbacks *constexpr NoAllocator = nullptr;
+    VkAllocationCallbacks *const NoAllocator = nullptr;
 
     // Allocator
 
@@ -706,6 +707,14 @@ namespace
             VkFramebuffer Framebuffer;
         } FrameBuffer[FrameBufferCount];
         uint32_t InstanceCount = 0;
+
+        uint64_t InstanceAllocations[IB::Bitset::bufferSize(MaxMaterialInstanceCount)];
+
+        struct
+        {
+            uint32_t Instances[MaxMaterialInstanceCount];
+            uint32_t Count = 0;
+        } Cleanup[FrameBufferCount];
     };
 
     struct ImGuiPass
@@ -2139,6 +2148,11 @@ namespace IB
             // We're out of memory. Try to pack the empty space caused by freed geometry and try again
             if (chunkOffset + vertexSize + indexSize > MeshBufferChunkSize)
             {
+                // We store our mesh buffers as essentially 2 buffers
+                // The active buffer and the packing buffer
+                // The packing buffer should never overlap with the active buffer
+                // Once the packing buffer is in use, we know that the previous active
+                // buffer is free to be written to.
                 uint32_t chunkIndex = Geometry.NextOffset / MeshBufferChunkSize;
                 chunkIndex = (chunkIndex + 1) % MeshBufferChunkCount;
                 Geometry.NextOffset = chunkIndex * MeshBufferChunkSize;
@@ -2222,9 +2236,11 @@ namespace IB
         return Mesh::toHandle(meshIndex);
     }
 
-    void updateMesh(Mesh::Handle mesh, MeshDesc const &desc)
+    Mesh::Handle updateMesh(Mesh::Handle mesh, MeshDesc const &desc)
     {
         writeMesh(Mesh::toValue(mesh), desc);
+        // Meshes are modified in-place
+        return mesh;
     }
 
     void destroyMesh(Mesh::Handle mesh)
@@ -2398,8 +2414,9 @@ namespace IB
         matData.AlbedoTint = desc.AlbedoTint;
         matData.AlbedoIndex = Image::toValue(desc.AlbedoImage);
 
-        uint32_t instanceIndex = ForwardPass.InstanceCount++;
-        IB_ASSERT(instanceIndex < MaxMaterialInstanceCount, "Too many materials!");
+        uint64_t instanceIndex = IB::Bitset::findClearedSlot(ForwardPass.InstanceAllocations, MaxMaterialInstanceCount);
+        IB_ASSERT(instanceIndex != IB::Bitset::NoSlot, "Too many materials!");
+        IB::Bitset::setSlot(ForwardPass.InstanceAllocations, instanceIndex);
 
         StagingBuffer staging = requestStagingBuffer(&Staging, sizeof(ForwardMaterial));
         memcpy(staging.Memory, &matData, sizeof(ForwardMaterial));
@@ -2438,7 +2455,23 @@ namespace IB
             Staging.Transfers[Queue::Transfer].Commands[Staging.Transfers[Queue::Transfer].ActiveCount++] = commandBuffer;
         }
 
-        return Material::toHandle(instanceIndex);
+        return Material::toHandle(static_cast<uint32_t>(instanceIndex));
+    }
+
+    Material::Handle updateMaterial(Material::Handle handle, ForwardDesc const& desc)
+    {
+        // Materials are simply recreated in a new block
+        destroyMaterial(handle);
+        return createMaterial(desc);
+    }
+
+    void destroyMaterial(Material::Handle handle)
+    {
+        uint32_t materialIndex = Material::toValue(handle);
+        // Our release frame is the last frame we had in flight
+        uint32_t releaseFrame = (RendererContext.Present.ActiveFrame - 1) % FrameBufferCount;
+        IB_ASSERT(ForwardPass.Cleanup[releaseFrame].Count < MaxMaterialInstanceCount, "Releasing too many materials. Are we releasing a material more than once?");
+        ForwardPass.Cleanup[releaseFrame].Instances[ForwardPass.Cleanup[releaseFrame].Count++] = materialIndex;
     }
 
     Light::Handle createLight(DirectionalLightDesc const& desc)
@@ -2568,6 +2601,15 @@ namespace IB
             }
 
             Staging.WriteOffset = 0;
+        }
+
+        // Cleanup our released material instances once we're sure they aren't in use anymore.
+        {
+            for (uint32_t i = 0; i < ForwardPass.Cleanup[fb].Count; i++)
+            {
+                IB::Bitset::clearSlot(ForwardPass.InstanceAllocations, ForwardPass.Cleanup[fb].Instances[i]);
+            }
+            ForwardPass.Cleanup[fb].Count = 0;
         }
 
         VkCommandBuffer currentCommands = RendererContext.Present.FrameBuffer[fb].PrimaryCommandBuffer;

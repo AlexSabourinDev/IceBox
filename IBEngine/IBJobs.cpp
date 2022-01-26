@@ -157,8 +157,8 @@ namespace
     struct WorkerThread
     {
         JobQueue Queue;
-        IB::ThreadHandle Thread;
-        IB::ThreadEvent SleepEvent;
+        IB::Thread::Handle Thread;
+        IB::Thread::Event SleepEvent;
         uint32_t Index;
         bool Alive = false;
     };
@@ -493,7 +493,7 @@ namespace
                     // There are no states (that I can think of) that will leave us waiting for a signal
                     // even if there is work available.
                     uint32_t constexpr wait = 1; // Wait for 1 millisecond
-                    waitOnThreadEvent(worker->SleepEvent, wait);
+                    IB::waitOnThreadEvent(worker->SleepEvent, wait);
                     IB::threadAcquire(); // Assure our loads aren't run before this event
                 }
             }
@@ -604,7 +604,7 @@ namespace IB
 
     void killJobSystem()
     {
-        ThreadHandle threads[MaxWorkerCount];
+        Thread::Handle threads[MaxWorkerCount];
         for (uint32_t i = 0; i < WorkerCount; i++)
         {
             volatileStore(&Workers[i].Alive, false);
@@ -669,7 +669,7 @@ namespace IB
     void wait(Job::Handle* handles, uint32_t count)
     {
         // TODO: Consider avoiding creating a new event every time.
-        ThreadEvent threadEvent = IB::createThreadEvent();
+        Thread::Event threadEvent = IB::createThreadEvent();
         continueJob([threadEvent](Job::Handle /*currentJob*/)
         {
             IB::signalThreadEvent(threadEvent);

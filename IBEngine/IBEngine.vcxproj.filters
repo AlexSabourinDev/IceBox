@@ -60,6 +60,7 @@
     <ClInclude Include="IBCollection.h" />
     <ClInclude Include="IBEditor.h" />
     <ClInclude Include="IBGeometryToolkit.h" />
+    <ClInclude Include="IBBinary.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Platform\IBPlatformWin32.cpp">

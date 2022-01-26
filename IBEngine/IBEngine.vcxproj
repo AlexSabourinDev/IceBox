@@ -20,6 +20,7 @@
     <ClInclude Include="..\SDK\imgui_docking\imgui\imstb_rectpack.h" />
     <ClInclude Include="..\SDK\imgui_docking\imgui\imstb_textedit.h" />
     <ClInclude Include="..\SDK\imgui_docking\imgui\imstb_truetype.h" />
+    <ClInclude Include="IBBinary.h" />
     <ClInclude Include="IBCollection.h" />
     <ClInclude Include="IBAllocator.h" />
     <ClInclude Include="IBAsset.h" />

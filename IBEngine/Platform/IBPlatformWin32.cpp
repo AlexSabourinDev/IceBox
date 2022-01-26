@@ -475,7 +475,7 @@ namespace IB
         return systemInfo.dwNumberOfProcessors;
     }
 
-    ThreadHandle createThread(ThreadFunc *threadFunc, void *threadData)
+    Thread::Handle createThread(ThreadFunc *threadFunc, void *threadData)
     {
         uintptr_t index = 0;
         for (index; index < MaxThreadCount; index++)
@@ -492,52 +492,52 @@ namespace IB
         }
 
         IB_ASSERT(index != MaxThreadCount, "Failed to create thread.");
-        return ThreadHandle{index};
+        return Thread::toHandle(index);
     }
 
-    void destroyThread(ThreadHandle thread)
+    void destroyThread(Thread::Handle thread)
     {
-        CloseHandle(ActiveThreads[thread.Value].Thread);
-        ActiveThreads[thread.Value] = {};
+        CloseHandle(ActiveThreads[Thread::toValue(thread)].Thread);
+        ActiveThreads[Thread::toValue(thread)] = {};
     }
 
-    IB_API void waitOnThreads(ThreadHandle *threads, uint32_t threadCount)
+    IB_API void waitOnThreads(Thread::Handle *threads, uint32_t threadCount)
     {
         HANDLE threadHandles[MaxThreadCount];
         for (uint32_t i = 0; i < threadCount; i++)
         {
-            threadHandles[i] = ActiveThreads[threads[i].Value].Thread;
+            threadHandles[i] = ActiveThreads[toValue(threads[i])].Thread;
         }
 
         DWORD result = WaitForMultipleObjects(threadCount, threadHandles, TRUE, INFINITE);
         IB_ASSERT(result != WAIT_FAILED, "Failed to wait on our threads!");
     }
 
-    ThreadEvent createThreadEvent()
+    Thread::Event createThreadEvent()
     {
-        return ThreadEvent{reinterpret_cast<uintptr_t>(CreateEvent(NULL, FALSE, FALSE, NULL))};
+        return Thread::toEvent(reinterpret_cast<uintptr_t>(CreateEvent(NULL, FALSE, FALSE, NULL)));
     }
 
-    void destroyThreadEvent(ThreadEvent threadEvent)
+    void destroyThreadEvent(Thread::Event threadEvent)
     {
-        CloseHandle(reinterpret_cast<HANDLE>(threadEvent.Value));
+        CloseHandle(reinterpret_cast<HANDLE>(Thread::toValue(threadEvent)));
     }
 
-    void signalThreadEvent(ThreadEvent threadEvent)
+    void signalThreadEvent(Thread::Event threadEvent)
     {
-        BOOL result = SetEvent(reinterpret_cast<HANDLE>(threadEvent.Value));
+        BOOL result = SetEvent(reinterpret_cast<HANDLE>(Thread::toValue(threadEvent)));
         IB_ASSERT(result, "Failed to set our event!");
     }
 
-    void waitOnThreadEvent(ThreadEvent threadEvent, uint32_t waitInMilliseconds)
+    void waitOnThreadEvent(Thread::Event threadEvent, uint32_t waitInMilliseconds)
     {
-        DWORD result = WaitForSingleObject(reinterpret_cast<HANDLE>(threadEvent.Value), waitInMilliseconds);
+        DWORD result = WaitForSingleObject(reinterpret_cast<HANDLE>(Thread::toValue(threadEvent)), waitInMilliseconds);
         IB_ASSERT(result != WAIT_FAILED, "Failed to wait on our event!");
     }
 
-    void resetThreadEvent(ThreadEvent threadEvent)
+    void resetThreadEvent(Thread::Event threadEvent)
     {
-        BOOL result = ResetEvent(reinterpret_cast<HANDLE>(threadEvent.Value));
+        BOOL result = ResetEvent(reinterpret_cast<HANDLE>(Thread::toValue(threadEvent)));
         IB_ASSERT(result, "Failed to reset our event!");
     }
 

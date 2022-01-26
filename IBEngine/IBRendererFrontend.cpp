@@ -239,7 +239,13 @@ namespace IB
             {
                 RuntimeMaterial *material = reinterpret_cast<RuntimeMaterial *>(Asset::toValue(asset));
                 Asset::releaseResourceAsync(material->AlbedoTexture);
-                // TODO: Handle material destruction in renderer backend
+                launchJob([materialHandle = material->Material](Job::Handle)
+                            {
+                                destroyMaterial(materialHandle);
+                                return JobResult::Complete;
+                            },
+                            NoJobType, RendererJobQueueIndex);
+                
                 MaterialPool.remove(*material);
             }
         };
@@ -305,7 +311,21 @@ namespace IB
                 *assetModified |= ImGui::ColorEdit4("", &color[0]);
                 material->AlbedoTint = packRGBA(color);
 
-                // TODO: Update the material
+                if (*assetModified)
+                {
+                    Job::Handle materialUpdate = launchJob([material](Job::Handle /*currentJob*/)
+                    {
+                        Resource::Handle textureResource = material->AlbedoTexture;
+
+                        ForwardDesc materialDesc = {};
+                        materialDesc.AlbedoTint = material->AlbedoTint;
+                        materialDesc.AlbedoImage = toImageHandle(Asset::getAssetFromResource(textureResource));
+                        material->Material = updateMaterial(material->Material, materialDesc);
+                        return JobResult::Complete;
+                    }, NoJobType, RendererJobQueueIndex);
+                    // TODO: Do we need to wait here? Or can we have this job go off on its own?
+                    wait(materialUpdate);
+                }
 
                 ImGui::EndTable();
             }
@@ -840,7 +860,7 @@ namespace IB
             meshDesc.Vertices.Count = meshAsset.VertexCount;
             meshDesc.Indices.Data = meshAsset.Indices;
             meshDesc.Indices.Count = meshAsset.IndexCount;
-            updateMesh(meshData->RendererMesh, meshDesc);
+            meshData->RendererMesh = updateMesh(meshData->RendererMesh, meshDesc);
 
             return JobResult::Complete;
         },

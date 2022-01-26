@@ -2,6 +2,7 @@
 
 #include "IBPlatform.h"
 #include "IBLogging.h"
+#include "IBBinary.h"
 
 /*
 ## Virtual Memory And Paging
@@ -181,7 +182,6 @@ namespace
     // Small Memory Allocations
 
     size_t constexpr SmallMemoryBoundary = 512;
-    uint64_t constexpr NoSlot = 0xFFFFFFFFFFFFFFFF;
 
     // BlockCount * 1/8 + BlockCount * BlockSize = PageSize
     // (BlockCount)(1/8 + BlockSize) = PageSize
@@ -238,57 +238,7 @@ namespace
         return fullyFree;
     }
 
-    uint64_t firstClearedBitIndex(uint64_t value)
-    {
-        // Mask out all our set bits and the first non-set bit
-        // (0010 + 1) ^ 0010 = 0011 ^ 0010 = 0001
-        // (0011 + 1) ^ 0011 = 0100 ^ 0011 = 0111
-        // (1011 + 1) ^ 1011 = 1100 ^ 1011 = 0111
-        // (0111 + 1) ^ 0111 = 1000 ^ 0111 = 1111
-        value = value ^ (value + 1);
-
-        // At this point, the number of bits set is equal to the index of our first cleared bit + 1
-        // Calculate the number of set bits and subtract 1 to get it's index
-
-        return IB::popCount(value) - 1;
-    }
-
-    uint64_t findClearedSlot(uint64_t *memory, uint64_t bitCount)
-    {
-        uint64_t freeSlot = NoSlot;
-
-        // TODO: handle alignment
-        uint64_t *memoryIter = reinterpret_cast<uint64_t *>(memory);
-        for (; static_cast<int32_t>(bitCount) > 0; memoryIter++, bitCount -= 64)
-        {
-            uint64_t value = *memoryIter;
-            uint64_t testBitMask = ~(bitCount < 64 ? (0xFFFFFFFFFFFFFFFF << (bitCount % 64)) : 0); // Create a bitmask of all the bits we want to test
-            if ((value & testBitMask) != testBitMask)                                              // If any of our bits were cleared
-            {
-                uint64_t bitIndex = firstClearedBitIndex(value);
-
-                ptrdiff_t chunkIndex = (memoryIter - reinterpret_cast<uint64_t *>(memory));
-                freeSlot = chunkIndex * 64 + bitIndex;
-                break;
-            }
-        }
-
-        return freeSlot;
-    }
-
-    void setSlot(void *memory, uint64_t index)
-    {
-        uint64_t *memoryIter = reinterpret_cast<uint64_t *>(memory);
-        memoryIter = memoryIter + index / 64;
-        *memoryIter |= 1ull << (index % 64);
-    }
-
-    void clearSlot(void *memory, uint64_t index)
-    {
-        uint64_t *memoryIter = reinterpret_cast<uint64_t *>(memory);
-        memoryIter = memoryIter + index / 64;
-        *memoryIter &= ~(1ull << (index % 64));
-    }
+    
 
     void *getPageSlot(void *page, size_t blockSize, uint64_t blockCount, uint64_t slotIndex)
     {
@@ -339,8 +289,8 @@ namespace
             uint64_t *offsetHeader = reinterpret_cast<uint64_t *>(SmallMemoryPageTables[tableIndex].Header);
 
             uint64_t pageCount = (IB::memoryPageSize() * 8);
-            uint64_t pageIndex = findClearedSlot(offsetHeader + slotOffset / 64, pageCount - slotOffset) + slotOffset;
-            IB_ASSERT(pageIndex != NoSlot || slotOffset != 0, "Failed to find a slot. We're out of memory."); // We're out of memory pages for this size class! Improve this algorithm to support the use case.
+            uint64_t pageIndex = IB::Bitset::findClearedSlot(offsetHeader + slotOffset / 64, pageCount - slotOffset) + slotOffset;
+            IB_ASSERT(pageIndex != IB::Bitset::NoSlot || slotOffset != 0, "Failed to find a slot. We're out of memory."); // We're out of memory pages for this size class! Improve this algorithm to support the use case.
 
             lockIndex = pageIndex % LockPageCount;
             if (IB::atomicCompareExchange(&SmallMemoryPageTables[tableIndex].LockedPages[lockIndex], 0, 1) == 0)
@@ -370,16 +320,16 @@ namespace
         void *memory;
         {
             uint64_t blockCount = (IB::memoryPageSize() * 8) / (1 + blockSize * 8);
-            uint64_t freeSlot = findClearedSlot(reinterpret_cast<uint64_t *>(page), blockCount);
-            IB_ASSERT(freeSlot != NoSlot, "Failed to find a slot but our page said it had a free slot!"); // Our page's "fully allocated" bit was cleared, how come we have no space?
+            uint64_t freeSlot = IB::Bitset::findClearedSlot(reinterpret_cast<uint64_t *>(page), blockCount);
+            IB_ASSERT(freeSlot != IB::Bitset::NoSlot, "Failed to find a slot but our page said it had a free slot!"); // Our page's "fully allocated" bit was cleared, how come we have no space?
 
-            setSlot(page, freeSlot);
+            IB::Bitset::setSlot(reinterpret_cast<uint64_t*>(page), freeSlot);
             if (areAllSlotsSet(page, blockCount))
             {
                 // As long as our locks are on a 64 bit boundary,
                 // we can guarantee that no one else will be setting our bit in our
                 // 64 bit block
-                setSlot(SmallMemoryPageTables[tableIndex].Header, lockedPageIndex);
+                IB::Bitset::setSlot(reinterpret_cast<uint64_t*>(SmallMemoryPageTables[tableIndex].Header), lockedPageIndex);
             }
 
             memory = getPageSlot(page, blockSize, blockCount, freeSlot);
@@ -430,13 +380,13 @@ namespace
             void *page = reinterpret_cast<void *>(pageStart + pageIndex * IB::memoryPageSize());
             void *firstSlot = getPageSlot(page, blockSize, blockCount, 0);
             uintptr_t indexInPage = (memoryAddress - reinterpret_cast<uintptr_t>(firstSlot)) / blockSize;
-            clearSlot(page, indexInPage);
+            IB::Bitset::clearSlot(reinterpret_cast<uint64_t*>(page), indexInPage);
             if (areAllSlotsClear(page, blockCount))
             {
                 IB::decommitMemoryPages(page, 1);
             }
 
-            clearSlot(SmallMemoryPageTables[memoryPageIndex].Header, pageIndex);
+            IB::Bitset::clearSlot(reinterpret_cast<uint64_t*>(SmallMemoryPageTables[memoryPageIndex].Header), pageIndex);
             IB::threadRelease();
             SmallMemoryPageTables[memoryPageIndex].LockedPages[lockIndex] = 0;
         }
@@ -907,9 +857,9 @@ namespace IB
 
             uint64_t slotOffset = 0;
             for (
-                uint64_t slot = findClearedSlot(pageDesc.SlotAllocations, slotCount);
-                slot != NoSlot;
-                slot = findClearedSlot(pageDesc.SlotAllocations + slotOffset, slotCount - slotOffset))
+                uint64_t slot = IB::Bitset::findClearedSlot(pageDesc.SlotAllocations, slotCount);
+                slot != IB::Bitset::NoSlot;
+                slot = IB::Bitset::findClearedSlot(pageDesc.SlotAllocations + slotOffset, slotCount - slotOffset))
             {
                 slotOffset += slot / 64; // Advance our slot offset
 

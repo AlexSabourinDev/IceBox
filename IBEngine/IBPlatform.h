@@ -13,13 +13,6 @@
 
 namespace IB
 {
-#ifdef _MSC_VER
-    inline uint8_t popCount(uint64_t value)
-    {
-        return static_cast<uint8_t>(__popcnt64(value));
-    }
-#endif // _MSC_VER
-
     struct Mouse
     {
         enum Button
@@ -194,28 +187,29 @@ namespace IB
     inline uint64_t atomicAnd(uint64_t *atomic, uint64_t andValue) { return atomicAnd(static_cast<uint64_t volatile*>(atomic), andValue); }
 
     // Threading API
-    struct ThreadHandle
+    namespace Thread
     {
-        uintptr_t Value;
-    };
+        enum class Handle : uintptr_t;
+        Handle constexpr toHandle(uintptr_t value) { return static_cast<Handle>(value); }
+        uintptr_t constexpr toValue(Handle handle) { return static_cast<uintptr_t>(handle); }
+
+        enum class Event : uintptr_t;
+        Event constexpr toEvent(uintptr_t value) { return static_cast<Event>(value); }
+        uintptr_t constexpr toValue(Event event) { return static_cast<uintptr_t>(event); }
+    }
 
     using ThreadFunc = void(void *);
     IB_API uint32_t processorCount();
-    IB_API ThreadHandle createThread(ThreadFunc *threadFunc, void *threadData);
-    IB_API void destroyThread(ThreadHandle thread);
-    IB_API void waitOnThreads(ThreadHandle *threads, uint32_t threadCount);
+    IB_API Thread::Handle createThread(ThreadFunc *threadFunc, void *threadData);
+    IB_API void destroyThread(Thread::Handle thread);
+    IB_API void waitOnThreads(Thread::Handle *threads, uint32_t threadCount);
 
-    struct ThreadEvent
-    {
-        uintptr_t Value;
-    };
-
-    IB_API ThreadEvent createThreadEvent();
-    IB_API void destroyThreadEvent(ThreadEvent threadEvent);
-    IB_API void signalThreadEvent(ThreadEvent threadEvent);
+    IB_API Thread::Event createThreadEvent();
+    IB_API void destroyThreadEvent(Thread::Event threadEvent);
+    IB_API void signalThreadEvent(Thread::Event threadEvent);
     const uint32_t InfiniteWait = UINT32_MAX;
-    IB_API void waitOnThreadEvent(ThreadEvent threadEvent, uint32_t waitInMilliseconds = InfiniteWait);
-    IB_API void resetThreadEvent(ThreadEvent threadEvent);
+    IB_API void waitOnThreadEvent(Thread::Event threadEvent, uint32_t waitInMilliseconds = InfiniteWait);
+    IB_API void resetThreadEvent(Thread::Event threadEvent);
 
     // Not the ideal place for these, but good enough for now
     template <typename T>

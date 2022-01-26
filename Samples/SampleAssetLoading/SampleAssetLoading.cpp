@@ -77,7 +77,7 @@ int main()
 
     auto waitOnJob = [](IB::Job::Handle job)
     {
-        IB::ThreadEvent threadEvent = IB::createThreadEvent();
+        IB::Thread::Event threadEvent = IB::createThreadEvent();
         IB::continueJob([threadEvent](IB::Job::Handle /*currentJob*/)
         {
             IB::signalThreadEvent(threadEvent);

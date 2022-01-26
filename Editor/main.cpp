@@ -53,7 +53,7 @@ namespace IB
         uint32_t QueuedFrameCount = 0;
         uint32_t CommitedFrameCount = 0;
         uint32_t constexpr MaxPendingFrameCount = 2;
-        IB::ThreadEvent PendingFrameEvent;
+        IB::Thread::Event PendingFrameEvent;
 
         StackAllocator RenderFrameAllocators[MaxPendingFrameCount];
 
@@ -202,7 +202,7 @@ namespace IB
 int main()
 {
     initJobSystem();
-    ThreadEvent platformEvent = createThreadEvent();
+    Thread::Event platformEvent = createThreadEvent();
 
     {
         launchJob([platformEvent](Job::Handle /*currentJob*/) {
