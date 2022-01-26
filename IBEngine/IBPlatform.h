@@ -3,10 +3,6 @@
 #include <stdint.h>
 #include "IBEngineAPI.h"
 
-#ifdef _MSC_VER
-#include <intrin.h>
-#endif // _MSC_VER
-
 #if defined(_WIN32) || defined(_WIN64)
 #define IB_WINDOWS
 #endif // _WIN32 || _WIN64

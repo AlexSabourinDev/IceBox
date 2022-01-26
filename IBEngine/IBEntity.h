@@ -30,7 +30,7 @@ namespace IB
 
     namespace Property
     {
-        enum class Handle : uint64_t { };
+        enum class Handle : uint64_t;
         Handle constexpr toHandle(uint64_t value) { return static_cast<Handle>(value); }
         uint64_t constexpr toValue(Handle handle) { return static_cast<uint64_t>(handle); }
     }; // namespace Property
@@ -42,7 +42,7 @@ namespace IB
     // Entity API
     namespace Entity
     {
-        enum class Handle : uint64_t {};
+        enum class Handle : uint64_t;
         Handle constexpr toHandle(uint64_t value) { return static_cast<Handle>(value); }
         uint64_t constexpr toValue(Handle handle) { return static_cast<uint64_t>(handle); }
     }; // namespace Entity

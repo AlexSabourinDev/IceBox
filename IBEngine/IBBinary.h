@@ -3,6 +3,10 @@
 
 #include <stdint.h>
 
+#ifdef _MSC_VER
+#include <intrin.h>
+#endif // _MSC_VER
+
 namespace IB
 {
 #ifdef _MSC_VER
