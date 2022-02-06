@@ -507,7 +507,7 @@ namespace
             }
 
             uint8_t requestedLayer = getLayerFromSize(blockSize);
-            // TODO: Our layer's size might be larger than our block size. Log internal fragmentation.
+            // TODO GithubIssue-43: Our layer's size might be larger than our block size. Log internal fragmentation.
 
             uint32_t closestBlockIndex = UINT32_MAX;
             uint8_t closestBlockLayer = UINT8_MAX;
@@ -769,7 +769,7 @@ namespace IB
             }
         }
         // By this point, if blockSize is larger than size, then we have internal fragmentation.
-        // TODO: Log internal fragmentation
+        // TODO GithubIssue-43: Log internal fragmentation
 
         void *memory = nullptr;
         if (blockSize <= SmallMemoryBoundary)

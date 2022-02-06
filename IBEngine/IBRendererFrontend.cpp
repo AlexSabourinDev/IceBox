@@ -60,7 +60,7 @@ namespace IB
 
             void unloadThreadSafe(Asset::Handle) override
             {
-                // TODO: Handle image destruction
+                // TODO GithubIssue-45: Support image destruction
             }
         };
         ImageAssetStreamer ImageStreamer;
@@ -909,7 +909,7 @@ namespace IB
             uint64_t Value;
         };
 
-        // TODO: dynamic stack
+        // TODO GithubIssue-46: dynamic stack
         SortKey keys[32];
         Transform transforms[32];
         for (uint32_t i = 0; i < entityCount; i++)
@@ -979,7 +979,7 @@ namespace IB
 
             if (rendererCount > 0)
             {
-                // TODO: Not 32 max...
+                // TODO GithubIssue-46: Not 32 max...
                 uint16_t indices[32];
                 for (uint16_t i = 0; i < 32; i++)
                 {
@@ -1087,7 +1087,7 @@ namespace IB
             // Restart our collection for gizmos
             rendererCount = 0;
 
-            // TODO: Share logic between debug and default passes
+            // TODO GithubIssue-46: Share logic between debug and default passes
             Mesh::Handle meshes[32];
             Material::Handle materials[32];
             DynamicArray<ImGeo::DrawData::Instance> const &instances = gatherDesc.ImGeoDrawData->Instances[ViewDesc::ForwardPass::DebugOverlay];

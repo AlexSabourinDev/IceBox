@@ -204,6 +204,7 @@ namespace IB
     IB_API void destroyMesh(Mesh::Handle mesh);
 
     IB_API Image::Handle createImage(ImageDesc const &desc);
+    // TODO GithubIssue-45: Support image destruction
 
     IB_API Material::Handle createMaterial(ForwardDesc const &desc);
     IB_API Material::Handle updateMaterial(Material::Handle material, ForwardDesc const &desc);

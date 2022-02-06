@@ -54,8 +54,7 @@ namespace IB
         {
             uint64_t freeSlot = NoSlot;
 
-            // TODO: handle alignment
-            uint64_t *memoryIter = reinterpret_cast<uint64_t *>(memory);
+            uint64_t *memoryIter = memory;
             for (; static_cast<int32_t>(bitCount) > 0; memoryIter++, bitCount -= 64)
             {
                 uint64_t value = *memoryIter;

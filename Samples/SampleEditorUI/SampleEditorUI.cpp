@@ -52,7 +52,6 @@ int main()
         ImGui::Render();
 
         IB::ViewDesc viewDesc = {};
-        // TODO: Call imGui::CloneOutput instead of ImGui::GetDrawData in order to double buffer our rendering.
         viewDesc.ImGuiDrawData = ImGui::GetDrawData();
         IB::drawView(viewDesc);
     }

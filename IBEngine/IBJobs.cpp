@@ -668,7 +668,7 @@ namespace IB
 
     void wait(Job::Handle* handles, uint32_t count)
     {
-        // TODO: Consider avoiding creating a new event every time.
+        // TODO GithubIssue-44: Consider avoiding creating a new event every time.
         Thread::Event threadEvent = IB::createThreadEvent();
         continueJob([threadEvent](Job::Handle /*currentJob*/)
         {
