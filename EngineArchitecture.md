@@ -93,3 +93,8 @@ I expect modules to be mainly a .h/.cpp pair. Reducing the number of files helps
 * Testing
 * Scripting (Lua)
 * Input
+
+## Terminology
+* Resources are assets backed by files like images, meshes, materials, cells, etc
+* Assets represent anything that can be loaded, created and generalized by IBAsset's API. Often, they have an asset loader associated to them.
+* Assets can have sub assets. A cell can have entities which can have properties. All are assets as they are backed by the asset loader and API
