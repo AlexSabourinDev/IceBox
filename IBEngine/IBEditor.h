@@ -34,6 +34,11 @@ namespace IB
         enum class Handle : uint64_t;
     }
 
+    namespace Job
+    {
+        enum class Handle : uint64_t;
+    }
+
     struct WindowMessage;
 
     namespace Editor
@@ -53,6 +58,8 @@ namespace IB
         IB_API Entity::Handle getCamera();
 
         IB_API bool isSelected(Entity::Handle entity);
+
+        IB_API bool resourceCombo(char const* label, Asset::FourCC type, Resource::Handle* resource, Job::Handle* loadingJob);
     }
 
     namespace ImGizmo

@@ -24,6 +24,7 @@ namespace IB
     {
         enum class FourCC : uint32_t;
         FourCC constexpr toFourCC(uint32_t value) { return static_cast<FourCC>(value); }
+        uint32_t constexpr toValue(FourCC fourCC) { return static_cast<uint32_t>(fourCC); }
 
         FourCC constexpr toFourCC(char const (&text)[5]) // Char array is of 5 due to null terminator
         {
@@ -186,10 +187,11 @@ namespace IB
         IB_API char const *getResourcePath(Resource::Handle resourceHandle);
         IB_API bool isResourceAssetAvailable(Resource::Handle resourceHandle);
 
+        template <ResourceLoad::State assignWhen = ResourceLoad::Available>
         inline Job::Handle loadResourceAsync(char const *assetPath, FourCC type, Resource::Handle *outputResource)
         {
             return loadResourceAsync(assetPath, type, [](void *data, Resource::Handle resource, ResourceLoad::State loadState) {
-                if (loadState == ResourceLoad::Available)
+                    if (loadState >= assignWhen)
                 {
                     *reinterpret_cast<Resource::Handle *>(data) = resource;
                 }

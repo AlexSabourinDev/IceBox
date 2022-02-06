@@ -299,7 +299,9 @@ namespace IB
 
                 ImGui::TableNextColumn();
                 ImGui::SetNextItemWidth(-FLT_MIN);
-                ImGui::Text(Asset::getResourcePath(material->AlbedoTexture));
+
+                Job::Handle textureLoad;
+                *assetModified |= resourceCombo("#Texture", ImageType, &material->AlbedoTexture, &textureLoad);
 
                 ImGui::TableNextColumn();
                 ImGui::Text("Albedo Tint");
@@ -313,16 +315,17 @@ namespace IB
 
                 if (*assetModified)
                 {
-                    Job::Handle materialUpdate = launchJob([material](Job::Handle /*currentJob*/)
-                    {
-                        Resource::Handle textureResource = material->AlbedoTexture;
+                    Job::Handle materialUpdate = continueJob([material](Job::Handle /*currentJob*/)
+                                                             {
+                                                                 Resource::Handle textureResource = material->AlbedoTexture;
 
-                        ForwardDesc materialDesc = {};
-                        materialDesc.AlbedoTint = material->AlbedoTint;
-                        materialDesc.AlbedoImage = toImageHandle(Asset::getAssetFromResource(textureResource));
-                        material->Material = updateMaterial(material->Material, materialDesc);
-                        return JobResult::Complete;
-                    }, NoJobType, RendererJobQueueIndex);
+                                                                 ForwardDesc materialDesc = {};
+                                                                 materialDesc.AlbedoTint = material->AlbedoTint;
+                                                                 materialDesc.AlbedoImage = toImageHandle(Asset::getAssetFromResource(textureResource));
+                                                                 material->Material = updateMaterial(material->Material, materialDesc);
+                                                                 return JobResult::Complete;
+                                                             },
+                                                             &textureLoad, 1, NoJobType, RendererJobQueueIndex);
                     // TODO: Do we need to wait here? Or can we have this job go off on its own?
                     wait(materialUpdate);
                 }
@@ -602,29 +605,8 @@ namespace IB
                     };
                     Job::Handle jobs[JobCount];
 
-                    jobs[MeshJob] = Asset::loadResourceAsync(meshPath, { MeshType },
-                        [](void *data, Resource::Handle resource, Asset::ResourceLoad::State loadState)
-                    {
-                        // Assign our mesh resource even when it's loading
-                        // We want to gracefully handle the resource not being available yet.
-                        if (loadState >= Asset::ResourceLoad::Loading)
-                        {
-                            *reinterpret_cast<Resource::Handle *>(data) = resource;
-                        }
-                    },
-                        &renderer.MeshResource);
-
-                    jobs[MaterialJob] = Asset::loadResourceAsync(materialPath, { MaterialType },
-                        [](void *data, Resource::Handle resource, Asset::ResourceLoad::State loadState)
-                    {
-                        // Assign our mesh resource even when it's loading
-                        // We want to gracefully handle the resource not being available yet.
-                        if (loadState >= Asset::ResourceLoad::Loading)
-                        {
-                            *reinterpret_cast<Resource::Handle *>(data) = resource;
-                        }
-                    },
-                        &renderer.MaterialResource);
+                    jobs[MeshJob] = Asset::loadResourceAsync<Asset::ResourceLoad::Loading>(meshPath, { MeshType }, &renderer.MeshResource);
+                    jobs[MaterialJob] = Asset::loadResourceAsync<Asset::ResourceLoad::Loading>(materialPath, {MaterialType}, &renderer.MaterialResource);
 
                     return Asset::wait(jobs, JobCount, Complete);
                 }
@@ -702,29 +684,8 @@ namespace IB
     Property::Handle createRendererProperty(char const *meshPath, char const *materialPath)
     {
         RendererProperty &renderer = RendererProperties.add();
-        Asset::loadResourceAsync(meshPath, { MeshType },
-            [](void *data, Resource::Handle resource, Asset::ResourceLoad::State loadState)
-        {
-            // Assign our mesh resource even when it's loading
-            // We want to gracefully handle the resource not being available yet.
-            if (loadState >= Asset::ResourceLoad::Loading)
-            {
-                *reinterpret_cast<Resource::Handle *>(data) = resource;
-            }
-        },
-            &renderer.MeshResource);
-
-        Asset::loadResourceAsync(materialPath, { MaterialType },
-            [](void *data, Resource::Handle resource, Asset::ResourceLoad::State loadState)
-        {
-            // Assign our mesh resource even when it's loading
-            // We want to gracefully handle the resource not being available yet.
-            if (loadState >= Asset::ResourceLoad::Loading)
-            {
-                *reinterpret_cast<Resource::Handle *>(data) = resource;
-            }
-        },
-            &renderer.MaterialResource);
+        Asset::loadResourceAsync<Asset::ResourceLoad::Loading>(meshPath, {MeshType}, &renderer.MeshResource);
+        Asset::loadResourceAsync<Asset::ResourceLoad::Loading>(materialPath, {MaterialType}, &renderer.MaterialResource);
 
         return Property::toHandle(reinterpret_cast<uint64_t>(&renderer));
     }

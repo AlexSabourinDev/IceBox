@@ -45,7 +45,11 @@ namespace IB
         uint32_t getIndex(Key const &key) const;
         bool isSet(Key const &key) const;
         bool tryGet(Key const &key, Value *value) const;
+        // Collection may get resized. Don't store pointer for later use.
+        Value *getUnsafe(Key const &key);
         void clear(Key const &key);
+        // Clear all keys
+        void clear(bool freeMemory = true);
         void set(Key const &key, Value const &value);
 
     private:
@@ -189,6 +193,10 @@ namespace IB
     uint32_t LinearProbeHashMap<Key, Value, keyHash>::getIndex(uint64_t hash, Key const &key) const
     {
         uint32_t itemCount = Hashes.count();
+        if (itemCount == 0)
+        {
+            return InvalidKeyIndex;
+        }
 
         // Look at the second half first
         for (uint32_t i = hash % itemCount; i < itemCount; i++)
@@ -233,6 +241,18 @@ namespace IB
     }
 
     template <typename Key, typename Value, typename uint64_t(keyHash)(Key const &)>
+    Value* LinearProbeHashMap<Key, Value, keyHash>::getUnsafe(Key const &key)
+    {
+        uint32_t index = getIndex(key);
+        if (index == InvalidKeyIndex)
+        {
+            return nullptr;
+        }
+
+        return &KeyValues[index].Value;
+    }
+
+    template <typename Key, typename Value, typename uint64_t(keyHash)(Key const &)>
     bool LinearProbeHashMap<Key, Value, keyHash>::tryGet(Key const &key, Value *value) const
     {
         uint32_t index = getIndex(key);
@@ -255,6 +275,14 @@ namespace IB
             KeyValues[index] = {};
             SetCount--;
         }
+    }
+
+    template <typename Key, typename Value, typename uint64_t(keyHash)(Key const &)>
+    void LinearProbeHashMap<Key, Value, keyHash>::clear(bool freeMemory)
+    {
+        Hashes.clear(freeMemory);
+        KeyValues.clear(freeMemory);
+        SetCount = 0;
     }
 
     template <typename Key, typename Value, typename uint64_t(keyHash)(Key const &)>

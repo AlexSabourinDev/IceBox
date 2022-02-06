@@ -47,6 +47,22 @@ namespace IB
             {
                 return MaterialType;
             }
+            else if (strcmp(extension, ".msh") == 0)
+            {
+                return MeshType;
+            }
+            else if (strcmp(extension, ".tex") == 0)
+            {
+                return ImageType;
+            }
+            else if (strcmp(extension, ".entt") == 0)
+            {
+                return EntityType;
+            }
+            else if (strcmp(extension, ".shdr") == 0)
+            {
+                return ShaderType;
+            }
 
             return InvalidFourCC;
         }
@@ -243,8 +259,114 @@ namespace IB
                 }
             }
         }
-        
 
+        uint64_t fourCCHash(Asset::FourCC const& key)
+        {
+            return Asset::toValue(key);
+        }
+
+        struct AssetPath
+        {
+            char Path[MaxFilePath];
+        };
+
+        LinearProbeHashMap<Asset::FourCC, DynamicArray<AssetPath>, fourCCHash> AssetList;
+        void collectAssets(char const *rootPath, char const *folder)
+        {
+            char directoryPath[MaxFilePath] = {0};
+            sprintf(directoryPath, "%s%s/", rootPath, folder);
+
+            char searchPath[MaxFilePath] = {0};
+            sprintf(searchPath, "%s*", directoryPath);
+
+            DirectoryIterator directoryTree = {searchPath};
+            FileInfo fileInfo;
+            while (iterateDirectory(&directoryTree, &fileInfo))
+            {
+                if (fileInfo.IsDirectory)
+                {
+                    collectAssets(directoryPath, fileInfo.Path);
+                }
+                else
+                {
+                    Asset::FourCC resourceType = resourcePathToType(fileInfo.Path);
+                    if (resourceType != InvalidFourCC)
+                    {
+                        if (!AssetList.isSet(resourceType))
+                        {
+                            AssetList.set(resourceType, DynamicArray<AssetPath>{});
+                        }
+
+                        AssetPath assetPath;
+                        memcpy(assetPath.Path, fileInfo.Path, MaxFilePath);
+                        AssetList.getUnsafe(resourceType)->add(assetPath);
+                    }
+                }
+            }
+        }
+
+        IB_API bool resourceCombo(char const *label, Asset::FourCC type, Resource::Handle *resource, Job::Handle *loadingJob)
+        {
+            *loadingJob = InvalidJob;
+
+            bool resourceChanged = false;
+            int currentItem = 0;
+
+            char const *resourcePath = Asset::getResourcePath(*resource);
+
+            DynamicArray<AssetPath>* assets = AssetList.getUnsafe(type);
+            if (assets == nullptr)
+            {
+                char const *paths[2] = {"None", resourcePath};
+                // TODO: highlight in red if we have a resource but it wasn't in the asset list.
+                resourceChanged = ImGui::Combo(label, &currentItem, paths, 2);
+            }
+            else
+            {
+                for (uint32_t i = 0; i < assets->count(); i++)
+                {
+                    if (strcmp((*assets)[i].Path, resourcePath) == 0)
+                    {
+                        currentItem = static_cast<int>(i) + 1;
+                        break;
+                    }
+                }
+
+                resourceChanged = ImGui::Combo(
+                    label, &currentItem, +[](void *data, int index, char const **text)
+                                         {
+                                             if (index == 0)
+                                             {
+                                                 *text = "None";
+                                                 return true;
+                                             }
+
+                                             DynamicArray<AssetPath> *assets = reinterpret_cast<DynamicArray<AssetPath> *>(data);
+                                             if (index - 1 >= static_cast<int>(assets->count()))
+                                             {
+                                                 return false;
+                                             }
+                                             *text = (*assets)[index - 1].Path;
+                                             return true;
+                                         },
+                    assets, assets->count() + 1);
+            }
+
+            if (resourceChanged)
+            {
+                if (currentItem > 0)
+                {
+                   *loadingJob = Asset::loadResourceAsync<Asset::ResourceLoad::Loading>((*assets)[currentItem - 1].Path, type, resource);
+                }
+                else
+                {
+                    *resource = InvalidResource;
+                }
+            }
+
+            return resourceChanged;
+        }
+        
         Float3 mouseToWorldPos(Mat4x4 const& invViewProj, Int2 mousePos, float depth = 0.0f)
         {
             float u = static_cast<float>(mousePos.x) / static_cast<float>(Editor::WindowWidth)*2.0f - 1.0f;
@@ -309,6 +431,10 @@ namespace IB
             Input::newFrame();
             ImGeo::newFrame();
             ImGizmo::newFrame(CameraHandle);
+
+            bool const freeMemory = false;
+            AssetList.clear(freeMemory);
+            collectAssets("../Assets/", "Compiled");
 
             ImGeo::state()->VertexColor = Float4{1.0f, 1.0f, 1.0f, 0.7f};
             ImGeo::grid(ImGeo::state(), Settings.GridWidth, Settings.GridWidth, Settings.GridSpacing); 
