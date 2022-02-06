@@ -665,14 +665,15 @@ namespace IB
 
                     ImGui::TableNextColumn();
                     ImGui::SetNextItemWidth(-FLT_MIN);
-                    ImGui::Text(Asset::getResourcePath(renderer->MeshResource));
+                    Job::Handle loadJob;
+                    resourceCombo("#Mesh", MeshType, &renderer->MeshResource, &loadJob);
 
                     ImGui::TableNextColumn();
                     ImGui::Text("Material");
 
                     ImGui::TableNextColumn();
                     ImGui::SetNextItemWidth(-FLT_MIN);
-                    ImGui::Text(Asset::getResourcePath(renderer->MaterialResource));
+                    resourceCombo("#Material", MaterialType, &renderer->MaterialResource, &loadJob);
 
                     ImGui::EndTable();
                 }

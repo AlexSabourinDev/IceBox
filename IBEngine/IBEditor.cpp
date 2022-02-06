@@ -332,6 +332,8 @@ namespace IB
                     }
                 }
 
+                // TODO GithubIssue-48: Resources not backed by the filesystem don't show up here.
+
                 resourceChanged = ImGui::Combo(
                     label, &currentItem, +[](void *data, int index, char const **text)
                                          {
