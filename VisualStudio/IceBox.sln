@@ -18,6 +18,9 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Editor", "..\Editor\Editor.
 	EndProjectSection
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "GeneralSample", "..\Samples\GeneralSample\GeneralSample.vcxproj", "{9286BD49-951B-49DA-84F3-A1CBBC12800B}"
+	ProjectSection(ProjectDependencies) = postProject
+		{ECCDB929-1C4D-4436-90B1-32202C679E77} = {ECCDB929-1C4D-4436-90B1-32202C679E77}
+	EndProjectSection
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
