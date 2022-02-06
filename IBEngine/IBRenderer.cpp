@@ -755,8 +755,6 @@ namespace
 
 #ifdef IB_VKDEBUG
     const char *ValidationLayers[] = {"VK_LAYER_KHRONOS_validation"};
-#else
-    const char *ValidationLayers[] = {};
 #endif
 
     struct ImageAllocation
@@ -1035,8 +1033,11 @@ namespace IB
             createInfo.pApplicationInfo = &appInfo;
             createInfo.enabledExtensionCount = arrayCount(InstanceExtensions);
             createInfo.ppEnabledExtensionNames = InstanceExtensions;
+
+#ifdef IB_VKDEBUG
             createInfo.enabledLayerCount = arrayCount(ValidationLayers);
             createInfo.ppEnabledLayerNames = ValidationLayers;
+#endif // IB_VKDEBUG
 
             IB_VKCHECK(vkCreateInstance(&createInfo, NoAllocator, &RendererContext.VulkanInstance));
         }
@@ -1191,8 +1192,11 @@ namespace IB
                 deviceCreateInfo.pQueueCreateInfos = queueCreateInfo;
                 deviceCreateInfo.pEnabledFeatures = &physicalDeviceFeatures;
                 deviceCreateInfo.ppEnabledExtensionNames = DeviceExtensions;
+
+#ifdef IB_VKDEBUG
                 deviceCreateInfo.enabledLayerCount = arrayCount(ValidationLayers);
                 deviceCreateInfo.ppEnabledLayerNames = ValidationLayers;
+#endif // IB_VKDEBUG
 
                 IB_VKCHECK(vkCreateDevice(RendererContext.PhysicalDevice, &deviceCreateInfo, NoAllocator, &RendererContext.LogicalDevice));
                 for (uint32_t i = 0; i < Queue::Count; i++)
