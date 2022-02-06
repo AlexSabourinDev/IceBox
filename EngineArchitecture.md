@@ -67,7 +67,7 @@ Taking the example of a renderable component, once it's mesh and material are lo
 Once a renderable is loaded it's entity could be marked as loaded telling our entity system about our new entity. And finally, once our cell is loaded, it can prepare our entities for rendering.
 
 ## Asset storage
-Assets will be primarily stored in JSON and compiled to a binary format by an offline content processing tool. Assets should be able to be both loaded from JSON and binary to avoid having to run the content processor for every game run.
+Assets will be stored in a binary format.
 
 The content processor would take our assets and package them up into a binary package alongside a header describing the contents of the package.
 
@@ -80,7 +80,7 @@ I expect modules to be mainly a .h/.cpp pair. Reducing the number of files helps
 * Rendering
 * Jobs
 * Allocator
-* Serialization (JSON)
+* Serialization
 * Asset Loader
 * Content Processor
 * Rendering Frontend
@@ -93,3 +93,8 @@ I expect modules to be mainly a .h/.cpp pair. Reducing the number of files helps
 * Testing
 * Scripting (Lua)
 * Input
+
+## Terminology
+* Resources are assets backed by files like images, meshes, materials, cells, etc
+* Assets represent anything that can be loaded, created and generalized by IBAsset's API. Often, they have an asset loader associated to them.
+* Assets can have sub assets. A cell can have entities which can have properties. All are assets as they are backed by the asset loader and API
