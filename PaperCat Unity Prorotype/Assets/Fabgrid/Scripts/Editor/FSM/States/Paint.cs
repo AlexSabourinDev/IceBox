@@ -16,6 +16,7 @@ namespace Fabgrid
         private readonly Dictionary<Button, Tile> selectedButtonTilePairs;
         private readonly Dictionary<Button, Tile> buttonTilePairs;
         private Tool currentTool;
+        private Tool previousTool;
         private ToolPanel currentToolPanel;
         private readonly EventHandler eventHandler;
         private readonly ToolFactory toolFactory;
@@ -163,7 +164,11 @@ namespace Fabgrid
             toolTypeField.RegisterCallback<ChangeEvent<System.Enum>>(e =>
             {
                 if (e.newValue == null) return;
-                SwitchTool((ToolType)e.newValue);
+
+                if(e.newValue != e.previousValue)
+                {
+                    SwitchTool((ToolType)e.newValue);
+                }
             });
 
             root.Q<VisualElement>("main-container").
@@ -176,11 +181,12 @@ namespace Fabgrid
             toolTypeField.UnregisterCallback<ChangeEvent<System.Enum>>(e => SwitchTool((ToolType)e.newValue));
         }
 
-        private void SwitchTool(ToolType toolType)
+        private void SwitchTool(ToolType toolType, Tool previous = null)
         {
             currentTool?.OnDestroy();
+            previousTool = previous;
 
-            toolTypeField.value = toolType;
+            toolTypeField.SetValueWithoutNotify(toolType);
             currentTool = toolFactory.Create(toolType);
 
             currentToolPanel?.DestroyPanel();
@@ -377,6 +383,8 @@ namespace Fabgrid
         private void RegisterEvents()
         {
             eventHandler.OnKeyDown += OnKeyDown;
+            eventHandler.OnKeyUp += OnKeyUp;
+
             eventHandler.OnMouseMove += OnMouseMove;
             eventHandler.OnSceneGUI += OnSceneGUI;
             eventHandler.OnMouseDown += OnMouseDown;
@@ -390,6 +398,7 @@ namespace Fabgrid
             eventHandler.OnSceneGUI -= OnSceneGUI;
             eventHandler.OnMouseMove -= OnMouseMove;
             eventHandler.OnKeyDown -= OnKeyDown;
+            eventHandler.OnKeyUp -= OnKeyUp;
         }
 
         private void RegisterCurrentToolEvents()
@@ -466,6 +475,24 @@ namespace Fabgrid
             else if (e.keyCode == tilemap.selectionBoxKey)
             {
                 SwitchTool(ToolType.SelectionBox);
+                e.Use();
+            }
+            else if(e.keyCode == KeyCode.LeftShift)
+            {
+                // Track our previous tool
+                if(currentTool.Type != ToolType.Eraser)
+                {
+                    SwitchTool(ToolType.Eraser, currentTool);
+                    e.Use();
+                }
+            }
+        }
+
+        private void OnKeyUp(Event e)
+        {
+            if (e.keyCode == KeyCode.LeftShift && previousTool != null)
+            {
+                SwitchTool(previousTool.Type);
                 e.Use();
             }
         }

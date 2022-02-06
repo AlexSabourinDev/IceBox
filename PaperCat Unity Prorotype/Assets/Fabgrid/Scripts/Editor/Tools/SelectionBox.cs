@@ -30,7 +30,7 @@ namespace Fabgrid
 
         public SelectionBox(Tilemap3D tilemap) : base(tilemap)
         {
-            toolType = ToolType.RectangleTool;
+            toolType = ToolType.SelectionBox;
             selections = new List<Selection>();
             LoadResources();
 

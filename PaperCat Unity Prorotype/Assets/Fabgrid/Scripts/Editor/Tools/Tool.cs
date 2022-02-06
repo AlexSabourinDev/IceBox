@@ -10,6 +10,8 @@ namespace Fabgrid
         protected ToolType toolType;
         private Camera camera;
 
+        public ToolType Type { get { return toolType; } }
+
         public const float MAX_PLACE_DISTANCE = 140f;
 
         protected Tool(Tilemap3D tilemap)
