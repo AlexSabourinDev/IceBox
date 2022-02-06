@@ -12,7 +12,7 @@
 
 #include <Windows.h>
 
-int main()
+void sampleGraphics()
 {
     struct SampleState
     {

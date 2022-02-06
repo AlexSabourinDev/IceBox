@@ -7,7 +7,7 @@
 #include <Windows.h>
 
 uint32_t volatile Counter = 0;
-int main()
+void sampleThreading()
 {
     IB::initJobSystem();
 

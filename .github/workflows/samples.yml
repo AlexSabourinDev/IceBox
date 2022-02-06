@@ -27,31 +27,7 @@ jobs:
       - name: Build IBEngine Debug|x64
         run: msbuild VisualStudio\IceBox.sln -t:IBEngine -p:Configuration=Debug -p:Platform="x64" -m
       # Build our samples
-      - name: Build Sample Win32 Debug|x64
-        run: msbuild VisualStudio\IceBox.sln -t:Samples\SampleWin32 -p:Configuration=Debug -p:Platform="x64" -m
-      - name: Build Sample Win32 Release|x64
-        run: msbuild VisualStudio\IceBox.sln -t:Samples\SampleWin32 -p:Configuration=Release -p:Platform="x64" -m
-      - name: Build Sample Memory Debug|x64
-        run: msbuild VisualStudio\IceBox.sln -t:Samples\SampleMemory -p:Configuration=Debug -p:Platform="x64" -m
-      - name: Build Sample Memory Release|x64
-        run: msbuild VisualStudio\IceBox.sln -t:Samples\SampleMemory -p:Configuration=Release -p:Platform="x64" -m
-      - name: Build Sample Graphics Debug|x64
-        run: msbuild VisualStudio\IceBox.sln -t:Samples\SampleGraphics -p:Configuration=Debug -p:Platform="x64" -m
-      - name: Build Sample Graphics Release|x64
-        run: msbuild VisualStudio\IceBox.sln -t:Samples\SampleGraphics -p:Configuration=Release -p:Platform="x64" -m
-      - name: Build Sample Threading Debug|x64
-        run: msbuild VisualStudio\IceBox.sln -t:Samples\SampleThreading -p:Configuration=Debug -p:Platform="x64" -m
-      - name: Build Sample Threading Release|x64
-        run: msbuild VisualStudio\IceBox.sln -t:Samples\SampleThreading -p:Configuration=Release -p:Platform="x64" -m
-      - name: Build Sample Asset Loading Debug|x64
-        run: msbuild VisualStudio\IceBox.sln -t:Samples\SampleAssetLoading -p:Configuration=Debug -p:Platform="x64" -m
-      - name: Build Sample Asset Loading Release|x64
-        run: msbuild VisualStudio\IceBox.sln -t:Samples\SampleAssetLoading -p:Configuration=Release -p:Platform="x64" -m
-      - name: Build Sample Editor UI Debug|x64
-        run: msbuild VisualStudio\IceBox.sln -t:Samples\SampleEditorUI -p:Configuration=Debug -p:Platform="x64" -m
-      - name: Build Sample Editor UI Release|x64
-        run: msbuild VisualStudio\IceBox.sln -t:Samples\SampleEditorUI -p:Configuration=Release -p:Platform="x64" -m
-      - name: Build Sample Game Object Debug|x64
-        run: msbuild VisualStudio\IceBox.sln -t:Samples\SampleGameObject -p:Configuration=Debug -p:Platform="x64" -m
-      - name: Build Sample Game Object Release|x64
-        run: msbuild VisualStudio\IceBox.sln -t:Samples\SampleGameObject -p:Configuration=Release -p:Platform="x64" -m
+      - name: Build General Sample Debug|x64
+        run: msbuild VisualStudio\IceBox.sln -t:Samples\GeneralSample -p:Configuration=Debug -p:Platform="x64" -m
+      - name: Build General Sample Release|x64
+        run: msbuild VisualStudio\IceBox.sln -t:Samples\GeneralSample -p:Configuration=Release -p:Platform="x64" -m

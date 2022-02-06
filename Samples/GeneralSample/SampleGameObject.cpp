@@ -20,7 +20,7 @@ void waitOnJob(IB::Job::Handle job)
     IB::destroyThreadEvent(threadEvent);
 };
 
-int main()
+void sampleGameObject()
 {
     IB::WindowDesc winDesc = {};
     winDesc.Name = "Ice Box";

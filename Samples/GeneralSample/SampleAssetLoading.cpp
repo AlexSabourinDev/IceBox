@@ -50,7 +50,7 @@ public:
 
 TransformPropertyAssetStreamer TransformPropertyStreamer;
 
-int main()
+void sampleAssetLoading()
 {
     IB::WindowDesc winDesc = {};
     winDesc.Name = "Ice Box";

@@ -6,7 +6,7 @@
 
 #include <imgui/imgui.h>
 
-int main()
+void sampleEditorUI()
 {
     IB::WindowDesc winDesc = {};
     winDesc.Name = "Ice Box";

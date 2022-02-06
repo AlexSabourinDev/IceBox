@@ -35,7 +35,7 @@ struct GlobalTestClass
     void* Alloc;
 } GlobalTest;
 
-int main()
+void sampleMemory()
 {
     // Global allocation
     {

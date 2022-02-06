@@ -1,7 +1,7 @@
 #include <IBEngine/IBPlatform.h>
 #include <IBEngine/IBLogging.h>
 
-int main()
+void sampleWin32()
 {
     IB::WindowDesc winDesc = {};
     winDesc.Name = "Ice Box";
