@@ -332,8 +332,23 @@ namespace IB
                     }
                 }
 
-                // TODO GithubIssue-48: Resources not backed by the filesystem don't show up here.
+                struct AssetList
+                {
+                    DynamicArray<AssetPath> *Assets;
+                    char const *CurrentResource;
+                };
 
+                AssetList assetList = {assets, resourcePath};
+
+                uint32_t itemCount = assets->count() + 1;
+                // If we didn't find our item and we have a valid resource path
+                // This means our resource is likely dynamic or no longer existing.
+                // Add it to the end of the list.
+                if (currentItem == 0 && resourcePath[0] != 0)
+                {
+                    currentItem = itemCount;
+                    itemCount++;
+                }
                 resourceChanged = ImGui::Combo(
                     label, &currentItem, +[](void *data, int index, char const **text)
                                          {
@@ -343,15 +358,26 @@ namespace IB
                                                  return true;
                                              }
 
-                                             DynamicArray<AssetPath> *assets = reinterpret_cast<DynamicArray<AssetPath> *>(data);
-                                             if (index - 1 >= static_cast<int>(assets->count()))
+                                             AssetList *assetList = reinterpret_cast<AssetList *>(data);
+                                             // If we're at the end of the list,
+                                             // That means our asset is not backed by the filesystem
+                                             // And needs special handling.
+                                             if (index == static_cast<int>(assetList->Assets->count()) + 1)
+                                             {
+                                                 *text = assetList->CurrentResource;
+                                                 return true;
+                                             }
+                                             
+                                             // If we made it this far and we're still passed our
+                                             // asset list, we don't have this element.
+                                             if (index >= static_cast<int>(assetList->Assets->count()) + 2)
                                              {
                                                  return false;
                                              }
-                                             *text = (*assets)[index - 1].Path;
+                                             *text = (*assetList->Assets)[index - 1].Path;
                                              return true;
                                          },
-                    assets, assets->count() + 1);
+                    &assetList, itemCount);
             }
 
             if (resourceChanged)
