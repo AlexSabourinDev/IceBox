@@ -643,20 +643,28 @@ namespace
     };
 
     uint32_t constexpr MaxIndirectDraws = 1024;
+    uint32_t constexpr MaxDirectionalLightInstances = 32;
     struct PerFrameData
     {
-        IB::Mat4x4 VP;
-        uint32_t LightIndex = 0xFFFFFFFF;
+        IB::Mat4x4 WorldToProjection;
     };
 
     struct PerInstanceData
     {
-        IB::Mat3x4 M;
+        IB::Mat3x4 LocalToWorld;
         uint32_t VertexOffset;
         uint32_t MaterialIndex;
     };
 
-    uint32_t constexpr MaxPerFrameDrawDataSize = sizeof(PerFrameData) + sizeof(PerInstanceData) * MaxIndirectDraws;
+    struct DirectionalLightInstance
+    {
+        IB::Float4 DirectionAndLightIndex;
+    };
+
+    uint32_t constexpr MaxPerFrameDrawDataSize = 
+        sizeof(PerFrameData)
+        + sizeof(PerInstanceData) * MaxIndirectDraws
+        + sizeof(DirectionalLightInstance) * MaxDirectionalLightInstances;
     struct IndirectDraw
     {
         struct
@@ -730,8 +738,8 @@ namespace
     uint32_t constexpr MaxLightCount = 32;
     struct DirectionalLight
     {
-        IB::Float4 DirectionAndRadiance;
-        uint32_t Tint;
+        float Radiance = 1.0f;
+        uint32_t Tint = 0xFFFFFFFF;
     };
 
     struct Lighting
@@ -2481,7 +2489,7 @@ namespace IB
     Light::Handle createLight(DirectionalLightDesc const& desc)
     {
         DirectionalLight lightData = {};
-        lightData.DirectionAndRadiance = Float4{ desc.Direction.x, desc.Direction.y, desc.Direction.z, desc.Radiance };
+        lightData.Radiance = desc.Radiance;
         lightData.Tint = desc.Tint;
 
         uint32_t instanceIndex = Lighting.InstanceCount++;
@@ -2673,10 +2681,25 @@ namespace IB
 
                 uint32_t perFrameDataWriteIndex = MaxPerFrameDrawDataSize * fb;
                 PerFrameData perFrameData;
-                perFrameData.VP = view.ViewProj;
-                perFrameData.LightIndex = Light::toValue(view.DirectionalLight);
+                perFrameData.WorldToProjection = view.ViewProj;
                 memcpy(IndirectDraw.PerFrameData.MappedMemory + perFrameDataWriteIndex, &perFrameData, sizeof(PerFrameData));
                 perFrameDataWriteIndex += sizeof(PerFrameData);
+
+                memcpy(IndirectDraw.PerFrameData.MappedMemory + perFrameDataWriteIndex, &view.DirectionalLights.Count, sizeof(uint32_t));
+                perFrameDataWriteIndex += sizeof(uint32_t);
+                for (uint32_t dirLight = 0; dirLight < view.DirectionalLights.Count; dirLight++)
+                {
+                    DirectionalLightInstance directionalLightInstance;
+
+                    directionalLightInstance.DirectionAndLightIndex =
+                        {view.DirectionalLights.Lights[dirLight].Direction,
+                         bitcast<float>(Light::toValue(view.DirectionalLights.Lights[dirLight].Light))};
+                
+                    memcpy(IndirectDraw.PerFrameData.MappedMemory + perFrameDataWriteIndex, &directionalLightInstance, sizeof(directionalLightInstance));
+                    perFrameDataWriteIndex += sizeof(directionalLightInstance);
+                }
+
+                uint32_t const lightWriteEnd = perFrameDataWriteIndex;
 
                 uint32_t indirectDrawCount = 0;
                 for (uint32_t passIndex = 0; passIndex < ViewDesc::ForwardPass::Count; passIndex++)
@@ -2728,7 +2751,7 @@ namespace IB
                             for (uint32_t inst = 0; inst < batch->Meshes[mesh].Count; inst++)
                             {
                                 PerInstanceData perInstanceData;
-                                perInstanceData.M = batch->Meshes[mesh].Transforms[inst];
+                                perInstanceData.LocalToWorld = batch->Meshes[mesh].Transforms[inst];
                                 perInstanceData.VertexOffset = Geometry.Meshes[meshIndex].VertexOffset;
                                 perInstanceData.MaterialIndex = materialIndex;
                                 memcpy(IndirectDraw.PerFrameData.MappedMemory + perFrameDataWriteIndex, &perInstanceData, sizeof(PerInstanceData));
@@ -2743,11 +2766,16 @@ namespace IB
                         {
                             uint32_t InstanceOffset;
                             uint32_t FrameOffset;
-                            uint32_t Lit;
+                            uint32_t InstanceDataOffsetAndFlags;
                         } pushConstantBatchData;
                         pushConstantBatchData.InstanceOffset = passIndirectDrawCountOffset;
                         pushConstantBatchData.FrameOffset = MaxPerFrameDrawDataSize * fb;
-                        pushConstantBatchData.Lit = passIndex == 0 ? 1 : 0;
+                        pushConstantBatchData.InstanceDataOffsetAndFlags = lightWriteEnd;
+                        // Use the last bit for some flag info
+                        if (passIndex == 0)
+                        {
+                            pushConstantBatchData.InstanceDataOffsetAndFlags = pushConstantBatchData.InstanceDataOffsetAndFlags | 0x80000000;
+                        }
 
                         vkCmdPushConstants(currentCommands, ForwardPass.PipelineLayout,
                                            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(pushConstantBatchData), &pushConstantBatchData);

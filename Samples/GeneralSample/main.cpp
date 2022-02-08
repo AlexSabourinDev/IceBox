@@ -12,10 +12,10 @@ int main()
     // sampleAssetLoading();
     // sampleEditorUI();
     // sampleGameObject();
-    // sampleGraphics();
+    sampleGraphics();
     // sampleMemory();
     // sampleThreading();
     // sampleWin32();
-    sampleCollection();
+    // sampleCollection();
 }
 

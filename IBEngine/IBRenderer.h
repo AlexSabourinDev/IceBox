@@ -137,7 +137,6 @@ namespace IB
 
     struct DirectionalLightDesc
     {
-        Float3 Direction = { 0.0f, 0.0f, -1.0f };
         float Radiance = 1.0f;
         uint32_t Tint = 0xFFFFFFFF;
     };
@@ -168,7 +167,18 @@ namespace IB
         };
 
         Mat4x4 ViewProj = Mat4x4::identity();
-        Light::Handle DirectionalLight = InvalidLight;
+
+        struct DirectionalLight
+        {
+            Light::Handle Light = InvalidLight;
+            Float3 Direction = Float3{0.0f, 0.0f, 1.0f};
+        };
+
+        struct
+        {
+            DirectionalLight *Lights = nullptr;
+            uint32_t Count = 0;
+        } DirectionalLights;
 
         struct ForwardPass
         {

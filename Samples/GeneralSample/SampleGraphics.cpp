@@ -198,7 +198,6 @@ void sampleGraphics()
     IB::Material::Handle someMaterial = IB::createMaterial(matDesc);
 
     IB::DirectionalLightDesc lightDesc = {};
-    lightDesc.Direction = IB::fromPolar(0.0f, 3.0f * IB::Pi/4.0f);
     lightDesc.Radiance = IB::Pi;
     IB::Light::Handle directionalLight = IB::createLight(lightDesc);
 
@@ -437,7 +436,12 @@ void sampleGraphics()
 
             IB::ViewDesc viewDesc = {};
             viewDesc.ViewProj = sampleState.ViewProj;
-            viewDesc.DirectionalLight = directionalLight;
+
+            IB::ViewDesc::DirectionalLight light;
+            light.Light = directionalLight;
+            light.Direction = IB::fromPolar(0.0f, 3.0f * IB::Pi / 4.0f);
+            viewDesc.DirectionalLights.Lights = &light;
+            viewDesc.DirectionalLights.Count = 1;
             viewDesc.Forward.Passes[IB::ViewDesc::ForwardPass::Default] = worldPass;
 
             IB::ViewDesc::MeshInstances gizmoInstance = {};

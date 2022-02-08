@@ -318,8 +318,7 @@ namespace IB
             if (assets == nullptr)
             {
                 char const *paths[2] = {"None", resourcePath};
-                // TODO: highlight in red if we have a resource but it wasn't in the asset list.
-                resourceChanged = ImGui::Combo(label, &currentItem, paths, 2);
+                resourceChanged = ImGui::Combo(label, &currentItem, paths, resourcePath[0] != 0 ? 2 : 1);
             }
             else
             {
@@ -344,11 +343,13 @@ namespace IB
                 // If we didn't find our item and we have a valid resource path
                 // This means our resource is likely dynamic or no longer existing.
                 // Add it to the end of the list.
-                if (currentItem == 0 && resourcePath[0] != 0)
+                bool itemNotInList = currentItem == 0 && resourcePath[0] != 0;
+                if (itemNotInList)
                 {
                     currentItem = itemCount;
                     itemCount++;
                 }
+
                 resourceChanged = ImGui::Combo(
                     label, &currentItem, +[](void *data, int index, char const **text)
                                          {
