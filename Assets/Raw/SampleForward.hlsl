@@ -183,6 +183,7 @@ float4 fragMain(V2F input) : SV_TARGET
 
     float4 surfaceColor = Textures[material.TextureIndex].Sample(TextureSampler, input.UV) * input.Color * tint;
 
+    [branch]
     if (isLit(Batch))
     {
         uint lightDataOffset = Batch.FrameOffset + PerFrameDataSize;
