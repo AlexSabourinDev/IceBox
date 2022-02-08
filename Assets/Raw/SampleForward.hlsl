@@ -183,19 +183,22 @@ float4 fragMain(V2F input) : SV_TARGET
 
     float4 surfaceColor = Textures[material.TextureIndex].Sample(TextureSampler, input.UV) * input.Color * tint;
 
-    uint lightDataOffset = Batch.FrameOffset + PerFrameDataSize;
-    uint directionalLightCount = PerFrameBuffer.Load<uint>(lightDataOffset);
-    lightDataOffset += sizeof(uint);
-    for (uint i = 0; i < directionalLightCount; i++)
+    if (isLit(Batch))
     {
-        DirectionalLightInstance lightInstance = loadLightInstanceData(PerFrameBuffer, lightDataOffset, i);
+        uint lightDataOffset = Batch.FrameOffset + PerFrameDataSize;
+        uint directionalLightCount = PerFrameBuffer.Load<uint>(lightDataOffset);
+        lightDataOffset += sizeof(uint);
+        for (uint i = 0; i < directionalLightCount; i++)
+        {
+            DirectionalLightInstance lightInstance = loadLightInstanceData(PerFrameBuffer, lightDataOffset, i);
 
-        DirectionalLight light = lightInstance.LightData;
-        float3 albedo = surfaceColor.rgb;
-        float3 lambertianBRDF = albedo / Pi;
-        float3 lightRadiance = fromRGBA(light.Tint).rgb * light.Radiance;
+            DirectionalLight light = lightInstance.LightData;
+            float3 albedo = surfaceColor.rgb;
+            float3 lambertianBRDF = albedo / Pi;
+            float3 lightRadiance = fromRGBA(light.Tint).rgb * light.Radiance;
 
-        surfaceColor.rgb = lambertianBRDF * saturate(dot(normalize(input.Normal), -lightInstance.Direction)) * lightRadiance;
+            surfaceColor.rgb = lambertianBRDF * saturate(dot(normalize(input.Normal), -lightInstance.Direction)) * lightRadiance;
+        }
     }
 
     return surfaceColor;
