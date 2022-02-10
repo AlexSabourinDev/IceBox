@@ -1436,6 +1436,7 @@ namespace IB
                               IB::ForwardDesc gizmoMatDesc = {};
                               gizmoMatDesc.AlbedoTint = IB::toRGBA(1.0f, 1.0f, 1.0f, 1.0f);
                               gizmoMatDesc.AlbedoImage = Albedo;
+                              gizmoMatDesc.IsLit = false;
                               Material = IB::createMaterial(gizmoMatDesc);
                           }
 

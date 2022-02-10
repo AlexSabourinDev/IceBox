@@ -92,7 +92,7 @@ uint unpackInstanceDataOffset(BatchData batchData)
     return batchData.InstanceDataOffsetAndFlags & 0x7FFFFFFF;
 }
 
-uint isLit(BatchData batchData)
+bool isLit(BatchData batchData)
 {
     return (batchData.InstanceDataOffsetAndFlags & 0x80000000) != 0;
 }
@@ -138,8 +138,18 @@ V2F vertexMain(VertexInput input)
 struct Material
 {
     uint Tint;
-    uint TextureIndex;
+    uint TextureIndexAndFlags;
 };
+
+uint unpackTextureIndex(Material material)
+{
+    return material.TextureIndexAndFlags & 0x7FFFFFFF;
+}
+
+bool isLit(Material material)
+{
+    return (material.TextureIndexAndFlags & 0x80000000) != 0;
+}
 
 struct DirectionalLight
 {
@@ -181,10 +191,10 @@ float4 fragMain(V2F input) : SV_TARGET
     Material material = Materials[perInstance.MaterialIndex];
     float4 tint = float4(fromRGBA(material.Tint).rgb, 1.0f);
 
-    float4 surfaceColor = Textures[material.TextureIndex].Sample(TextureSampler, input.UV) * input.Color * tint;
+    float4 surfaceColor = Textures[unpackTextureIndex(material)].Sample(TextureSampler, input.UV) * input.Color * tint;
 
     [branch]
-    if (isLit(Batch))
+    if (isLit(Batch) && isLit(material))
     {
         uint lightDataOffset = Batch.FrameOffset + PerFrameDataSize;
         uint directionalLightCount = PerFrameBuffer.Load<uint>(lightDataOffset);

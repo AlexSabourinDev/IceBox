@@ -124,6 +124,7 @@ namespace IB
     {
         uint32_t AlbedoTint = 0;
         Image::Handle AlbedoImage = {};
+        bool IsLit = true;
     };
 
     namespace Material
@@ -221,6 +222,8 @@ namespace IB
     IB_API void destroyMaterial(Material::Handle material);
 
     IB_API Light::Handle createLight(DirectionalLightDesc const& desc);
+    IB_API Light::Handle updateLight(Light::Handle light, DirectionalLightDesc const &desc);
+    IB_API void destroyLight(Light::Handle light);
 
     IB_API void newImGuiFrame();
     IB_API bool imGuiPlatformMessage(WindowMessagePlatformData const* platformData);

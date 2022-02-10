@@ -85,6 +85,7 @@ namespace IB
         float operator[](uint32_t i) const { return (&x)[i]; }
         float x, y, z, w;
     };
+    inline bool operator!=(Float4 left, Float4 right) { return left.x != right.x || left.y != right.y || left.z != right.z || left.w != right.w; }
 
     struct Half4
     {

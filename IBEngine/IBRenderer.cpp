@@ -686,7 +686,7 @@ namespace
     struct ForwardMaterial
     {
         uint32_t AlbedoTint;
-        uint32_t AlbedoIndex;
+        uint32_t AlbedoIndexAndFlags;
     };
 
     uint32_t constexpr MaxMaterialInstanceCount = 100;
@@ -735,7 +735,7 @@ namespace
         } FrameBuffer[FrameBufferCount];
     };
 
-    uint32_t constexpr MaxLightCount = 32;
+    uint32_t constexpr MaxDirectionalLightCount = 32;
     struct DirectionalLight
     {
         float Radiance = 1.0f;
@@ -746,7 +746,13 @@ namespace
     {
         VkBuffer LightBuffer;
         Allocation LightBufferAllocation;
-        uint32_t InstanceCount = 0;
+        uint64_t DirectionalLightAllocations[IB::Bitset::bufferSize(MaxDirectionalLightCount)];
+
+        struct
+        {
+            uint32_t Lights[MaxDirectionalLightCount];
+            uint32_t Count = 0;
+        } Cleanup[FrameBufferCount];
     };
 
     VulkanAllocator Allocator;
@@ -1697,7 +1703,7 @@ namespace IB
         {
             VkBufferCreateInfo bufferCreate = {};
             bufferCreate.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-            bufferCreate.size = MaxLightCount * sizeof(DirectionalLight);
+            bufferCreate.size = MaxDirectionalLightCount * sizeof(DirectionalLight);
             bufferCreate.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT; // buffers created through create buffer can always be transfered to
 
             VkBuffer *buffer = &Lighting.LightBuffer;
@@ -1708,7 +1714,7 @@ namespace IB
 
             AllocationRequest request;
             request.Alignment = memoryRequirements.alignment;
-            request.Size = MaxLightCount * sizeof(DirectionalLight);
+            request.Size = MaxDirectionalLightCount * sizeof(DirectionalLight);
             request.LogicalDevice = RendererContext.LogicalDevice;
             request.PhysicalDevice = RendererContext.PhysicalDevice;
             request.RequiredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
@@ -1795,7 +1801,7 @@ namespace IB
             VkDescriptorBufferInfo lightBufferInfo = {};
             lightBufferInfo.buffer = Lighting.LightBuffer;
             lightBufferInfo.offset = 0;
-            lightBufferInfo.range = MaxLightCount * sizeof(DirectionalLight);
+            lightBufferInfo.range = MaxDirectionalLightCount * sizeof(DirectionalLight);
 
             VkWriteDescriptorSet writeLights = {};
             writeLights.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -2424,7 +2430,8 @@ namespace IB
     {
         ForwardMaterial matData = {};
         matData.AlbedoTint = desc.AlbedoTint;
-        matData.AlbedoIndex = Image::toValue(desc.AlbedoImage);
+        matData.AlbedoIndexAndFlags = Image::toValue(desc.AlbedoImage);
+        matData.AlbedoIndexAndFlags |= desc.IsLit ? 0x80000000 : 0;
 
         uint64_t instanceIndex = IB::Bitset::findClearedSlot(ForwardPass.InstanceAllocations, MaxMaterialInstanceCount);
         IB_ASSERT(instanceIndex != IB::Bitset::NoSlot, "Too many materials!");
@@ -2492,8 +2499,9 @@ namespace IB
         lightData.Radiance = desc.Radiance;
         lightData.Tint = desc.Tint;
 
-        uint32_t instanceIndex = Lighting.InstanceCount++;
-        IB_ASSERT(instanceIndex < MaxLightCount, "Too many lights!");
+        uint64_t instanceIndex = IB::Bitset::findClearedSlot(Lighting.DirectionalLightAllocations, MaxDirectionalLightCount);
+        IB_ASSERT(instanceIndex != IB::Bitset::NoSlot, "Too many directional lights!");
+        IB::Bitset::setSlot(Lighting.DirectionalLightAllocations, instanceIndex);
 
         StagingBuffer staging = requestStagingBuffer(&Staging, sizeof(lightData));
         memcpy(staging.Memory, &lightData, sizeof(lightData));
@@ -2531,7 +2539,23 @@ namespace IB
             Staging.Transfers[Queue::Transfer].Commands[Staging.Transfers[Queue::Transfer].ActiveCount++] = commandBuffer;
         }
 
-        return Light::toHandle(instanceIndex);
+        return Light::toHandle(static_cast<uint32_t>(instanceIndex));
+    }
+
+    Light::Handle updateLight(Light::Handle light, DirectionalLightDesc const &desc)
+    {
+        // Lights are simply recreated in a new block
+        destroyLight(light);
+        return createLight(desc);
+    }
+
+    void destroyLight(Light::Handle light)
+    {
+        uint32_t lightIndex = Light::toValue(light);
+        // Our release frame is the last frame we had in flight
+        uint32_t releaseFrame = (RendererContext.Present.ActiveFrame - 1) % FrameBufferCount;
+        IB_ASSERT(Lighting.Cleanup[releaseFrame].Count < MaxDirectionalLightCount, "Releasing too many lights. Are we releasing a light more than once?");
+        Lighting.Cleanup[releaseFrame].Lights[Lighting.Cleanup[releaseFrame].Count++] = lightIndex;
     }
 
     void newImGuiFrame()
@@ -2623,6 +2647,16 @@ namespace IB
             }
             ForwardPass.Cleanup[fb].Count = 0;
         }
+
+        // Cleanup our released lights once we're sure they aren't in use anymore.
+        {
+            for (uint32_t i = 0; i < Lighting.Cleanup[fb].Count; i++)
+            {
+                IB::Bitset::clearSlot(Lighting.DirectionalLightAllocations, Lighting.Cleanup[fb].Lights[i]);
+            }
+            Lighting.Cleanup[fb].Count = 0;
+        }
+
 
         VkCommandBuffer currentCommands = RendererContext.Present.FrameBuffer[fb].PrimaryCommandBuffer;
         {

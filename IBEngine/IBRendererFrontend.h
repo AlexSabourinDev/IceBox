@@ -3,6 +3,7 @@
 #include <stdint.h>
 
 #include "IBEngineAPI.h"
+#include "IBMath.h"
 
 struct ImDrawData;
 namespace IB
@@ -143,6 +144,21 @@ namespace IB
     Asset::FourCC const RendererPropertyType = Asset::toFourCC("RNDR");
     IB_API Property::Handle createRendererProperty(char const* meshPath, char const* materialPath);
     IB_API MeshAsset::Handle getMeshFromRendererProperty(Property::Handle renderer);
+
+    struct DirectionalLightPropertyDesc
+    {
+        Float4 Tint = {1.0f, 1.0f, 1.0f, 1.0f};
+        float Radiance = 1.0f;
+    };
+
+    inline bool operator!=(DirectionalLightPropertyDesc const &left, DirectionalLightPropertyDesc const &right)
+    {
+        return left.Tint != right.Tint || left.Radiance != right.Radiance;
+    }
+
+    Asset::FourCC const DirectionalLightPropertyType = Asset::toFourCC("DLGH");
+    IB_API Property::Handle createDirectionalLightProperty(DirectionalLightPropertyDesc const &lightDesc);
+
     IB_API MaterialAsset::Handle createMaterialAsset(MaterialAsset::Desc asset);
     Job::Handle createMeshAssetAsync(MeshAsset::Desc meshAsset, MeshAsset::Handle* meshHandle);
     Job::Handle updateMeshAssetAsync(MeshAsset::Handle mesh, MeshAsset::Desc meshAsset);

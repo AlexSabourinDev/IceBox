@@ -12,6 +12,7 @@
 #include <imgui/imgui.h>
 
 #include <algorithm>
+#include <string.h>
 
 namespace IB
 {
@@ -720,6 +721,137 @@ namespace IB
 
 namespace IB
 {
+    namespace
+    {
+        struct DirectionalLightProperty
+        {
+            DirectionalLightPropertyDesc Desc;
+            Light::Handle Light = InvalidLight;
+        };
+
+        DirectionalLightProperty *toDirectionalLight(Asset::Handle asset) { return reinterpret_cast<DirectionalLightProperty *>(IB::Asset::toValue(asset)); }
+        DirectionalLightProperty *toDirectionalLight(Property::Handle propertyHandle) { return reinterpret_cast<DirectionalLightProperty *>(Property::toValue(propertyHandle)); }
+        
+        ThreadSafePool<DirectionalLightProperty> DirectionalLightProperties;
+
+        class DirectionalLightPropertyAssetStreamer : public Asset::IStreamer
+        {
+        public:
+            IB::Asset::Handle create() override
+            {
+                DirectionalLightProperty &directionalLight = DirectionalLightProperties.add();
+
+                launchJob([light = &directionalLight](Job::Handle /*currentJob*/)
+                          {
+                              DirectionalLightDesc desc =
+                                  {light->Desc.Radiance,
+                                   packRGBA(light->Desc.Tint)};
+                              light->Light = createLight(desc);
+                              return JobResult::Complete;
+                          },
+                          NoJobType, RendererJobQueueIndex);
+
+                return IB::Asset::toHandle(reinterpret_cast<uint64_t>(&directionalLight));
+            }
+
+            IB::Asset::LoadContinuation loadAsync(IB::Asset::LoadContext *context) override
+            {
+                DirectionalLightProperty baseDirectionalLight = {};
+                if (context->BaseAsset != IB::InvalidAsset)
+                {
+                    baseDirectionalLight = *toDirectionalLight(context->BaseAsset);
+                }
+
+                DirectionalLightProperty &directionalLight = *toDirectionalLight(context->LoadingAsset);
+                Serialization::Delta::fromBinary(&context->Stream, &directionalLight.Desc, baseDirectionalLight.Desc);
+
+                launchJob([light = &directionalLight](Job::Handle /*currentJob*/)
+                          {
+                              DirectionalLightDesc desc =
+                                  {light->Desc.Radiance,
+                                   packRGBA(light->Desc.Tint)};
+                              light->Light = createLight(desc);
+                              return JobResult::Complete;
+                          },
+                          NoJobType, RendererJobQueueIndex);
+
+                return Asset::complete(Asset::toHandle(reinterpret_cast<uint64_t>(&directionalLight)));
+            }
+
+            void saveThreadSafe(IB::Asset::SaveContext *context) override
+            {
+                DirectionalLightProperty baseDirectionalLight = {};
+                if (context->BaseAsset != IB::InvalidAsset)
+                {
+                    baseDirectionalLight = *toDirectionalLight(context->BaseAsset);
+                }
+
+                DirectionalLightProperty &directionalLight = *toDirectionalLight(context->Asset);
+                Serialization::Delta::toBinary(context->Stream, directionalLight.Desc, baseDirectionalLight.Desc);
+            }
+
+            void unloadThreadSafe(IB::Asset::Handle assetHandle) override
+            {
+                DirectionalLightProperties.remove(*toDirectionalLight(assetHandle));
+            }
+        };
+
+        DirectionalLightPropertyAssetStreamer DirectionalLightPropertyStreamer;
+    }
+
+    namespace Editor
+    {
+        void directionalLightEditor(Asset::Handle asset, void *parentData)
+        {
+            PropertyEditorState *editorState = reinterpret_cast<PropertyEditorState *>(parentData);
+
+            if (propertyHeader("Directional Light", &editorState->DestroyProperty))
+            {
+                DirectionalLightProperty *directionalLightProperty = toDirectionalLight(asset);
+                if (ImGui::BeginTable("Inspector Table", 2))
+                {
+                    bool assetModified = false;
+
+                    ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed);
+                    ImGui::TableSetupColumn("Data", ImGuiTableColumnFlags_None);
+
+                    ImGui::TableNextColumn();
+                    ImGui::Text("Tint");
+
+                    ImGui::TableNextColumn();
+                    ImGui::SetNextItemWidth(-FLT_MIN);
+                    assetModified |= ImGui::ColorEdit4("", &directionalLightProperty->Desc.Tint[0]);
+
+                    ImGui::TableNextColumn();
+                    ImGui::Text("Radiance");
+
+                    ImGui::TableNextColumn();
+                    ImGui::SetNextItemWidth(-FLT_MIN);
+                    assetModified |= ImGui::InputFloat("", &directionalLightProperty->Desc.Radiance);
+
+                    if (assetModified)
+                    {
+                        launchJob([light = directionalLightProperty](Job::Handle /*currentJob*/)
+                                  {
+                                      DirectionalLightDesc desc =
+                                          {light->Desc.Radiance,
+                                           packRGBA(light->Desc.Tint)};
+                                      light->Light = updateLight(light->Light, desc);
+                                      return JobResult::Complete;
+                                  },
+                                  NoJobType, RendererJobQueueIndex);
+                    }
+
+                    ImGui::EndTable();
+                }
+                ImGui::TreePop();
+            }
+        }
+    }
+}
+
+namespace IB
+{
 
     void initRendererFrontend(RendererFrontendDesc const &desc)
     {
@@ -729,6 +861,7 @@ namespace IB
         Asset::addStreamer(ShaderType, &ShaderStreamer);
         Asset::addStreamer(RendererPropertyType, &RendererPropertyStreamer);
         Asset::addStreamer(CameraPropertyType, &CameraStreamer);
+        Asset::addStreamer(DirectionalLightPropertyType, &DirectionalLightPropertyStreamer);
 
         RendererDesc rendererDesc = {desc.Window};
         initRenderer(rendererDesc);
@@ -756,6 +889,7 @@ namespace IB
         Editor::addAssetEditor(RendererPropertyType, &Editor::rendererEditor);
         Editor::addAssetEditor(CameraPropertyType, &Editor::cameraEditor);
         Editor::addAssetEditor(MaterialType, &Editor::materialEditor);
+        Editor::addAssetEditor(DirectionalLightPropertyType, &Editor::directionalLightEditor);
     }
 
     void killRendererFrontend()
@@ -783,6 +917,24 @@ namespace IB
                     &textureJob, 1, NoJobType, RendererJobQueueIndex);
 
         return MaterialAsset::toHandle(reinterpret_cast<uint64_t>(&materialData));
+    }
+
+    Property::Handle createDirectionalLightProperty(DirectionalLightPropertyDesc const &directional)
+    {
+        DirectionalLightProperty* directionalLight = &DirectionalLightProperties.add();
+        directionalLight->Desc = directional;
+
+        launchJob([directionalLight](Job::Handle /*currentJob*/)
+                  {
+                      DirectionalLightDesc desc =
+                          {directionalLight->Desc.Radiance,
+                           packRGBA(directionalLight->Desc.Tint)};
+                      directionalLight->Light = createLight(desc);
+                      return JobResult::Complete;
+                  },
+                  NoJobType, RendererJobQueueIndex);
+
+        return Property::toHandle(reinterpret_cast<uint64_t>(directionalLight));
     }
 
     Job::Handle createMeshAssetAsync(MeshAsset::Desc meshAsset, MeshAsset::Handle* meshHandle)
@@ -874,12 +1026,22 @@ namespace IB
         // TODO GithubIssue-46: dynamic stack
         SortKey keys[32];
         Transform transforms[32];
+
+        ViewDesc::DirectionalLight directionalLights[32];
+        uint32_t directionalLightCount = 0;
         for (uint32_t i = 0; i < entityCount; i++)
         {
-            Property::Handle handle = getPropertyFromEntity(entities[i], RendererPropertyType);
-            if (handle != InvalidProperty)
+            Transform transform;
+            Property::Handle transformHandle = getPropertyFromEntity(entities[i], TransformPropertyType);
+            if (transformHandle != InvalidProperty)
             {
-                RendererProperty *renderer = toRendererProperty(handle);
+                transform = getLocalTransform(transformHandle);
+            }
+
+            Property::Handle rendererHandle = getPropertyFromEntity(entities[i], RendererPropertyType);
+            if (rendererHandle != InvalidProperty)
+            {
+                RendererProperty *renderer = toRendererProperty(rendererHandle);
                 if (Asset::isResourceAssetAvailable(renderer->MeshResource) && Asset::isResourceAssetAvailable(renderer->MaterialResource))
                 {
                     Asset::Handle materialAsset = Asset::getAssetFromResource(renderer->MaterialResource);
@@ -894,15 +1056,30 @@ namespace IB
                             keys[rendererCount].Handles.Mesh = mesh;
                             keys[rendererCount].Handles.Material = material->Material;
 
-                            Property::Handle transformHandle = getPropertyFromEntity(entities[i], TransformPropertyType);
                             if (transformHandle != InvalidProperty)
                             {
-                                transforms[rendererCount] = getLocalTransform(transformHandle);
+                                transforms[rendererCount] = transform;
                             }
 
                             rendererCount++;
                         }
                     }
+                }
+            }
+
+            Property::Handle directionalLightHandle = getPropertyFromEntity(entities[i], DirectionalLightPropertyType);
+            if (directionalLightHandle != InvalidProperty)
+            {
+                DirectionalLightProperty* directional = toDirectionalLight(directionalLightHandle);
+                if (directional->Light != InvalidLight)
+                {
+                    Float3 direction = {0.0f, 1.0f, 0.0f};
+                    direction = transformDirection(transform, direction);
+
+                    directionalLights[directionalLightCount++] = ViewDesc::DirectionalLight{
+                        directional->Light,
+                        direction
+                    };
                 }
             }
         }
@@ -938,6 +1115,12 @@ namespace IB
             {
                 viewProj = getViewProjection(cameraProperty, cameraTransform);
             }
+
+            viewDesc.DirectionalLights =
+                {
+                    directionalLights,
+                    directionalLightCount
+                };
 
             if (rendererCount > 0)
             {
