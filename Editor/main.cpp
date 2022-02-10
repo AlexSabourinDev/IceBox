@@ -243,7 +243,8 @@ int main()
     }
 
     {
-        Asset::releaseResourceAsync(CellResource);
+        Job::Handle releaseJob = Asset::releaseResourceAsync(CellResource);
+        wait(releaseJob);
 
         killGeometryToolkit();
         ImGizmo::kill();
