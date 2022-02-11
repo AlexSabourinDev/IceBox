@@ -34,14 +34,10 @@ void sampleEditorUI()
     rendererDesc.Window = window;
     IB::initRenderer(rendererDesc);
 
-    IB::PlatformMessage message = IB::PlatformMessage::None;
-    while (message != IB::PlatformMessage::Quit)
+    IB::MessageQueueState state = IB::MessageQueueState::Continue;
+    while (state != IB::MessageQueueState::Quit)
     {
-        IB::consumeMessageQueue([](void *data, IB::PlatformMessage message)
-        {
-            *reinterpret_cast<IB::PlatformMessage *>(data) = message;
-        },
-            &message);
+        state = IB::processMessageQueue();
 
         IB::newImGuiFrame();
 

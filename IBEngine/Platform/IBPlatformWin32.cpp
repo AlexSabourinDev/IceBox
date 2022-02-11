@@ -328,20 +328,23 @@ namespace IB
         ActiveWindows[Window::toValue(window)] = {};
     }
 
-    void consumeMessageQueue(void (*consumerFunc)(void *data, PlatformMessage message), void *data)
+    MessageQueueState processMessageQueue()
     {
-        MSG msg;
+        MessageQueueState state = MessageQueueState::Continue;
 
+        MSG msg;
         while (PeekMessageW(&msg, NULL, 0, 0, PM_REMOVE))
         {
             if (msg.message == WM_QUIT)
             {
-                consumerFunc(data, PlatformMessage::Quit);
+                state = MessageQueueState::Quit;
             }
 
             TranslateMessage(&msg);
             DispatchMessage(&msg);
         }
+
+        return state;
     }
 
     void sendQuitMessage()

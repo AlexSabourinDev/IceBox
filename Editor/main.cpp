@@ -83,13 +83,11 @@ namespace IB
 
         JobResult platformMessageQueueJob(Job::Handle /*currentJob*/)
         {
-            consumeMessageQueue([](void *, PlatformMessage message) {
-                if (message == PlatformMessage::Quit)
-                {
-                    EditorAlive = false;
-                }
-            },
-                                nullptr);
+            if (processMessageQueue() == MessageQueueState::Quit)
+            {
+                EditorAlive = false;
+            }
+
             return JobResult::Complete;
         }
 

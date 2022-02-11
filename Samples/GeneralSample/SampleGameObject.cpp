@@ -109,14 +109,10 @@ void sampleGameObject()
     waitOnJob(loadJob);
     IB::Cell::Handle cellHandle = IB::toCellHandle(IB::Asset::getAssetFromResource(cellResource));
 
-    IB::PlatformMessage message = IB::PlatformMessage::None;
-    while (message != IB::PlatformMessage::Quit)
+    IB::MessageQueueState state = IB::MessageQueueState::Continue;
+    while (state != IB::MessageQueueState::Quit)
     {
-        IB::consumeMessageQueue([](void *data, IB::PlatformMessage message)
-        {
-            *reinterpret_cast<IB::PlatformMessage *>(data) = message;
-        },
-            &message);
+        state = IB::processMessageQueue();
 
         uint8_t tempMemory[1024];
         IB::StackAllocator allocator = IB::createStackAllocator(tempMemory, 1024);

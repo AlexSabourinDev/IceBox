@@ -132,19 +132,14 @@ namespace IB
     IB_API Window::Handle createWindow(WindowDesc desc);
     IB_API void destroyWindow(Window::Handle window);
 
-    // Messaging API
-    // IceBox's platform abstraction is a message queue.
-    // You can send messages to the queue and windows can also generate messages
-    // The concept is very similar to Window's message queue, time will tell if it will map
-    // to other platforms.
-    enum class PlatformMessage
+    enum class MessageQueueState
     {
-        None,
+        Continue,
         Quit
     };
 
     // returns whether or not there are more messages to consume.
-    IB_API void consumeMessageQueue(void (*consumerFunc)(void *data, PlatformMessage message), void *data);
+    IB_API MessageQueueState processMessageQueue();
     IB_API void sendQuitMessage();
 
     // Allocation API

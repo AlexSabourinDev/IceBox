@@ -200,7 +200,7 @@ int main(int argc, char const *argv[])
 
         char const *relativePath = argv[3];
 
-        char rawPath[255];
+        char rawPath[IB::MaxFilePath];
         sprintf(rawPath, "%s/%s", rawDirectory, relativePath);
         IB_ASSERT(!IB::isDirectory(rawPath), "File is a directory. Support is not in yet.");
 

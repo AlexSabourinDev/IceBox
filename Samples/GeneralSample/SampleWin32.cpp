@@ -75,13 +75,10 @@ void sampleWin32()
     IB::Window::Handle window = IB::createWindow(winDesc);
     IB_LOG(IB::LogLevel::Log, "Sample", "Window created!");
 
-    IB::PlatformMessage message = IB::PlatformMessage::None;
-    while (message != IB::PlatformMessage::Quit)
+    IB::MessageQueueState state = IB::MessageQueueState::Continue;
+    while (state != IB::MessageQueueState::Quit)
     {
-        IB::consumeMessageQueue([](void *data, IB::PlatformMessage message)
-        {
-            *reinterpret_cast<IB::PlatformMessage*>(data) = message;
-        }, &message);
+        state = IB::processMessageQueue();
     }
 
     IB::destroyWindow(window);
