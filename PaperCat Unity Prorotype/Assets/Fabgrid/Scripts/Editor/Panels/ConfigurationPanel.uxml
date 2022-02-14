@@ -7,20 +7,20 @@
 >
   <engine:VisualElement name="configuration-panel" class="panel">
     
-    <engine:VisualElement class="rounded-panel">
+    <engine:VisualElement class="sub-panel rounded-panel">
       <editor:ColorField name="grid-color-field" class="field" label="Grid Color"></editor:ColorField>
       <editor:FloatField name="grid-spacing-float-field" class="field" label="Grid Spacing"></editor:FloatField>
       <editor:IntegerField name="grid-size-field" class="field" label="Grid Size"></editor:IntegerField>
     </engine:VisualElement>
     
-    <engine:VisualElement class="rounded-panel">
+    <engine:VisualElement class="sub-panel rounded-panel">
       <!--<engine:Toggle name="only-remove-on-same-floor-toggle" class="field" label="Only Remove On Equal Floor"></engine:Toggle>-->
       <editor:FloatField name="floor-spacing-field" class="field" label="Floor Spacing" binding-path="floorSpacing"></editor:FloatField>
       <editor:FloatField name="rotation-step-angle-float-field" class="field" label="Rotation Step Angle"></editor:FloatField>
-      <editor:EnumField name="snap-option-field" class="field" label="Snap Option" binding-path="snapOption" type="Fabgrid.SnapOption, Assembly-CSharp"></editor:EnumField>
+      <editor:EnumField name="snap-option-field" class="field" label="Snap Option" binding-path="snapOption" type="Fabgrid.SnapOption, Fabgrid"></editor:EnumField>
     </engine:VisualElement>
 
-    <engine:VisualElement class="rounded-panel">
+    <engine:VisualElement class="sub-panel rounded-panel">
       <editor:EnumField name="selection-box-key-field" class="field" label="Selection Box Key" binding-path="selectionBoxKey" type="UnityEngine.KeyCode, UnityEngine.CoreModule"></editor:EnumField>
       <editor:EnumField name="brush-key-field" class="field" label="Brush Key" binding-path="brushKey" type="UnityEngine.KeyCode, UnityEngine.CoreModule"></editor:EnumField>
       <editor:EnumField name="eraser-key-field" class="field" label="Eraser Key" binding-path="eraserKey" type="UnityEngine.KeyCode, UnityEngine.CoreModule"></editor:EnumField>

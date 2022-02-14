@@ -1,6 +1,7 @@
 ﻿using System.Collections.Generic;
 using UnityEngine;
 using System.Linq;
+using System;
 
 #if UNITY_EDITOR
 
@@ -35,6 +36,9 @@ namespace Fabgrid
         public Mesh tilePreviewMesh;
         public Material tilePreviewMaterial;
 
+        public GameObject selectedLayer;
+        public List<GameObject> layers = new List<GameObject>();
+
         public OffsetOption rectangleToolOffsetOption = OffsetOption.Relative;
         public Vector2 rectangleOffsetMultiplier = Vector2.one;
 
@@ -53,9 +57,18 @@ namespace Fabgrid
 
         public const float MIN_GRID_SPACING = 0.0001f;
 
+        public List<Category> categories = new List<Category>();
+        public Category selectedCategory = null;
+        public Action OnRefresh { get; set; }
+
         public Vector3 GetFloorPosition()
         {
             return transform.position + (Vector3.up * floorIndex * floorSpacing);
+        }
+
+        public void Refresh()
+        {
+            OnRefresh.Invoke();
         }
 
 #if UNITY_EDITOR
@@ -122,6 +135,11 @@ namespace Fabgrid
             {
                 OnEditorUpdate();
             }
+        }
+
+        public bool HasSelectedVisibleLayer()
+        {
+            return selectedLayer != null && selectedLayer.activeSelf;
         }
     }
 }

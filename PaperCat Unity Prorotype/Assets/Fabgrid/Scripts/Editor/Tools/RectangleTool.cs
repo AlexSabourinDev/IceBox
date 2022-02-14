@@ -1,5 +1,6 @@
-﻿using UnityEngine;
-using UnityEngine.InputSystem;
+﻿#if UNITY_EDITOR
+
+using UnityEngine;
 
 namespace Fabgrid
 {
@@ -22,13 +23,26 @@ namespace Fabgrid
 
         public override void OnMouseDown(Event e)
         {
-            if (e.button != 0) return;
-            if (e.alt || Keyboard.current.leftAltKey.isPressed) return;
-            if (e.control || Keyboard.current.leftCtrlKey.isPressed) return;
+            if (!EvaluatePreConditions(e)) return;
 
             mouseDownPosition = positionCalculator.GetPosition(e.mousePosition);
             isDragging = true;
             e.Use();
+        }
+
+        private bool EvaluatePreConditions(Event e)
+        {
+            if (e.button != 0) return false;
+            if (e.alt || Input.GetKey(KeyCode.LeftAlt)) return false;
+            if (e.control || Input.GetKey(KeyCode.LeftControl)) return false;
+
+            //if (!tilemap.HasSelectedVisibleLayer())
+            //{
+            //    FabgridLogger.LogInfo("Cannot place tiles without selecting a visible layer first.");
+            //    return false;
+            //}
+
+            return true;
         }
 
         public override void OnMouseUp(Event e)
@@ -159,3 +173,5 @@ namespace Fabgrid
         }
     }
 }
+
+#endif

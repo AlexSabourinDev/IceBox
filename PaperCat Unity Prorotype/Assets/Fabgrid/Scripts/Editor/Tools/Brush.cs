@@ -1,6 +1,7 @@
-﻿using UnityEditor;
+﻿#if UNITY_EDITOR
+
+using UnityEditor;
 using UnityEngine;
-using UnityEngine.InputSystem;
 
 namespace Fabgrid
 {
@@ -25,16 +26,23 @@ namespace Fabgrid
 
         public override void OnMouseDown(Event e)
         {
-            if (e.button != 0) return;
-            if (e.alt || Keyboard.current.leftAltKey.isPressed) return;
-            if (e.control || Keyboard.current.leftCtrlKey.isPressed) return;
-            if (tilemap.selectedTile == null || tilemap.selectedTile.prefab == null) return;
+            if (!EvaluatePreConditions(e)) return;
 
             var position = positionCalculator.GetPosition(e.mousePosition);
 
             CreateTileAt(position);
 
             e.Use();
+        }
+
+        private bool EvaluatePreConditions(Event e)
+        {
+            if (e.button != 0) return false;
+            if (e.alt || Input.GetKey(KeyCode.LeftAlt)) return false;
+            if (e.control || Input.GetKey(KeyCode.LeftControl)) return false;
+            if (tilemap.selectedTile == null || tilemap.selectedTile.prefab == null) return false;
+
+            return true;
         }
 
         public override void OnRender(Event e)
@@ -45,3 +53,5 @@ namespace Fabgrid
         }
     }
 }
+
+#endif

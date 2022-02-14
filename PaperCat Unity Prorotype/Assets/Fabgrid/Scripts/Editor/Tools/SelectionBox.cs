@@ -1,4 +1,6 @@
-﻿using System.Collections.Generic;
+﻿#if UNITY_EDITOR
+
+using System.Collections.Generic;
 using System.Linq;
 using UnityEditor;
 using UnityEngine;
@@ -52,6 +54,7 @@ namespace Fabgrid
         public override void OnMouseDown(Event e)
         {
             if (e.button != 0) return;
+            //if (!tilemap.HasSelectedVisibleLayer()) return;
 
             Reset();
 
@@ -175,3 +178,5 @@ namespace Fabgrid
         }
     }
 }
+
+#endif

@@ -44,10 +44,6 @@
 	height: 50px;
 }
 
-.selected-tile-button {
-	background-color: rgb(100, 100, 100);
-}
-
 .tile-edit-button {
 	display: flex;
 	margin: 5px;
@@ -77,4 +73,42 @@
 #search-field {
 	margin-top: 8px;
 	margin-bottom: 5px;
+}
+
+.layer-hovered {
+	background-color: rgb(60, 80, 120);
+}
+
+.layer-selected {
+	background-color: rgb(80, 100, 140);
+}
+
+#tile-panel {
+	min-height: 380px;
+}
+
+#layers-panel {
+	min-height: 80px;
+}
+
+#navigation-panel {
+	display: flex;
+	height:40px;
+	flex-direction: row;
+	align-items: center;
+}
+
+#layers-panel-scroll-view {
+	margin-top: 4px;
+}
+
+#filter-button {
+	width: 20px;
+	height: 20px;
+	padding: 1px;
+}
+
+.filter-button-icon {
+	display: flex;
+	/*margin: 8px;	*/
 }

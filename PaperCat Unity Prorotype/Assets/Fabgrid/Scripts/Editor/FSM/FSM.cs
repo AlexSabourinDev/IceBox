@@ -2,13 +2,13 @@
 {
     public class FSM
     {
-        private State currentState;
+        public State CurrentState { get; private set; }
 
         public void Transition(State state)
         {
-            currentState?.OnExit();
-            currentState = state;
-            currentState.OnEnter();
+            CurrentState?.OnExit();
+            CurrentState = state;
+            CurrentState.OnEnter();
         }
 
         /// <summary>
@@ -16,7 +16,7 @@
         /// </summary>
         public void OnSceneGUI()
         {
-            currentState?.OnSceneGUI();
+            CurrentState?.OnSceneGUI();
         }
 
         /// <summary>
@@ -24,12 +24,12 @@
         /// </summary>
         public void OnInspectorGUI()
         {
-            currentState?.OnSceneGUI();
+            CurrentState?.OnSceneGUI();
         }
 
         public void OnDestroy()
         {
-            currentState?.OnExit();
+            CurrentState?.OnExit();
         }
     }
 }

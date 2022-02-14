@@ -14,5 +14,10 @@ namespace Fabgrid
         {
             Debug.LogWarning($"Fabgrid Warning: {message}");
         }
+
+        public static void LogInfo(string message)
+        {
+            Debug.Log($"Fabgrid Info: {message}");
+        }
     }
 }

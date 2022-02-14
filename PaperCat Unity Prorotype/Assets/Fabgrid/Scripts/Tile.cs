@@ -7,34 +7,18 @@ namespace Fabgrid
     {
         public GameObject prefab;
         public Vector3 offset;
-        public Vector3 customSize;
+        public Vector3 size;
         public SizeCalculationOption sizeCalculationOption;
         [HideInInspector]
-        public Texture2D thumbnail; 
+        public Texture2D thumbnail;
+        public Category category = null;
 
         public Bounds GetWorldBounds(Vector3 position, Quaternion rotation, Tilemap3D tilemap)
         {
-            if (position.IsInfinity())
-            {
+            if (position.IsInfinity() || prefab == null)
                 return new Bounds(Vector3.zero, Vector3.one);
-            }
 
-            if (prefab == null)
-            {
-                return new Bounds(Vector3.zero, Vector3.one);
-            }
-
-            // AlexS: Instead of copying our object and then changing it's position
-            // Correctly create it with our position and rotation.
-            // This will assure that the world bounds are correctly set in our colliders
-            // Which allows us not to worry about fixing it up later.
-            // Ideally, I'd like to avoid instantiating a new object just to do this however...
-            var copy = GameObject.Instantiate(prefab, position, rotation);
-            var bounds = FabgridUtility.GetWorldBounds(copy, sizeCalculationOption, tilemap);
-
-            Object.DestroyImmediate(copy);
-
-            return bounds;
+            return new Bounds(offset + position, rotation * size);
         }
 
         public Vector3 GetCenterToSurfaceVector(Vector3 position, Quaternion rotation, Vector3 direction, Tilemap3D tilemap)

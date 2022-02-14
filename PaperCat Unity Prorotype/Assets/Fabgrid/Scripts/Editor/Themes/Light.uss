@@ -1,0 +1,11 @@
+.panel {
+	background-color: rgb(175, 175, 175);
+}
+
+.sub-panel {
+	background-color: rgb(155, 155, 155);
+}
+
+.selected-tile-button {
+	background-color: rgb(100, 100, 100);
+}

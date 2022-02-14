@@ -3,48 +3,16 @@ using UnityEngine;
 
 namespace Fabgrid
 {
-    internal struct SortedRenderer
-    {
-        public Renderer renderer;
-        public float distance;
-    }
-
     public static class FabgridRaycaster
     {
         public static FabgridRaycastHit AccurateMeshRaycast(Ray ray, Tilemap3D tilemap)
         {
-            var renderers = tilemap.GetComponentsInChildren<Renderer>();
-            var intersectingRenderer = GetIntersectingRenderer(renderers, ray);
+            var intersectingRenderer = GetIntersectingRenderer(GetRenderers(tilemap), ray);
 
-            SortedRenderer[] sortedRenderers = new SortedRenderer[renderers.Length];
-            for (int i = 0; i < renderers.Length; ++i)
+            if (intersectingRenderer != null)
             {
-                float intersectionDistance;
-                if (renderers[i].bounds.IntersectRay(ray, out intersectionDistance))
-                {
-                    sortedRenderers[i] = new SortedRenderer() { renderer = renderers[i], distance = intersectionDistance };
-                }
-                else
-                {
-                    sortedRenderers[i] = new SortedRenderer() { renderer = renderers[i], distance = float.PositiveInfinity };
-                }
-            }
-
-            System.Array.Sort(sortedRenderers, (SortedRenderer left, SortedRenderer right) => { return left.distance.CompareTo(right.distance); });
-
-            foreach (SortedRenderer renderer in sortedRenderers)
-            {
-                // Once we reach our infinites, give up
-                if (!float.IsFinite(renderer.distance))
-                {
-                    break;
-                }
-
-                var hit = GetPointOnRenderer(renderer.renderer, ray);
-                if (float.IsFinite(hit.point.x))
-                {
-                    return new FabgridRaycastHit(hit.point, hit.normal, intersectingRenderer.transform);
-                }
+                var hit = GetPointOnRenderer(intersectingRenderer, ray);
+                return new FabgridRaycastHit(hit.point, hit.normal, intersectingRenderer.transform);
             }
 
             return new FabgridRaycastHit() { point = Vector3.negativeInfinity };
@@ -52,8 +20,7 @@ namespace Fabgrid
 
         public static FabgridRaycastHit InaccurateMeshRaycast(Ray ray, Tilemap3D tilemap)
         {
-            var renderers = tilemap.GetComponentsInChildren<Renderer>();
-            var intersectingRenderer = GetIntersectingRenderer(renderers, ray);
+            var intersectingRenderer = GetIntersectingRenderer(GetRenderers(tilemap), ray);
 
             if (intersectingRenderer != null)
             {
@@ -70,25 +37,44 @@ namespace Fabgrid
             return new FabgridRaycastHit() { point = Vector3.negativeInfinity };
         }
 
-        private static Renderer GetIntersectingRenderer(Renderer[] renderers, Ray ray)
+        public static FabgridRaycastHit ColliderCast(Ray ray, Tilemap3D tilemap)
         {
-            // Get all intersecting renderers
-            float closestIntersection = float.PositiveInfinity;
-            Renderer closestRenderer = null;
-            for (int i = 0; i < renderers.Length; ++i)
+            var colliders = tilemap.GetComponentsInChildren<Collider>();
+            var intersectingCollider = GetIntersectingCollider(colliders, ray);
+
+            if (intersectingCollider != null)
             {
-                float intersectionDistance;
-                if (renderers[i].bounds.IntersectRay(ray, out intersectionDistance))
+                if (intersectingCollider.bounds.IntersectRay(ray, out float distance))
                 {
-                    if (intersectionDistance < closestIntersection)
+                    return new FabgridRaycastHit(default, default, default)
                     {
-                        closestRenderer = renderers[i];
-                        closestIntersection = intersectionDistance;
-                    }
+                        point = ray.GetPoint(distance),
+                        transform = intersectingCollider.transform
+                    };
                 }
             }
 
-            return closestRenderer;
+            return new FabgridRaycastHit() { point = Vector3.negativeInfinity };
+        }
+
+        private static Renderer GetIntersectingRenderer(Renderer[] renderers, Ray ray)
+        {
+            var intersectingRenderers = new List<Renderer>();
+
+            // Get all intersecting renderers
+            for (int i = 0; i < renderers.Length; ++i)
+            {
+                if (renderers[i].bounds.IntersectRay(ray))
+                {
+                    intersectingRenderers.Add(renderers[i]);
+                }
+            }
+
+            if (intersectingRenderers.Count == 0) return null;
+
+            return FabgridUtility.GetClosestOfType<Renderer>(
+                    intersectingRenderers.ToArray(),
+                    ray.origin);
         }
 
         public static Collider GetIntersectingCollider(Collider[] colliders, Ray ray)
@@ -123,6 +109,20 @@ namespace Fabgrid
 
             Object.DestroyImmediate(meshCollider);
             return new RaycastHit() { point = Vector3.negativeInfinity };
+        }
+
+        private static Renderer[] GetRenderers(Tilemap3D tilemap)
+        {
+            var renderers = new List<Renderer>();
+            renderers.AddRange(tilemap.GetComponentsInChildren<Renderer>());
+
+            foreach (var layer in tilemap.layers)
+            {
+                if (layer == null) continue;
+                renderers.AddRange(layer.GetComponentsInChildren<Renderer>());
+            }
+
+            return renderers.ToArray();
         }
     }
 }

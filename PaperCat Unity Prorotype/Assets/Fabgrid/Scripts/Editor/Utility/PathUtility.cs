@@ -1,4 +1,6 @@
-﻿using UnityEditor;
+﻿#if UNITY_EDITOR
+
+using UnityEditor;
 using UnityEngine;
 
 namespace Fabgrid
@@ -38,5 +40,9 @@ namespace Fabgrid
         {
             return GetPathToFolder("Assets", "Fabgrid");
         }
+
+        public static string PanelsPath => $"{GetFabgridFolder()}/Scripts/Editor/Panels";
     }
 }
+
+#endif

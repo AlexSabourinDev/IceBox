@@ -1,4 +1,6 @@
-﻿using UnityEditor;
+﻿#if UNITY_EDITOR
+
+using UnityEditor;
 using UnityEngine;
 
 namespace Fabgrid
@@ -53,7 +55,8 @@ namespace Fabgrid
             if (Vector3.Distance(camera.transform.position, position) > MAX_PLACE_DISTANCE) return;
 
             GameObject tile = (GameObject)PrefabUtility.InstantiatePrefab(tilemap.selectedTile.prefab);
-            tile.transform.SetParent(tilemap.transform);
+            if (tilemap.selectedLayer != null) tile.transform.SetParent(tilemap.selectedLayer.transform);
+            else tile.transform.SetParent(tilemap.transform);
             tile.transform.position = position;
             tile.transform.rotation = tilemap.tileRotation;
             Undo.RegisterCreatedObjectUndo(tile, "Placed tile");
@@ -93,3 +96,5 @@ namespace Fabgrid
         }
     }
 }
+
+#endif

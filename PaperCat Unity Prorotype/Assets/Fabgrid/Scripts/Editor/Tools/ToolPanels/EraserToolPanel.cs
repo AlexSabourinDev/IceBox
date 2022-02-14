@@ -1,4 +1,6 @@
-﻿using UnityEngine.UIElements;
+﻿#if UNITY_EDITOR
+
+using UnityEngine.UIElements;
 
 namespace Fabgrid
 {
@@ -17,3 +19,5 @@ namespace Fabgrid
         }
     }
 }
+
+#endif

@@ -1,6 +1,7 @@
-﻿using UnityEditor;
+﻿#if UNITY_EDITOR
+
+using UnityEditor;
 using UnityEngine;
-using UnityEngine.InputSystem;
 
 namespace Fabgrid
 {
@@ -38,8 +39,9 @@ namespace Fabgrid
         public override void OnMouseDown(Event e)
         {
             if (e.button != 0) return;
-            if (e.alt || Keyboard.current.leftAltKey.isPressed) return;
-            if (e.control || Keyboard.current.leftCtrlKey.isPressed) return;
+            if (e.alt || Input.GetKey(KeyCode.LeftAlt)) return;
+            if (e.control || Input.GetKey(KeyCode.LeftControl)) return;
+            //if (!tilemap.HasSelectedVisibleLayer()) return;
 
             RemoveSelectedGameObject();
             e.Use();
@@ -66,9 +68,10 @@ namespace Fabgrid
         {
             Transform transform = gameObject.transform;
 
-            while (transform != tilemap.transform)
+            while (transform != tilemap.transform || transform.GetComponent<LayerBehaviour>() != null)
             {
                 if (transform.parent == tilemap.transform) break;
+                if (transform.parent.GetComponent<LayerBehaviour>() != null) break;
 
                 transform = transform.parent;
             }
@@ -77,3 +80,5 @@ namespace Fabgrid
         }
     }
 }
+
+#endif

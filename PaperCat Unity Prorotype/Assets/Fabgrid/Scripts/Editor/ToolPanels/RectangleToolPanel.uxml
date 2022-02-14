@@ -10,7 +10,7 @@
     <editor:EnumField name="offset-option-field"
                       class="field"
                       label="Offset"
-                      type="Fabgrid.OffsetOption, Assembly-CSharp"
+                      type="Fabgrid.OffsetOption, Fabgrid"
                       binding-path="rectangleToolOffsetOption">
       
     </editor:EnumField>

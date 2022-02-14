@@ -54,15 +54,11 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="Assets\Scripts\InputManager.cs" />
-    <Compile Include="Assets\Fabgrid\Scripts\Enums\TileAddOption.cs" />
     <Compile Include="Assets\Scripts\CameraPositionNode.cs" />
     <Compile Include="Assets\Scripts\CameraLookTargetStabilizer.cs" />
     <Compile Include="Assets\Scripts\DollyTrackFollowYAxis.cs" />
-    <Compile Include="Assets\Fabgrid\Scripts\Enums\OffsetOption.cs" />
     <Compile Include="Assets\Scripts\CatMotor.cs" />
     <Compile Include="Assets\Scripts\TeleportScript.cs" />
-    <Compile Include="Assets\Fabgrid\Scripts\Enums\SizeCalculationOption.cs" />
-    <Compile Include="Assets\Fabgrid\Scripts\SerializableDictionary.cs" />
     <Compile Include="Assets\Scripts\CheckpointManager.cs" />
     <Compile Include="Assets\Scripts\GizmoBall.cs" />
     <Compile Include="Assets\Scripts\JumpArcRenderer.cs" />
@@ -70,30 +66,20 @@
     <Compile Include="Assets\Scripts\Checkpoint.cs" />
     <Compile Include="Assets\Scripts\Boulder.cs" />
     <Compile Include="Assets\Scripts\BoulderKillzoneFollow.cs" />
-    <Compile Include="Assets\Fabgrid\Scripts\Tile.cs" />
     <Compile Include="Assets\Scripts\Despawner.cs" />
     <Compile Include="Assets\Scripts\CatMovementParameters.cs" />
     <Compile Include="Assets\Scripts\MovementDebugging.cs" />
-    <Compile Include="Assets\Fabgrid\Scripts\Utility\FabgridMath.cs" />
     <Compile Include="Assets\Scripts\CatCollisionManager.cs" />
-    <Compile Include="Assets\Fabgrid\Scripts\Tilemap3D.cs" />
-    <Compile Include="Assets\Fabgrid\Scripts\Utility\FabgridLogger.cs" />
     <Compile Include="Assets\Scripts\ResettableObject.cs" />
-    <Compile Include="Assets\Fabgrid\Scripts\Extensions\Vector3Extensions.cs" />
     <Compile Include="Assets\Scripts\AnimationPlayer.cs" />
     <Compile Include="Assets\Scripts\ActivateTriggerZone.cs" />
     <Compile Include="Assets\CameraCheckpointReset.cs" />
-    <Compile Include="Assets\Fabgrid\Scripts\Enums\ToolType.cs" />
     <Compile Include="Assets\Scripts\ResetManager.cs" />
-    <Compile Include="Assets\Fabgrid\Scripts\Enums\SnapOption.cs" />
     <Compile Include="Assets\Scripts\TriggerZone.cs" />
-    <Compile Include="Assets\Fabgrid\Scripts\TileSet.cs" />
     <Compile Include="Assets\Scripts\KillScript.cs" />
-    <Compile Include="Assets\Fabgrid\Scripts\Utility\FabgridUtility.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="Assets\Fabgrid\Demo\3D Game Kit - Props Pack\Shaders\Alien.shader" />
-    <None Include="Assets\Fabgrid\Scripts\Shaders\FabgridPreview.shader" />
     <None Include="Assets\Fabgrid\Demo\3D Game Kit - Props Pack\Shaders\Rock.shader" />
     <None Include="Assets\Fabgrid\Demo\3D Game Kit - Props Pack\Shaders\Stonework.shader" />
     <None Include="Assets\Fabgrid\Demo\3D Game Kit - Props Pack\Shaders\Dissolve.shader" />
@@ -767,6 +753,10 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="Fabgrid.csproj">
+      <Project>{A50D514F-85E1-8199-3C78-9E7596F467C9}</Project>
+      <Name>Fabgrid</Name>
+    </ProjectReference>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <Target Name="GenerateTargetFrameworkMonikerAttribute" />

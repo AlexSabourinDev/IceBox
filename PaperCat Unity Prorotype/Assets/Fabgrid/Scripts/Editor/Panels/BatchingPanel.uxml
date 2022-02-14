@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<engine:UXML
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xmlns:engine="UnityEngine.UIElements"
+    xmlns:editor="UnityEditor.UIElements"
+    xsi:noNamespaceSchemaLocation="../../../../../UIElementsSchema/UIElements.xsd"
+>
+    <engine:VisualElement name="batching-panel" class="sub-panel">
+        
+        <engine:Toggle name="batch-automatically-toggle" class="field" label="Batch automatically"/>
+
+        <engine:VisualElement class="sub-panel rounded-panel horizontal-button-panel">
+            <engine:Button name="batch-button" class="rounded-button" text="Batch" tooltip="Batches the layers belonging to this tilemap."/>
+            <engine:Button name="batch-to-prefab-button" class="rounded-button" text="Batch to prefab"/>
+        </engine:VisualElement>
+
+    </engine:VisualElement>
+</engine:UXML>

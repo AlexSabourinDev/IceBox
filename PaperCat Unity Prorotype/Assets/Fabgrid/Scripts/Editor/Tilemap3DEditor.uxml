@@ -6,15 +6,16 @@
     xsi:noNamespaceSchemaLocation="../../../UIElementsSchema/UIElements.xsd"
 >
   <engine:VisualElement name="main-container">
-    <engine:VisualElement name="navigation-bar">
-      <engine:Button name="paint-panel-button" class="navigation-bar-button" tooltip="Paint"/>
-      <engine:Button name="add-tile-panel-button" class="navigation-bar-button" tooltip="Add Tile"/>
-      <engine:Button name="configuration-panel-button" class="navigation-bar-button" tooltip="Configuration"/>
-      <engine:Button name="help-panel-button" class="navigation-bar-button" tooltip="Help"/>
+    <engine:VisualElement name="navigation-bar" class="panel">
+      <engine:Button name="paint-panel-button" class="panel-button navigation-bar-button" tooltip="Paint"/>
+      <engine:Button name="add-tile-panel-button" class="panel-button navigation-bar-button" tooltip="Add Tile"/>
+      <engine:Button name="configuration-panel-button" class="panel-button navigation-bar-button" tooltip="Configuration"/>
+      <!--<engine:Button name="batching-panel-button" class="panel-button navigation-bar-button" tooltip="Batching"/>-->
+      <engine:Button name="help-panel-button" class="panel-button navigation-bar-button" tooltip="Help"/>
     </engine:VisualElement>
 
-    <engine:VisualElement name ="panel-container">
-      <engine:Label name ="main-panel-header"/>
+    <engine:VisualElement name="panel-container" class="panel">
+      <engine:Label name="main-panel-header"/>
       <engine:VisualElement name="main-panel-viewport">
       </engine:VisualElement>
     </engine:VisualElement>

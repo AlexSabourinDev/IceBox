@@ -1,8 +1,11 @@
-﻿using System.IO;
+﻿#if UNITY_EDITOR
+
+using System.IO;
 using System.Linq;
 using UnityEditor;
 using UnityEditor.UIElements;
 using UnityEngine;
+using UnityEngine.Assertions;
 using UnityEngine.UIElements;
 
 namespace Fabgrid
@@ -23,7 +26,12 @@ namespace Fabgrid
         private Button folderPanelButton;
         private Button saveTileSetButton;
         private Button loadTileSetButton;
+        private Button selectCategoryButton;
         private VisualElement pathContainer;
+
+        private string selectedCategoryName = "";
+        private string defaultSelectCategoryButtonText;
+        private Color defaultSelectCategoryButtonColor;
 
         public AddTile(VisualElement root, Tilemap3D tilemap) : base(root)
         {
@@ -41,7 +49,6 @@ namespace Fabgrid
             RegisterCallbacks();
 
             var addTilePanel = root.Q("add-tile-panel");
-            StylingUtility.AddClassToAllOfType<Label>(addTilePanel, "field-label");
 
             // Exclude styling from the label inside the prefab display field
             tilePrefabField.
@@ -139,7 +146,7 @@ namespace Fabgrid
             addTileButton = root.Q<Button>("add-tile-button");
 
             tileSizeField = root.Q<Vector3Field>("tile-size-vector3-field");
-            tileSizeProperty = serializedTilemap.FindProperty("customSize");
+            tileSizeProperty = serializedTilemap.FindProperty("newTile.size");
             tileSizeField.BindProperty(tileSizeProperty);
 
             tileOffsetField = root.Q<Vector3Field>("tile-offset-field");
@@ -163,6 +170,47 @@ namespace Fabgrid
 
             saveTileSetButton = root.Q<Button>("save-tile-set-button");
             loadTileSetButton = root.Q<Button>("load-tile-set-button");
+
+            selectCategoryButton = root.Q<Button>("select-category-button");
+            defaultSelectCategoryButtonText = selectCategoryButton.text;
+            defaultSelectCategoryButtonColor = selectCategoryButton.style.backgroundColor.value;
+        }
+
+        private void OnClickSelectCategoryButton(EventBase e)
+        {
+            var targetElement = e.target as VisualElement;
+
+            var menu = new GenericMenu();
+            AddCategoryMenuItems(menu);
+            menu.DropDown(targetElement.worldBound);
+        }
+
+        private void AddCategoryMenuItems(GenericMenu menu)
+        {
+            foreach (var category in tilemap.categories)
+            {
+                bool isSelected = category.name == selectedCategoryName;
+                menu.AddItem(new GUIContent(category.name), isSelected, OnClickCategoryMenuItem, category);
+            }
+        }
+
+        private void OnClickCategoryMenuItem(object menuItem)
+        {
+            var category = menuItem as Category;
+            Assert.IsNotNull(category);
+
+            if (category.name == selectedCategoryName)
+            {
+                selectedCategoryName = "";
+                selectCategoryButton.text = defaultSelectCategoryButtonText;
+                selectCategoryButton.style.backgroundColor = defaultSelectCategoryButtonColor;
+            }
+            else
+            {
+                selectedCategoryName = category.name;
+                selectCategoryButton.text = $"Category: {category.name}";
+                selectCategoryButton.style.backgroundColor = Color.Lerp(defaultSelectCategoryButtonColor, category.color, 0.67f);
+            }
         }
 
         private void RegisterCallbacks()
@@ -182,10 +230,12 @@ namespace Fabgrid
             addTileButton.clickable.clicked += OnClickAddTileButton;
             saveTileSetButton.clickable.clicked += OnClickSaveTileSetButton;
             loadTileSetButton.clickable.clicked += OnClickLoadTileSetButton;
+            selectCategoryButton.clickable.clickedWithEventInfo += OnClickSelectCategoryButton;
         }
 
         private void UnregisterCallbacks()
         {
+            selectCategoryButton.clickable.clickedWithEventInfo -= OnClickSelectCategoryButton;
             loadTileSetButton.clickable.clicked -= OnClickLoadTileSetButton;
             saveTileSetButton.clickable.clicked -= OnClickSaveTileSetButton;
             addTileButton.clickable.clicked -= OnClickAddTileButton;
@@ -197,13 +247,9 @@ namespace Fabgrid
         private void OnClickAddTileButton()
         {
             if (tilemap.addOption == TileAddOption.Single)
-            {
                 AddSingleTile();
-            }
             else if (tilemap.addOption == TileAddOption.Multiple)
-            {
                 AddMultipleTiles();
-            }
         }
 
         private void AddSingleTile()
@@ -212,15 +258,25 @@ namespace Fabgrid
             {
                 if (CanCalculateSizeOf(tilemap.newTile.prefab))
                 {
-                    tilemap.newTile.customSize = tilemap.customSize;
-                    AddTileIfNotDuplicate(tilemap.newTile);
+                    var bounds = FabgridUtility.GetTileWorldBounds(tilemap.newTile.prefab, tilemap.newTile.sizeCalculationOption, tilemap);
+
+                    var newTile = new Tile
+                    {
+                        prefab = tilemap.newTile.prefab,
+                        offset = bounds.center,
+                        size = bounds.size,
+                        sizeCalculationOption = tilemap.newTile.sizeCalculationOption
+                    };
+
+                    //tilemap.newTile.size = tilemap.customSize;
+                    AddTileIfNotDuplicate(newTile);
                 }
             }
         }
 
         private void AddMultipleTiles()
         {
-            var assetPath = UnityEngine.Application.dataPath;
+            var assetPath = Application.dataPath;
             assetPath += "/" + tilemap.prefabsPath;
 
             if (!Directory.Exists(assetPath))
@@ -240,10 +296,13 @@ namespace Fabgrid
                 {
                     if (CanCalculateSizeOf(asset))
                     {
+                        var bounds = FabgridUtility.GetTileWorldBounds(asset, tilemap.newTile.sizeCalculationOption, tilemap);
+
                         var newTile = new Tile
                         {
                             prefab = asset,
-                            offset = tilemap.newTile.offset,
+                            offset = bounds.center,
+                            size = bounds.size,
                             sizeCalculationOption = tilemap.newTile.sizeCalculationOption
                         };
 
@@ -256,14 +315,22 @@ namespace Fabgrid
         private void AddTileIfNotDuplicate(Tile tile)
         {
             var alreadyContainsTile = tilemap.tiles.Any(t => t.prefab.name == tile.prefab.name);
-            if (!alreadyContainsTile)
-            {
-                tilemap.tiles.Add(tile);
-            }
-            else 
+
+            if(alreadyContainsTile)
             {
                 FabgridLogger.LogWarning($"Skipped adding the tile '{tile.prefab.name}' because it already exists on the component '{tilemap.gameObject.name}'.");
+                return;
             }
+
+            if (!string.IsNullOrEmpty(selectedCategoryName))
+            {
+                var category = tilemap.categories.Where(c => c.name == selectedCategoryName).FirstOrDefault();
+                Assert.IsNotNull(category);
+
+                tile.category = category;
+            }
+
+            tilemap.tiles.Add(tile);
         }
 
         private void UpdateAddOptionField(TileAddOption tileAddOption)
@@ -283,13 +350,9 @@ namespace Fabgrid
         private void UpdateSizeCalculationField(SizeCalculationOption sizeCalculationOption)
         {
             if (sizeCalculationOption == SizeCalculationOption.Custom)
-            {
                 tileSizeField.Show();
-            }
             else
-            {
                 tileSizeField.Hide();
-            }
         }
 
         private bool CanCalculateSizeOf(GameObject prefab)
@@ -308,7 +371,7 @@ namespace Fabgrid
                     break;
 
                 default:
-                    return false;
+                    throw new UnityException($"Unknown size calculation option {tilemap.newTile.sizeCalculationOption}.");
             }
 
             FabgridLogger.LogWarning($"Could not determine the size of the prefab '{prefab.name}' using '{tilemap.newTile.sizeCalculationOption}'");
@@ -316,3 +379,5 @@ namespace Fabgrid
         }
     }
 }
+
+#endif

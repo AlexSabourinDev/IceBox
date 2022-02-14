@@ -14,6 +14,7 @@ namespace Fabgrid
         public void Render(Vector3 position)
         {
             if (tilemap.selectedTile?.prefab == null) return;
+            if (tilemap.tilePreviewMesh == null) return;
 
             tilemap.tilePreviewMaterial.SetPass(0);
             Graphics.DrawMeshNow(tilemap.tilePreviewMesh,

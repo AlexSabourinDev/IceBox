@@ -1,13 +1,14 @@
 ﻿#main-container {
 	display: flex;
+	flex-direction: column;
+	flex-grow: 2;
 	width: auto;
-	height: 700px;
+	min-height: 700px;
 }
 
 #navigation-bar {
 	height: 50px;
 	width: auto;
-	background-color: rgb(165, 165, 165);
 	border-radius: 10px;
 	display: flex;
 	flex-direction: row;
@@ -19,7 +20,7 @@
 .navigation-bar-button {
 	width: 42px;
 	height: 42px;
-	border-radius: 12px;
+	border-radius: 8px;
 	padding: 0px;
 }
 
@@ -34,7 +35,6 @@
 
 #panel-container {
 	display: flex;
-	background-color: rgb(165, 165, 165);
 	border-radius: 16px;
 	flex: 1;
 	-unity-text-align: middle-center;
@@ -42,18 +42,12 @@
 
 #main-panel-header {
 	-unity-font-style: bold;
-	color: rgb(10, 10, 10);
 	margin-top: 13px;
 	font-size: 18px;
 }
 
 #main-panel-viewport {
-	margin: 20px;
-	display: flex;
-	flex: 1;
-}
-
-.panel {
+	margin: 12px;
 	display: flex;
 	flex: 1;
 }
@@ -71,13 +65,11 @@ TemplateContainer {
 .medium-header-bold {
 	font-size: 16px;
 	-unity-font-style: bold;
-	color: rgb(10, 10, 10);
 	margin: 4px;
 }
 
 .small-paragraph {
 	font-size: 14px;
-	color: rgb(10, 10, 10);
 	margin: 4px;
 	white-space: normal;
 }
@@ -93,10 +85,9 @@ TemplateContainer {
 
 .rounded-panel {
 	display: flex;
-	background-color: rgb(140, 140, 140);
-	border-radius: 16px 4px 4px 16px;
+	border-radius: 8px 4px 4px 8px;
 	margin: 10px 0px 10px 0px;
-	padding: 10px 20px 10px 20px;
+	padding: 7px 20px 7px 20px;
 	justify-content: center;
 	overflow: hidden;
 }
@@ -104,11 +95,18 @@ TemplateContainer {
 .rounded-scroll-view {
 	display: flex;
 	flex: 1;
-	background-color: rgb(140, 140, 140);
 	border-radius: 16px 4px 4px 16px;
 	width: auto;
 }
 
 .field {
 	margin: 3px 0px 3px 0px;
+}
+
+.rounded-button {
+	display: flex;
+	margin: 10px;
+	width: 33%;
+	height: 30px;
+	border-radius: 6px;
 }

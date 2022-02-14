@@ -5,12 +5,13 @@
     xmlns:editor="UnityEditor.UIElements"
     xsi:noNamespaceSchemaLocation="../../../../UIElementsSchema/UIElements.xsd"
 >
-  <engine:VisualElement name="help-panel" class="help-panel panel">
+  <engine:VisualElement name="help-panel" class="help-panel sub-panel">
     <engine:ScrollView class="rounded-scroll-view" show-vertical-scroller="true">
       
       <engine:Label class="help-panel-header" text="The Paint Panel"/>
       <engine:Label class ="help-panel-paragraph" text="This panel lets you create your level(s) by offering you various tools and the collection of tiles you have added. The top panel displays your current tool and lets you change it.  If the tool contains any related settings, they will be displayed at the bottom of the same panel. "/>
-      <engine:Label class ="help-panel-paragraph" text="The middle panel contains your collection of tiles. In order to paint, you need to select one of the tiles by clicking on it in the collection. Now, if you move your mouse to the scene view, you will see a transparent blue preview of the tile. After you have selected a tile, you can remove it by clicking the Remove button located underneath the panel."/>
+      <engine:Label class ="help-panel-paragraph" text="The middle sub panel contains your collection of tiles. In order to paint, you need to select one of the tiles by clicking on it in the collection. Now, if you move your mouse to the scene view, you will see a transparent blue preview of the tile. After you have selected a tile, you can remove it by clicking the Remove button located underneath the panel."/>
+      <engine:Label class ="help-panel-paragraph" text="The bottom sub panel contains the layers. Here you can add layers using the 'Add' button. You can also show and hide layers using the checkbox found on each layer. Layers can be removed using the 'X' button found on each layer."/>
       <engine:Label class ="help-panel-paragraph" text="At the bottom of the paint panel, you can control the level of the floor. The floor makes it easy to place out tiles because it controls where your tiles will snap on the global Y axis. You can also control the floor level using keyboard shortcuts. You can see and change the keyboard shortcuts in the Configuration panel."/>
       <engine:Label class ="help-panel-paragraph" text="In the scene view, a grid is displayed which makes it easier to visualize where your tiles will be positioned."/>
       <engine:Label class ="help-panel-paragraph" text="The paint panel supports Maya style navigation. You can hold down the left control button while left-clicking on a GameObject to focus on it. You can orbit around the GameObject by holding down the left alt button while dragging with the left mouse button. You can also pan the scene view by holding down the left control button and the left alt button while dragging with the left mouse button."/>
@@ -33,12 +34,14 @@
       
       <engine:Label class="help-panel-header" text="The Brush Tool"/>
       <engine:Label class ="help-panel-paragraph" text="Place out tiles one at a time when clicking the left mouse button. Useful when placing out non-repetitive items like chests and doors."/>
+      <engine:Label class ="help-panel-paragraph" text="If a layer has been selected, the tiles will be placed under that layer in the hierarchy. If no layer is selected, the tiles will be placed under GameObject containing the Tilemap3D component."/>
       
       <engine:Label class="help-panel-header" text="The Eraser Tool"/>
       <engine:Label class ="help-panel-paragraph" text="Erases tiles one at a time when clicking the left mouse button. This tool is most effective if you only want to remove a few items and need greater precision."/>
       
       <engine:Label class="help-panel-header" text="The Rectangle Tool"/>
       <engine:Label class ="help-panel-paragraph" text="The rectangle tool lets you place out multiple tiles by dragging the cursor using the left mouse button. It is useful for placing out repetitive items like floors and walls. This tool has two different modes. Relative mode will offset each tile based on the size of the selected tile itself. In Grid mode, the tiles will instead be offset based on the grid spacing."/>
+      <engine:Label class ="help-panel-paragraph" text="If a layer has been selected, the tiles will be placed under that layer in the hierarchy. If no layer is selected, the tiles will be placed under GameObject containing the Tilemap3D component."/>
       
       <engine:Label class="help-panel-header" text="The Selection Box Tool"/>
       <engine:Label class ="help-panel-paragraph" text="This works the same as any selection box and lets you delete multiple tiles at the same time. Hold the left mouse button while dragging over tiles to select them. It will only select tiles that belongs to the given 3D tilemap. Selected GameObjects will be highlighted in yellow. To delete the selected tiles, press the Delete key."/>

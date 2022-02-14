@@ -1,7 +1,6 @@
 ﻿.help-panel {
 	display: flex;
 	flex: 1;
-	background-color: rgb(140, 140, 140);
 	border-radius: 16px 4px 4px 16px;
 	width: auto;
 }
@@ -9,7 +8,6 @@
 .help-panel-header {
 	-unity-text-align: upper-left;
 	-unity-font-style: bold;
-	color: rgb(10, 10, 10);
 	font-size: 15px;
 	margin-top: 10px;
 	margin-left: 8px;
@@ -17,7 +15,6 @@
 
 .help-panel-paragraph {
 	-unity-text-align: upper-left;
-	color: rgb(10, 10, 10);
 	font-size: 13px;
 	white-space: normal;
 	margin-top: 5px;
@@ -28,7 +25,6 @@
 .help-panel-paragraph-bold {
 	-unity-text-align: upper-left;
 	-unity-font-style: bold;
-	color: rgb(10, 10, 10);
 	font-size: 13px;
 	white-space: normal;
 	margin-top: 5px;

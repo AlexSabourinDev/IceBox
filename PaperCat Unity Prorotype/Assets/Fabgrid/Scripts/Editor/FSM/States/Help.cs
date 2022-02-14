@@ -5,8 +5,7 @@ namespace Fabgrid
     public class Help : State
     {
         public Help(VisualElement root) : base(root)
-        {
-        }
+        {}
 
         public override void OnEnter()
         {

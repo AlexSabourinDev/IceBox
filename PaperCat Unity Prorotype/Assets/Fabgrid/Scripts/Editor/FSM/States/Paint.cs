@@ -1,8 +1,10 @@
-﻿using NUnit.Framework;
+﻿#if UNITY_EDITOR
+
 using System.Collections.Generic;
 using UnityEditor;
 using UnityEditor.UIElements;
 using UnityEngine;
+using UnityEngine.Assertions;
 using UnityEngine.UIElements;
 
 namespace Fabgrid
@@ -12,20 +14,23 @@ namespace Fabgrid
         private readonly Tilemap3D tilemap;
         private readonly SerializedObject serializedTilemap;
         private Button selectedTileButton;
-        private Button deleteTileButton;
+        private Button filterButton;
         private readonly Dictionary<Button, Tile> selectedButtonTilePairs;
+        private readonly List<Tile> selectedTiles = new List<Tile>();
+        private readonly List<Button> selectedTileButtons = new List<Button>();
         private readonly Dictionary<Button, Tile> buttonTilePairs;
         private Tool currentTool;
-        private Tool previousTool;
         private ToolPanel currentToolPanel;
+        private LayerPanel layerPanel;
         private readonly EventHandler eventHandler;
         private readonly ToolFactory toolFactory;
         private readonly ToolPanelFactory toolPanelFactory;
         private EnumField toolTypeField;
-        private VisualElement toolPanel;
         private TextField searchField;
         private bool shouldFocusOnSceneView = false;
         private bool isHoveringOverRemoveButton = false;
+
+        public LayerPanel LayerPanel => layerPanel;
 
         public Paint(VisualElement root, Tilemap3D tilemap) : base(root)
         {
@@ -41,16 +46,16 @@ namespace Fabgrid
 
         public override void OnEnter()
         {
+            InitializeFilterButton();
+
+            tilemap.selectedTile = null;
+
             PopulateTileButtons();
 
             var mainPanelHeader = root.Q<Label>("main-panel-header");
             mainPanelHeader.text = "Paint";
 
-            toolPanel = root.Q("tool-panel");
-
             SetupControls();
-
-            StylingUtility.AddClassToAllOfType<Label>(toolPanel, "field-label");
 
             Undo.undoRedoPerformed += OnUndoRedo;
             RegisterEvents();
@@ -59,39 +64,30 @@ namespace Fabgrid
             root.RegisterCallback<MouseEnterEvent>(_ => shouldFocusOnSceneView = false);
             root.RegisterCallback<MouseLeaveEvent>(_ => shouldFocusOnSceneView = true);
 
-            deleteTileButton.RegisterCallback<MouseEnterEvent>(_ => { isHoveringOverRemoveButton = true; });
-            deleteTileButton.RegisterCallback<MouseLeaveEvent>(_ => { isHoveringOverRemoveButton = false; });
+            FilterTileButtons(tilemap.searchValue, tilemap.selectedCategory);
 
-            ShowTileButtonsThatContains(tilemap.searchValue);
+            layerPanel = new LayerPanel(root, tilemap);
 
-            // AlexS: See if our tile from our previous session is still around
-            // If so, select it
-            KeyValuePair<Button, Tile>? foundButton = null;
-            foreach (var buttonTile in buttonTilePairs)
-            {
-                if (buttonTile.Value == tilemap.selectedTile)
-                {
-                    foundButton = buttonTile;
-                    break;
-                }
-            }
+            tilemap.OnRefresh += OnRefresh;
+        }
 
-            if (foundButton != null)
+        private void InitializeFilterButton()
+        {
+            filterButton = root.Q<Button>("filter-button");
+
+            var fabgridFolder = PathUtility.GetFabgridFolder();
+
+            var icon = new Image
             {
-                bool shift = false;
-                OnClickTileButton(tilemap.selectedTile, foundButton.Value.Key, shift);
-            }
-            else
-            {
-                tilemap.selectedTile = null;
-            }
+                image = AssetDatabase.LoadAssetAtPath<Texture2D>($"{fabgridFolder}/Textures/FilterButtonIcon.png")
+            };
+
+            icon.AddToClassList("filter-button-icon");
+            filterButton.Add(icon);
         }
 
         private void SetupControls()
         {
-            deleteTileButton = root.Q<Button>("delete-tile-button");
-            deleteTileButton.Hide();
-
             var floorIndexField = root.Q<IntegerField>("floor-index-field");
             floorIndexField.Bind(serializedTilemap);
             floorIndexField.Q<Label>().RemoveFromClassList("unity-base-field__label");
@@ -111,10 +107,8 @@ namespace Fabgrid
         {
             searchField = root.Q<TextField>("search-field");
             searchField.Bind(serializedTilemap);
-
-            searchField.RegisterValueChangedCallback(e => ShowTileButtonsThatContains(e.newValue));
-
-            searchField.RegisterCallback<PointerDownEvent>(e =>
+            searchField.RegisterValueChangedCallback(e => FilterTileButtons(e.newValue, tilemap.selectedCategory));
+            searchField.RegisterCallback<PointerDownEvent>(e => 
             {
                 DeselectTiles();
                 e.StopPropagation();
@@ -129,9 +123,9 @@ namespace Fabgrid
             }
         }
 
-        private void ShowTileButtonsThatContains(string name)
+        private void FilterTileButtons(string name, Category category)
         {
-            if (name == null || name?.Length == 0)
+            if (string.IsNullOrEmpty(name) && category.IsEmpty())
             {
                 ShowAllTileButtons();
                 return;
@@ -140,8 +134,18 @@ namespace Fabgrid
             foreach (var buttonParent in root.Query(null, "tile-button-parent").ToList())
             {
                 var label = buttonParent.Q<Label>();
+                var button = buttonParent.Q<Button>();
+                var tile = buttonTilePairs[button];
+                Assert.IsNotNull(tile);
 
-                if (label.text.IndexOf(name, System.StringComparison.OrdinalIgnoreCase) >= 0)
+                bool shallShow = label.text.IndexOf(name, System.StringComparison.OrdinalIgnoreCase) >= 0;
+
+                if(tilemap.selectedCategory != null && !tilemap.selectedCategory.IsEmpty())
+                {
+                    shallShow &= tile.category.name == tilemap.selectedCategory.name;
+                }
+
+                if (shallShow)
                 {
                     buttonParent.Show();
                 }
@@ -154,39 +158,111 @@ namespace Fabgrid
 
         private void RegisterCallbacks()
         {
-            deleteTileButton.clickable.clickedWithEventInfo += e =>
-            {
-                OnClickDeleteButton();
-                e.StopPropagation();
-                e.StopImmediatePropagation();
-            };
-
             toolTypeField.RegisterCallback<ChangeEvent<System.Enum>>(e =>
             {
                 if (e.newValue == null) return;
-
-                if(e.newValue != e.previousValue)
-                {
-                    SwitchTool((ToolType)e.newValue);
-                }
+                SwitchTool((ToolType)e.newValue);
             });
 
-            root.Q<VisualElement>("main-container").
-                RegisterCallback<PointerDownEvent>(_ => OnClickMainContainer(),
-                TrickleDown.NoTrickleDown);
+            root.Q<VisualElement>("main-container").RegisterCallback<PointerDownEvent>(OnClickMainContainer);
+
+            filterButton.clickable.clickedWithEventInfo += OnClickFilterButton;
+        }
+
+        private void OnClickFilterButton(EventBase e)
+        {
+            var targetElement = e.target as VisualElement;
+
+            var menu = new GenericMenu();
+            AddCategoryItems(menu);
+            menu.DropDown(targetElement.worldBound);
+        }
+
+        private void AddCategoryItems(GenericMenu menu)
+        {
+            foreach (var category in tilemap.categories)
+            {
+                bool isSelected = category == tilemap.selectedCategory;
+                menu.AddItem(new GUIContent(category.name), isSelected, OnChangeCategory, category);
+            }
+
+            menu.AddItem(new GUIContent("Edit categories/New category..."), false, OnClickAddCategory);
+            menu.AddItem(new GUIContent("Edit categories/Remove category..."), false, OnClickRemoveCategory);
+        }
+
+        private void OnChangeCategory(object menuItem)
+        {
+            var category = menuItem as Category;
+            Assert.IsNotNull(category);
+
+            if (tilemap.selectedCategory.name == category.name)
+            {
+                tilemap.selectedCategory = null;
+            }
+            else
+            {
+                tilemap.selectedCategory = category;
+            }
+
+            PopulateTileButtons();
+            FilterTileButtons(tilemap.searchValue, category);
+        }
+
+        private void OnClickAddCategory()
+        {
+            var popup = EditorWindow.CreateWindow<AddCategoryPopup>("Add category");
+            popup.titleContent = new GUIContent("Add category");
+            popup.Category = new Category();
+            popup.Tilemap = tilemap;
+
+            var position = popup.position;
+
+            position.center = new Vector2(
+                Screen.currentResolution.width / 2.0f,
+                Screen.currentResolution.height / 2.0f);
+
+            position.width = 400;
+            position.height = 100;
+
+            popup.position = position;
+
+            popup.ShowPopup();
+        }
+
+        private void OnClickRemoveCategory()
+        {
+            var popup = EditorWindow.CreateWindow<RemoveCategoryPopup>("Remove category");
+            popup.titleContent = new GUIContent("Remove category");
+            popup.Tilemap = tilemap;
+
+            var position = popup.position;
+
+            position.center = new Vector2(
+                Screen.currentResolution.width / 2.0f,
+                Screen.currentResolution.height / 2.0f);
+
+            position.width = 400;
+            position.height = 300;
+
+            popup.position = position;
+
+            popup.ShowPopup();
         }
 
         private void UnregisterCallbacks()
         {
+            filterButton.clickable.clickedWithEventInfo -= OnClickFilterButton;
+
+            root.Q<VisualElement>("main-container").UnregisterCallback<PointerDownEvent>(OnClickMainContainer);
+
             toolTypeField.UnregisterCallback<ChangeEvent<System.Enum>>(e => SwitchTool((ToolType)e.newValue));
         }
 
-        private void SwitchTool(ToolType toolType, Tool previous = null)
+        private void SwitchTool(ToolType toolType)
         {
             currentTool?.OnDestroy();
-            previousTool = previous;
 
-            toolTypeField.SetValueWithoutNotify(toolType);
+            toolTypeField.value = toolType;
             currentTool = toolFactory.Create(toolType);
 
             currentToolPanel?.DestroyPanel();
@@ -195,6 +271,10 @@ namespace Fabgrid
 
         public override void OnExit()
         {
+            tilemap.OnRefresh -= OnRefresh;
+
+            layerPanel.Free();
+
             UnregisterCallbacks();
 
             Undo.undoRedoPerformed -= OnUndoRedo;
@@ -230,6 +310,13 @@ namespace Fabgrid
 
                 var tileButton = new Button();
                 tileButton.AddToClassList("tile-button");
+
+                var tex = new Texture2D(1, 1);
+                tex.SetPixel(0, 0, new Color(1.0f, 1.0f, 1.0f, 0.4f));
+                tex.Apply();
+
+                tileButton.style.backgroundImage = new StyleBackground(tex);
+                tileButton.style.unityBackgroundImageTintColor = tile.category != null ? new StyleColor(tile.category.color) : new Color(0.5f, 0.5f, 0.5f, 0.0f);
                 tileButtonParent.Add(tileButton);
 
                 buttonTilePairs.Add(tileButton, tile);
@@ -249,11 +336,55 @@ namespace Fabgrid
 
                 tileButton.RegisterCallback<PointerDownEvent>(e =>
                 {
-                    OnClickTileButton(tile, tileButton, e.imguiEvent.shift);
+                    OnClickTileButton(tile, tileButton, e);
                     e.StopImmediatePropagation();
                     e.StopPropagation();
                 }, TrickleDown.TrickleDown);
+
+                tileButton.AddManipulator(new ContextualMenuManipulator(e => 
+                {
+                    e.menu.AppendAction("Edit", OnEditTileAction, DropdownMenuAction.AlwaysEnabled, tile);
+                    e.menu.AppendAction("Remove", OnRemoveTileAction, DropdownMenuAction.AlwaysEnabled, tile);
+                }));
             }
+        }
+
+        private void OnEditTileAction(DropdownMenuAction action)
+        {
+            Assert.IsTrue(action.userData is Tile);
+            var tile = (Tile)action.userData;
+
+            var popup = EditorWindow.CreateWindow<EditTilePopup>("Edit tile");
+            popup.titleContent = new GUIContent($"Edit '{tile.prefab.name}' tile");
+            popup.Tile = tile;
+            popup.Tilemap = tilemap;
+
+            var position = popup.position;
+
+            position.center = new Vector2(
+                Screen.currentResolution.width / 2.0f,
+                Screen.currentResolution.height / 2.0f);
+
+            position.width = 400;
+            position.height = 150;
+
+            popup.position = position;
+
+            popup.ShowPopup();
+        }
+
+        private void OnRemoveTileAction(DropdownMenuAction action)
+        {
+            Assert.IsTrue(action.userData is Tile);
+            var tile = (Tile)action.userData;
+
+            selectedTiles.ForEach(t => tilemap.tiles.Remove(t));
+
+            if (tile != null)
+                tilemap.tiles.Remove(tile);
+
+            PopulateTileButtons();
+            FilterTileButtons(tilemap.searchValue, tilemap.selectedCategory);
         }
 
         private void RemoveNullTilemapTiles()
@@ -261,30 +392,29 @@ namespace Fabgrid
             for (int i = tilemap.tiles.Count - 1; i >= 0; --i)
             {
                 if (tilemap.tiles[i].prefab == null)
-                {
                     tilemap.tiles.RemoveAt(i);
-                }
             }
         }
 
-        private void OnClickTileButton(Tile tile, Button button, bool shift)
+        private void OnClickTileButton(Tile tile, Button button, PointerDownEvent e)
         {
-            if (!shift)
-            {
+            if (e.imguiEvent.button == 1)
+                return;
+
+            if (!e.imguiEvent.shift)
                 DeselectTiles();
-            }
+
+            if (selectedButtonTilePairs.ContainsKey(button)) return;
+            if (selectedTiles.Contains(tile)) return;
 
             button.AddToClassList("selected-tile-button");
-            // AlexS: Make sure we only add to the dictionary if we don't already have the key
-            if (!selectedButtonTilePairs.ContainsKey(button))
-            {
-                selectedButtonTilePairs.Add(button, tile);
-            }
+            selectedButtonTilePairs.Add(button, tile);
+            selectedTileButtons.Add(button);
+            selectedTiles.Add(tile);
             tilemap.selectedTile = tile;
 
             selectedTileButton = button;
             selectedTileButton.AddToClassList("selected-tile-button");
-            deleteTileButton.Show();
 
             UpdateSelectedTileMeshPreview();
         }
@@ -296,20 +426,19 @@ namespace Fabgrid
                 button.RemoveFromClassList("selected-tile-button");
             }
 
+            selectedTileButtons.ForEach(b => b.RemoveFromClassList("selected-tile-button"));
+            selectedTileButtons.Clear();
             selectedButtonTilePairs.Clear();
+            selectedTiles.Clear();
+
+            tilemap.tilePreviewMesh = null;
         }
 
         private void UpdateSelectedTileMeshPreview()
         {
             var oldPosition = tilemap.selectedTile.prefab.transform.position;
             tilemap.selectedTile.prefab.transform.position = Vector3.zero;
-
-            // AlexS: Make sure our probuilder meshes are created for visualization.
-            UnityEngine.ProBuilder.ProBuilderMesh probuilderMesh = tilemap.selectedTile.prefab.GetComponent<UnityEngine.ProBuilder.ProBuilderMesh>();
-            if(probuilderMesh != null && probuilderMesh.meshSyncState != UnityEngine.ProBuilder.MeshSyncState.InSync)
-            {
-                probuilderMesh.ToMesh();
-            }
+            tilemap.selectedTile.prefab.transform.rotation = Quaternion.identity;
 
             var meshFilters = tilemap.selectedTile.prefab.GetComponentsInChildren<MeshFilter>(true);
             var combineInstances = new CombineInstance[meshFilters.Length];
@@ -326,12 +455,11 @@ namespace Fabgrid
             tilemap.selectedTile.prefab.transform.position = oldPosition;
         }
 
-        private void OnClickMainContainer()
+        private void OnClickMainContainer(PointerDownEvent e)
         {
             if (isHoveringOverRemoveButton) return;
 
             DeselectTiles();
-            deleteTileButton.Hide();
         }
 
         private void Render()
@@ -343,8 +471,6 @@ namespace Fabgrid
 
         private void GetTilePreviews()
         {
-            bool anyMeshRefreshed = false;
-
             foreach (var pair in buttonTilePairs)
             {
                 var button = pair.Key;
@@ -352,17 +478,6 @@ namespace Fabgrid
 
                 if (tile.thumbnail == null && button.Q<Image>().image == null)
                 {
-                    // AlexS: Make sure our probuilder meshes are created for visualization.
-                    // Will require a refresh of the asset preview cache.
-                    UnityEngine.ProBuilder.ProBuilderMesh probuilderMesh = tile.prefab.GetComponent<UnityEngine.ProBuilder.ProBuilderMesh>();
-                    if (probuilderMesh != null && probuilderMesh.meshSyncState != UnityEngine.ProBuilder.MeshSyncState.InSync)
-                    {
-                        anyMeshRefreshed = true;
-
-                        probuilderMesh.ToMesh();
-                        probuilderMesh.Refresh();
-                    }
-
                     var preview = AssetPreview.GetAssetPreview(tile.prefab);
                     if (preview == null) continue;
 
@@ -370,21 +485,11 @@ namespace Fabgrid
                     button.Q<Image>().image = preview;
                 }
             }
-
-            // AlexS: HACK - This forces our preview cache to reset. 1000 is completely arbitrary
-            // We've updated our meshes and need their previews to be refreshed.
-            if(anyMeshRefreshed)
-            {
-                AssetPreview.SetPreviewTextureCacheSize(0);
-                AssetPreview.SetPreviewTextureCacheSize(1000);
-            }
         }
 
         private void RegisterEvents()
         {
             eventHandler.OnKeyDown += OnKeyDown;
-            eventHandler.OnKeyUp += OnKeyUp;
-
             eventHandler.OnMouseMove += OnMouseMove;
             eventHandler.OnSceneGUI += OnSceneGUI;
             eventHandler.OnMouseDown += OnMouseDown;
@@ -398,7 +503,6 @@ namespace Fabgrid
             eventHandler.OnSceneGUI -= OnSceneGUI;
             eventHandler.OnMouseMove -= OnMouseMove;
             eventHandler.OnKeyDown -= OnKeyDown;
-            eventHandler.OnKeyUp -= OnKeyUp;
         }
 
         private void RegisterCurrentToolEvents()
@@ -477,24 +581,6 @@ namespace Fabgrid
                 SwitchTool(ToolType.SelectionBox);
                 e.Use();
             }
-            else if(e.keyCode == KeyCode.LeftShift)
-            {
-                // Track our previous tool
-                if(currentTool.Type != ToolType.Eraser)
-                {
-                    SwitchTool(ToolType.Eraser, currentTool);
-                    e.Use();
-                }
-            }
-        }
-
-        private void OnKeyUp(Event e)
-        {
-            if (e.keyCode == KeyCode.LeftShift && previousTool != null)
-            {
-                SwitchTool(previousTool.Type);
-                e.Use();
-            }
         }
 
         private void RemoveNullTiles()
@@ -508,24 +594,6 @@ namespace Fabgrid
             {
                 tilemap.instantiatedTiles.Add(tilemap.transform.GetChild(i).gameObject);
             }
-        }
-
-        private void OnClickDeleteButton()
-        {
-            Assert.IsTrue(selectedButtonTilePairs.Values.Count > 0, "Fabgrid Error: selectedButtonTilePairs is empty.");
-
-            foreach (var tile in selectedButtonTilePairs.Values)
-            {
-                tilemap.tiles.Remove(tile);
-            }
-
-            tilemap.selectedTile = null;
-            selectedTileButton = null;
-
-            PopulateTileButtons();
-            ShowTileButtonsThatContains(tilemap.searchValue);
-
-            deleteTileButton.Hide();
         }
 
         private void OnMouseDown(Event e)
@@ -555,6 +623,23 @@ namespace Fabgrid
         private void OnUndoRedo()
         {
             RemoveNullTiles();
+
+            foreach (var layer in GameObject.FindObjectsOfType<LayerBehaviour>())
+            {
+                if (layer.tilemap == tilemap && !tilemap.layers.Contains(layer.gameObject))
+                {
+                    tilemap.layers.Add(layer.gameObject);
+                }
+            }
+
+            layerPanel.PopulateLayerItems();
+        }
+
+        private void OnRefresh()
+        {
+            PopulateTileButtons();
         }
     }
 }
+
+#endif

@@ -5,9 +5,9 @@
     xmlns:editor="UnityEditor.UIElements"
     xsi:noNamespaceSchemaLocation="../../../../UIElementsSchema/UIElements.xsd"
 >
-  <engine:VisualElement name="add-tile-panel" class="add-tile-panel panel">
-    <engine:VisualElement name="prefab-panel" class="rounded-panel">
-      <editor:EnumField name="add-option-field" class="field" label="Add Option" binding-path="addOption" type="Fabgrid.TileAddOption, Assembly-CSharp"></editor:EnumField>
+  <engine:VisualElement name="add-tile-panel" class="panel add-tile-panel panel">
+    <engine:VisualElement name="prefab-panel" class="sub-panel rounded-panel">
+      <editor:EnumField name="add-option-field" class="field" label="Add Option" binding-path="addOption" type="Fabgrid.TileAddOption, Fabgrid"></editor:EnumField>
       <editor:ObjectField name="tile-prefab-field" class="field" label="Prefab" allow-scene-objects="false"></editor:ObjectField>
 
       <engine:VisualElement name="path-container" style="diplay: flex; flex-direction: row;">
@@ -17,17 +17,18 @@
     
     </engine:VisualElement>
 
-    <engine:VisualElement class="rounded-panel">
-      <editor:EnumField name="size-calculation-field" class="field" label="Size Calculation Option" binding-path="newTile.sizeCalculationOption" type="Fabgrid.SizeCalculationOption, Assembly-CSharp"></editor:EnumField>
+    <engine:VisualElement name="add-options-panel" class="sub-panel rounded-panel">
+      <editor:EnumField name="size-calculation-field" class="field" label="Size Calculation Option" binding-path="newTile.sizeCalculationOption" type="Fabgrid.SizeCalculationOption, Fabgrid"></editor:EnumField>
       <editor:Vector3Field name="tile-size-vector3-field" class="field" label="Size"></editor:Vector3Field>
       <editor:Vector3Field name="tile-offset-field" class="field" label="Offset"></editor:Vector3Field>
+      <engine:Button name="select-category-button" text="Select a category..."/>
     </engine:VisualElement>
 
     <engine:VisualElement name="add-tile-button-container">
       <engine:Button name="add-tile-button" text="Add" class="simple-button"/>
     </engine:VisualElement>
     
-    <engine:VisualElement name="tile-set-panel" class="rounded-panel">
+    <engine:VisualElement name="tile-set-panel" class="sub-panel rounded-panel">
       <engine:Button name="save-tile-set-button" text="Save Tile Set" class="tile-set-button" tooltip="Save the tiles for this Tilemap3D as a TileSet asset."/>
       <engine:Button name="load-tile-set-button" text="Load Tile Set" class="tile-set-button" tooltip="Load tiles into this Tilemap3D from a TileSet asset."/>
     </engine:VisualElement>

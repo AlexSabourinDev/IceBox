@@ -1,4 +1,6 @@
-﻿using UnityEditor;
+﻿#if UNITY_EDITOR
+
+using UnityEditor;
 using UnityEditor.UIElements;
 using UnityEngine.UIElements;
 
@@ -21,7 +23,7 @@ namespace Fabgrid
             BindControls();
 
             var configurationPanel = root.Q("configuration-panel");
-            StylingUtility.AddClassToAllOfType<Label>(configurationPanel, "field-label");
+            //StylingUtility.AddClassToAllOfType<Label>(configurationPanel, "field-label");
         }
 
         private void BindControls()
@@ -75,3 +77,5 @@ namespace Fabgrid
         }
     }
 }
+
+#endif

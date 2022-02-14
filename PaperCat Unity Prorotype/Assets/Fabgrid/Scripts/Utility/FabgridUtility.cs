@@ -37,21 +37,18 @@ namespace Fabgrid
 
 #endif
 
-        public static Bounds GetWorldBounds(GameObject gameObject, SizeCalculationOption sizeCalculationOption, Tilemap3D tilemap)
+        public static Bounds GetTileWorldBounds(GameObject tile, SizeCalculationOption sizeCalculationOption, Tilemap3D tilemap)
         {
             switch (sizeCalculationOption)
             {
                 case SizeCalculationOption.Collider:
-                    return GetColliderWorldBounds(gameObject);
+                    return GetColliderWorldBounds(tile);
 
                 case SizeCalculationOption.Mesh:
-                    var renderer = GetFirstComponent<Renderer>(gameObject);
-                    return renderer.bounds;
+                    return GetMeshWorldBounds(tile);
 
                 case SizeCalculationOption.Custom:
-                    return tilemap.selectedTile?.prefab == null ?
-                        new Bounds(gameObject.transform.position, Vector3.one) :
-                        new Bounds(gameObject.transform.position, tilemap.selectedTile.customSize);
+                    return new Bounds(tilemap.newTile.offset, tilemap.newTile.size);
 
                 default:
                     throw new System.Exception($"Fabgrid Error: The SizeCalculationOption {sizeCalculationOption} is unknown.");
@@ -62,6 +59,33 @@ namespace Fabgrid
         {
             // AlexS: Since we now correctly instantiate our gameobject, we don't need to worry about all the extra logic being done here before.
             return GetFirstComponent<Collider>(prefab).bounds;
+        }
+
+        private static Bounds GetMeshWorldBounds(GameObject prefab)
+        {
+            var min = Vector3.one * float.MaxValue;
+            var max = Vector3.one * float.MinValue;
+
+            foreach(var meshFilter in prefab.GetComponentsInChildren<MeshFilter>())
+            {
+                if (meshFilter.sharedMesh == null)
+                    continue;
+
+                foreach (var vertex in meshFilter.sharedMesh.vertices)
+                {
+                    min.x = Mathf.Min(min.x, vertex.x);
+                    min.y = Mathf.Min(min.y, vertex.y);
+                    min.z = Mathf.Min(min.z, vertex.z);
+
+                    max.x = Mathf.Max(max.x, vertex.x);
+                    max.y = Mathf.Max(max.y, vertex.y);
+                    max.z = Mathf.Max(max.z, vertex.z);
+                }
+            }
+
+            var b = new Bounds();
+            b.SetMinMax(min, max);
+            return b;
         }
 
         public static bool HasAnyComponent<T>(GameObject gameObject) where T : Component

@@ -1,4 +1,6 @@
-﻿using UnityEditor;
+﻿#if UNITY_EDITOR
+
+using UnityEditor;
 using UnityEngine.UIElements;
 
 namespace Fabgrid
@@ -22,3 +24,5 @@ namespace Fabgrid
         public abstract void DestroyPanel();
     }
 }
+
+#endif

@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿#if UNITY_EDITOR
+using System.Collections.Generic;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.UIElements;
@@ -13,17 +14,22 @@ namespace Fabgrid
         private VisualElement root;
         private VisualTreeAsset visualTree;
         private VisualElement selectedPanel;
-        private Dictionary<string, VisualTreeAsset> panelAssets;
+        private Dictionary<string, VisualTreeAsset> panelAssets = new Dictionary<string, VisualTreeAsset>();
         private FSM fsm;
+        private List<Panel> panels = new List<Panel>();
+
+        private StyleSheet darkTheme;
+        private StyleSheet lightTheme;
 
         private string fabgridFolder;
+
+        public State CurrentState => fsm.CurrentState;
+
+        public VisualElement Root => root;
 
         private void OnEnable()
         {
             fabgridFolder = PathUtility.GetFabgridFolder();
-
-            fsm = new FSM();
-            SetupPanelAssets();
 
             tilemap = target as Tilemap3D;
             tilemap.tileRotation = Quaternion.identity;
@@ -32,7 +38,48 @@ namespace Fabgrid
 
             visualTree = AssetDatabase.LoadAssetAtPath<VisualTreeAsset>($"{fabgridFolder}/Scripts/Editor/Tilemap3DEditor.uxml");
 
+            panels.Clear();
+            panels.Add(
+                new Panel("paint-panel",
+                $"{PathUtility.PanelsPath}/PaintPanel.uss",
+                $"{PathUtility.PanelsPath}/PaintPanel.uxml",
+                new Paint(root, tilemap), $"{fabgridFolder}/Textures/PaintButtonIcon.png"));
+
+            panels.Add(
+                new Panel("add-tile-panel",
+                $"{PathUtility.PanelsPath}/AddTilePanel.uss",
+                $"{PathUtility.PanelsPath}/AddTilePanel.uxml",
+                new AddTile(root, tilemap),
+                $"{fabgridFolder}/Textures/AddTileButtonIcon.png"));
+
+            panels.Add(
+                new Panel("configuration-panel",
+                $"{PathUtility.PanelsPath}/ConfigurationPanel.uss",
+                $"{PathUtility.PanelsPath}/ConfigurationPanel.uxml",
+                new Configurate(root, tilemap),
+                $"{fabgridFolder}/Textures/ConfigurateButtonIcon.png"));
+
+            //panels.Add(
+            //    new Panel("batching-panel",
+            //    $"{PathUtility.PanelsPath}/BatchingPanel.uss",
+            //    $"{PathUtility.PanelsPath}/BatchingPanel.uxml",
+            //    new Batching(root, tilemap),
+            //    $"{fabgridFolder}/Textures/BatchingButtonIcon.png"));
+
+            panels.Add(
+                new Panel("help-panel",
+                $"{PathUtility.PanelsPath}/HelpPanel.uss",
+                $"{PathUtility.PanelsPath}/HelpPanel.uxml",
+                new Help(root),
+                $"{fabgridFolder}/Textures/HelpButtonIcon.png"));
+
+            fsm = new FSM();
+            SetupPanelAssets();
+
             AddStyleSheets();
+
+            LoadThemes();
+            ApplyCurrentTheme();
 
             SceneView.duringSceneGui += OnDuringSceneGUI;
         }
@@ -40,10 +87,42 @@ namespace Fabgrid
         private void AddStyleSheets()
         {
             root.styleSheets.Add(AssetDatabase.LoadAssetAtPath<StyleSheet>($"{fabgridFolder}/Scripts/Editor/Tilemap3DEditor.uss"));
-            root.styleSheets.Add(AssetDatabase.LoadAssetAtPath<StyleSheet>($"{fabgridFolder}/Scripts/Editor/Viewports/PaintPanelViewport.uss"));
-            root.styleSheets.Add(AssetDatabase.LoadAssetAtPath<StyleSheet>($"{fabgridFolder}/Scripts/Editor/Viewports/AddTilePanel.uss"));
-            root.styleSheets.Add(AssetDatabase.LoadAssetAtPath<StyleSheet>($"{fabgridFolder}/Scripts/Editor/Viewports/ConfigurationPanel.uss"));
-            root.styleSheets.Add(AssetDatabase.LoadAssetAtPath<StyleSheet>($"{fabgridFolder}/Scripts/Editor/Viewports/HelpPanel.uss"));
+            
+            foreach (var panel in panels)
+                root.styleSheets.Add(AssetDatabase.LoadAssetAtPath<StyleSheet>(panel.StylesheetPath));
+        }
+
+        private void LoadThemes()
+        {
+            darkTheme = AssetDatabase.LoadAssetAtPath<StyleSheet>($"{fabgridFolder}/Scripts/Editor/Themes/Dark.uss");
+            lightTheme = AssetDatabase.LoadAssetAtPath<StyleSheet>($"{fabgridFolder}/Scripts/Editor/Themes/Light.uss");
+        }
+
+        private void ApplyCurrentTheme()
+        {
+            RemoveAppliedThemes();
+
+            if (EditorGUIUtility.isProSkin)
+            {
+                root.styleSheets.Add(darkTheme);
+            }
+            else 
+            {
+                root.styleSheets.Add(lightTheme);
+            }
+        }
+
+        private void RemoveAppliedThemes()
+        {
+            if (root.styleSheets.Contains(darkTheme))
+            {
+                root.styleSheets.Remove(darkTheme);
+            }
+
+            if (root.styleSheets.Contains(lightTheme))
+            {
+                root.styleSheets.Remove(lightTheme);
+            }
         }
 
         private void OnDisable()
@@ -62,13 +141,10 @@ namespace Fabgrid
 
         private void SetupPanelAssets()
         {
-            panelAssets = new Dictionary<string, VisualTreeAsset>
-            {
-                { "paint-panel", AssetDatabase.LoadAssetAtPath<VisualTreeAsset>($"{fabgridFolder}/Scripts/Editor/Viewports/PaintPanelViewport.uxml") },
-                { "add-tile-panel", AssetDatabase.LoadAssetAtPath<VisualTreeAsset>($"{fabgridFolder}/Scripts/Editor/Viewports/AddTilePanel.uxml") },
-                { "configuration-panel", AssetDatabase.LoadAssetAtPath<VisualTreeAsset>($"{fabgridFolder}/Scripts/Editor/Viewports/ConfigurationPanel.uxml") },
-                { "help-panel", AssetDatabase.LoadAssetAtPath<VisualTreeAsset>($"{fabgridFolder}/Scripts/Editor/Viewports/HelpPanel.uxml") }
-            };
+            panelAssets.Clear();
+
+            foreach (var panel in panels)
+                panelAssets.Add(panel.Name, AssetDatabase.LoadAssetAtPath<VisualTreeAsset>(panel.VisualTreeAssetPath));
         }
 
         public override VisualElement CreateInspectorGUI()
@@ -88,22 +164,12 @@ namespace Fabgrid
 
         private void SetupControls()
         {
-            var paintPanelButton = root.Q<Button>("paint-panel-button");
-            paintPanelButton.clickable.clicked += () => OnClickNavigationBarButton("paint-panel", paintPanelButton, new Paint(root, tilemap));
-
-            var addTilePanelButton = root.Q<Button>("add-tile-panel-button");
-            addTilePanelButton.clickable.clicked += () => OnClickNavigationBarButton("add-tile-panel", addTilePanelButton, new AddTile(root, tilemap));
-
-            var configurationPanelButton = root.Q<Button>("configuration-panel-button");
-            configurationPanelButton.clickable.clicked += () => OnClickNavigationBarButton("configuration-panel", configurationPanelButton, new Configurate(root, tilemap));
-
-            var helpPanelButton = root.Q<Button>("help-panel-button");
-            helpPanelButton.clickable.clicked += () => OnClickNavigationBarButton("help-panel", helpPanelButton, new Help(root));
-
-            AddNavigationButtonIcon(paintPanelButton, $"{fabgridFolder}/Textures/PaintButtonIcon.png");
-            AddNavigationButtonIcon(addTilePanelButton, $"{fabgridFolder}/Textures/AddTileButtonIcon.png");
-            AddNavigationButtonIcon(configurationPanelButton, $"{fabgridFolder}/Textures/ConfigurateButtonIcon.png");
-            AddNavigationButtonIcon(helpPanelButton, $"{fabgridFolder}/Textures/HelpButtonIcon.png");
+            foreach(var panel in panels)
+            {
+                var button = root.Q<Button>($"{panel.Name}-button");
+                button.clickable.clicked += () => OnClickNavigationBarButton(panel.Name, button, panel.State);
+                AddNavigationButtonIcon(button, panel.ButtonIconPath);
+            }
         }
 
         private void SelectPanel(string panelName, Button navigationBarButton, State state)
@@ -152,3 +218,4 @@ namespace Fabgrid
         }
     }
 }
+#endif

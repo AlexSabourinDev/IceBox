@@ -1,0 +1,47 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<engine:UXML
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xmlns:engine="UnityEngine.UIElements"
+    xmlns:editor="UnityEditor.UIElements"
+    xsi:noNamespaceSchemaLocation="../../../../UIElementsSchema/UIElements.xsd"
+>
+  <engine:VisualElement name="paint-panel" class="paint-panel panel">
+
+    <engine:VisualElement name="tool-panel" class="sub-panel rounded-panel">
+      <editor:EnumField name="tool-type-field"
+                        class="field"
+                        label="Tool"
+                        type="Fabgrid.ToolType, Fabgrid"
+                        binding-path="toolType">
+      </editor:EnumField>
+    </engine:VisualElement>
+
+    <engine:VisualElement name="tile-panel" style="display: flex; width: auto; height: auto; flex: 1;">
+
+
+      <engine:VisualElement name="navigation-panel">
+        <engine:TextField name="search-field" label="Search" binding-path="searchValue" style="width: 90%;"/>
+        <engine:Button name="filter-button"/>
+      </engine:VisualElement>
+
+      <engine:ScrollView name="paint-scroll-view" class="sub-panel rounded-scroll-view" show-vertical-scroller="true" style="flex-grow: 3.5;">
+        <engine:VisualElement name="paint-tile-container">
+        </engine:VisualElement>
+      </engine:ScrollView>
+    </engine:VisualElement>
+    <engine:VisualElement name="tile-edit-button-container" style="display: flex; justify-content: center; align-items: center;"/>
+
+    <engine:VisualElement name="layers-panel" class="sub-panel rounded-panel">
+        <engine:Label name="layers-label" text="Layers" class="medium-header-bold" style="-unity-text-align: middle-left;"/>
+        <engine:Button name="add-layer-button" text="Add" style="width: 64px"/>
+
+        <engine:ScrollView name="layers-panel-scroll-view">
+            
+        </engine:ScrollView>
+    </engine:VisualElement>
+
+    <engine:VisualElement name="paint-info">
+      <editor:IntegerField name="floor-index-field" label="Floor" binding-path="floorIndex" style="width: 75px;"/>
+    </engine:VisualElement>
+  </engine:VisualElement>
+</engine:UXML>

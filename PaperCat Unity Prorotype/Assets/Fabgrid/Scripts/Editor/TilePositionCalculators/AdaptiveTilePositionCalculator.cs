@@ -1,4 +1,6 @@
-﻿using UnityEditor;
+﻿#if UNITY_EDITOR
+
+using UnityEditor;
 using UnityEngine;
 
 namespace Fabgrid
@@ -43,3 +45,5 @@ namespace Fabgrid
         }
     }
 }
+
+#endif

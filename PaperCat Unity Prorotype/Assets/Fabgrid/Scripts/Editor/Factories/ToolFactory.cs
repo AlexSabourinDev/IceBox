@@ -1,4 +1,6 @@
-﻿namespace Fabgrid
+﻿#if UNITY_EDITOR
+
+namespace Fabgrid
 {
     public class ToolFactory
     {
@@ -31,3 +33,5 @@
         }
     }
 }
+
+#endif
