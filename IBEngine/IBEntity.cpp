@@ -434,6 +434,10 @@ namespace IB
 
     Property::Handle getPropertyFromEntity(Entity::Handle entityHandle, Asset::FourCC type)
     {
+        if (entityHandle == InvalidEntity)
+        {
+            return InvalidProperty;
+        }
         return findProperty(Entity::toData(entityHandle), type);
     }
 

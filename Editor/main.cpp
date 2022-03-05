@@ -50,16 +50,58 @@ namespace IB
 {
     namespace JobGraph
     {
+        struct Resources
+        {
+            enum
+            {
+                Transform = 0,
+                RendererFrontend,
+                RendererBackend,
+                ViewGather,
+                Editor,
+                Count
+            };
+
+            enum
+            {
+                TransformBit = 1 << Transform,
+                RendererFrontendBit = 1 << RendererFrontend,
+                RendererBackendBit = 1 << RendererBackend,
+                ViewGatherBit = 1 << ViewGather,
+                EditorBit = 1 << Editor
+            };
+        };
+        Job::Handle LastWriters[Resources::Count];
+
+        void addJob(Job::Handle job, uint32_t resourceReads, uint32_t resourceWrites)
+        {
+            // Writes are considered reads as well
+            uint32_t dependencyBits = resourceReads | resourceWrites;
+            Job::Handle dependencies[Resources::Count];
+            uint32_t dependencyCount = 0;
+
+            for (uint32_t i = 0; i < Resources::Count; i++)
+            {
+                if ((dependencyBits & (1 << i)) != 0)
+                {
+                    dependencies[dependencyCount++] = LastWriters[i];
+                }
+
+                if ((resourceWrites & (1 << i)) != 0)
+                {
+                    LastWriters[i] = job;
+                }
+            }
+
+            continueJob(job, dependencies, dependencyCount);
+        }
+
         uint32_t QueuedFrameCount = 0;
         uint32_t CommitedFrameCount = 0;
         uint32_t constexpr MaxPendingFrameCount = 2;
         IB::Thread::Event PendingFrameEvent;
 
         StackAllocator RenderFrameAllocators[MaxPendingFrameCount];
-
-        Job::Handle SubmittedEditorHandle = InvalidJob;
-        Job::Handle SubmittedViewGather = InvalidJob;
-        Job::Handle SubmittedDraw = InvalidJob;
 
         void init()
         {
@@ -117,33 +159,25 @@ namespace IB
             // - Main thread resumes, never waits on the event because the submission thread advanced the submission count.
             resetThreadEvent(PendingFrameEvent);
 
-            // Handles all window messages. Might interact with editor state
-            Job::Handle platformJob;
-            if (SubmittedEditorHandle == InvalidJob)
-            {
-                platformJob = launchJob(&platformMessageQueueJob, NoJobType, PlatformJobQueue);
-            }
-            else
-            {
-                platformJob = continueJob(&platformMessageQueueJob, &SubmittedEditorHandle, 1, NoJobType, PlatformJobQueue);
-            }
-
-            // Writes:
-            // All frontend state (potentially)
-            Job::Handle editorDependencies[2] = {platformJob, SubmittedViewGather};
-            // Wait on our previous view gather if present.
-            uint32_t dependencyCount = SubmittedViewGather != InvalidJob ? 2 : 1;
-            SubmittedEditorHandle = continueJob(&editorJob, editorDependencies, dependencyCount);
-
             StackAllocator *renderFrameAllocator = &RenderFrameAllocators[QueuedFrameCount % MaxPendingFrameCount];
             reset(renderFrameAllocator);
 
             ViewDesc *viewDescriptor = allocate<ViewDesc>(renderFrameAllocator);
 
+
+            // Handles all window messages. Might interact with editor state
+            Job::Handle platformJob = reserveJob(&platformMessageQueueJob, NoJobType, PlatformJobQueue);
+            addJob(platformJob, Resources::EditorBit, Resources::EditorBit);
+
+            // Writes:
+            // All frontend state (potentially)
+            Job::Handle editorJobHandle = reserveJob(&editorJob);
+            addJob(editorJobHandle, UINT32_MAX, UINT32_MAX);
+
             // Reads:
             // Frontend Renderer state
             // Transform state
-            SubmittedViewGather = continueJob([viewDescriptor, renderFrameAllocator](Job::Handle /*currentJob*/)
+            Job::Handle viewGather = reserveJob([viewDescriptor, renderFrameAllocator](Job::Handle /*currentJob*/)
             {
                 Cell::Handle currentCell = InvalidCell;
                 // Todo: needs a volatile load. Don't want the compiler to cache our load
@@ -163,15 +197,13 @@ namespace IB
                 *viewDescriptor = gatherCellView(gatherDesc);
 
                 return JobResult::Complete;
-            },
-                                              &SubmittedEditorHandle, 1);
+            });
 
-            // Can't draw in front of our previous draw
-            Job::Handle drawDependencies[2] = {SubmittedViewGather, SubmittedDraw};
+            addJob(viewGather, Resources::TransformBit | Resources::RendererFrontendBit, Resources::ViewGatherBit);
 
             // Writes:
             // Backend Renderer state
-            SubmittedDraw = continueJob([viewDescriptor, renderFrameAllocator](Job::Handle /*currentJob*/)
+            Job::Handle viewDraw = reserveJob([viewDescriptor, renderFrameAllocator](Job::Handle /*currentJob*/)
             {
                 drawCellView(renderFrameAllocator, *viewDescriptor);
 
@@ -185,7 +217,8 @@ namespace IB
 
                 return JobResult::Complete;
             },
-                                        drawDependencies, 2, NoJobType, RendererJobQueueIndex);
+                                        NoJobType, RendererJobQueueIndex);
+            addJob(viewDraw, Resources::ViewGatherBit, Resources::RendererBackendBit);
         }
 
         void flushQueuedFrames()
