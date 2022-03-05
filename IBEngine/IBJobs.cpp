@@ -679,3 +679,52 @@ namespace IB
         destroyThreadEvent(threadEvent);
     }
 } // namespace IB
+
+// Jobgraph
+namespace IB
+{
+    namespace JobGraph
+    {
+        namespace
+        {
+            Job::Handle LastWriters[MaxResourceCount];
+        }
+
+        void init()
+        {
+            for (uint32_t i = 0; i < MaxResourceCount; i++)
+            {
+                LastWriters[i] = InvalidJob;
+            }
+        }
+
+        void kill()
+        {
+            wait(LastWriters, MaxResourceCount);
+        }
+
+        void addJob(Job::Handle job, uint32_t resourceReads, uint32_t resourceWrites)
+        {
+            // Writes are considered reads as well
+            uint32_t dependencyBits = resourceReads | resourceWrites;
+            Job::Handle dependencies[MaxResourceCount];
+            uint32_t dependencyCount = 0;
+
+            // TODO: We could just pop our last bit and gets it's index instead.
+            for (uint32_t i = 0; i < MaxResourceCount; i++)
+            {
+                if ((dependencyBits & (1 << i)) != 0)
+                {
+                    dependencies[dependencyCount++] = LastWriters[i];
+                }
+
+                if ((resourceWrites & (1 << i)) != 0)
+                {
+                    LastWriters[i] = job;
+                }
+            }
+
+            continueJob(job, dependencies, dependencyCount);
+        }
+    }
+}

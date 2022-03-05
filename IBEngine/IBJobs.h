@@ -165,4 +165,17 @@ namespace IB
         desc.QueueIndex = queueIndex;
         return reserveJob(desc);
     }
+
+    namespace JobGraph
+    {
+        uint32_t constexpr MaxResourceCount = 32; // sizeof(uint32_t)*8
+        // Using the job graph is simple - each bit represents a resource.
+        // To mark a job as reading a resource, simply set that bit in the first argument
+        // To mark a job as write a resource, simply set that in the second argument
+        // addJob has sequential ordering, the last addJob to write a resource will be the one waited on by the next call
+        IB_API void addJob(Job::Handle job, uint32_t resourceReads, uint32_t resourceWrites);
+
+        IB_API void init();
+        IB_API void kill();
+    }
 } // namespace IB
