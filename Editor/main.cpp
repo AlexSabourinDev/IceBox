@@ -52,21 +52,11 @@ namespace IB
     {
         enum
         {
-            Transform = 0,
-            RendererFrontend,
-            RendererBackend,
-            ViewGather,
-            Editor,
-            Count
-        };
-
-        enum
-        {
-            TransformBit = 1 << Transform,
-            RendererFrontendBit = 1 << RendererFrontend,
-            RendererBackendBit = 1 << RendererBackend,
-            ViewGatherBit = 1 << ViewGather,
-            EditorBit = 1 << Editor
+            TransformBit = 1 << 0,
+            RendererFrontendBit = 1 << 1,
+            RendererBackendBit = 1 << 2,
+            ViewGatherBit = 1 << 3,
+            EditorBit = 1 << 4
         };
     };
 
