@@ -715,8 +715,7 @@ namespace IB
 
                         if (lineSweepChanged)
                         {
-                            Job::Handle job = updateLineSweepAsync(CellSelectedEntity, *sweep);
-                            wait(job); // Currently just plain waiting on the job. Likely want to run in parallel to the editor code
+                            updateLineSweep(CellSelectedEntity, *sweep);
                         }
                     }
                     else
@@ -976,7 +975,7 @@ namespace IB
                     GizmoMaterial = IB::createMaterial(gizmoMatDesc);
                 }
                 return JobResult::Complete;
-            }, NoJobType, RendererJobQueueIndex);
+            }, RendererJobType);
 
             launchJob([](Job::Handle /*currentJob*/)
             {
@@ -1037,7 +1036,7 @@ namespace IB
                 TranslationGizmoMesh = createMesh(meshDesc);
 
                 return JobResult::Complete;
-            }, NoJobType, RendererJobQueueIndex);
+            }, RendererJobType);
 
             // Rotation Gizmo
             launchJob([](Job::Handle /*currentJob*/)
@@ -1114,7 +1113,7 @@ namespace IB
                 RotationGizmoMesh = createMesh(meshDesc);
 
                 return JobResult::Complete;
-            }, NoJobType, RendererJobQueueIndex);
+            }, RendererJobType);
         }
 
         void kill()
@@ -1454,7 +1453,7 @@ namespace IB
                           }
                           return JobResult::Complete;
                       },
-                      NoJobType, RendererJobQueueIndex);
+                      RendererJobType);
         }
 
         void kill()
@@ -1482,6 +1481,7 @@ namespace IB
         {
             if (FrameStates[ActiveFrame].VertexCount > 0)
             {
+                // Put on the job queue, we want to make sure our frame's mesh is updated before our draw phase which lives on the job queue
                 launchJob([frame = ActiveFrame](Job::Handle /*currentJob*/)
                           {
                               MeshDesc meshDesc = {};
@@ -1494,7 +1494,7 @@ namespace IB
 
                               return JobResult::Complete;
                           },
-                          NoJobType, RendererJobQueueIndex);
+                          RendererJobType, RendererJobQueueIndex);
 
                 ActiveFrame = (ActiveFrame + 1) % FrameBufferCount;
             }

@@ -39,7 +39,7 @@ namespace IB
     Asset::FourCC const LineSweepPropertyType = Asset::toFourCC("LNSW");
 
     IB_API LineSweepDesc* getLineSweep(Property::Handle lineSweepProperty);
-    IB_API Job::Handle updateLineSweepAsync(Entity::Handle entity, LineSweepDesc const& lineSweep);
+    IB_API void updateLineSweep(Entity::Handle entity, LineSweepDesc const& lineSweep);
 
     IB_API void initGeometryToolkit();
     IB_API void killGeometryToolkit();

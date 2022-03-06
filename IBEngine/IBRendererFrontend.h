@@ -51,6 +51,10 @@ namespace IB
     struct MeshDesc;
 
     uint32_t constexpr RendererJobQueueIndex = 1;
+    // If ordering between this renderer call and others don't matter,
+    // use RendererJobType without RendererJobQueueIndex
+    // Consider only using RendererJobQueueIndex when ordering matters.
+    uint32_t constexpr RendererJobType = 0;
 
     namespace Serialization
     {

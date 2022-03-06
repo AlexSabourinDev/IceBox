@@ -260,7 +260,7 @@ namespace IB
         return &reinterpret_cast<LineSweep*>(Property::toValue(lineSweepProperty))->Desc;
     }
 
-    Job::Handle updateLineSweepAsync(Entity::Handle entity, LineSweepDesc const& lineSweep)
+    void updateLineSweep(Entity::Handle entity, LineSweepDesc const& lineSweep)
     {
         struct JobState
         {
@@ -271,21 +271,20 @@ namespace IB
             };
 
             uint32_t State = CreatingMesh;
-            LineSweepMesh Mesh;
         };
 
+        LineSweepMesh mesh = createLineSweepMesh(lineSweep);
+
         Property::Handle rendererProperty = getPropertyFromEntity(entity, RendererPropertyType);
-        return launchJob([lineSweep, rendererProperty, jobState = JobState{}](Job::Handle currentJob) mutable
+        launchJob([mesh, rendererProperty, jobState = JobState{}](Job::Handle currentJob) mutable
         {
             if (jobState.State == JobState::CreatingMesh)
             {
-                jobState.Mesh = createLineSweepMesh(lineSweep);
-
                 MeshAsset::Desc meshDesc = {};
-                meshDesc.Vertices = jobState.Mesh.Vertices.data();
-                meshDesc.VertexCount = jobState.Mesh.Vertices.count();
-                meshDesc.Indices = jobState.Mesh.Indices.data();
-                meshDesc.IndexCount = jobState.Mesh.Indices.count();
+                meshDesc.Vertices = mesh.Vertices.data();
+                meshDesc.VertexCount = mesh.Vertices.count();
+                meshDesc.Indices = mesh.Indices.data();
+                meshDesc.IndexCount = mesh.Indices.count();
 
                 MeshAsset::Handle lineSweepMesh = getMeshFromRendererProperty(rendererProperty);
                 Job::Handle createMeshJob = updateMeshAssetAsync(lineSweepMesh, meshDesc);
@@ -300,7 +299,7 @@ namespace IB
             {
                 return JobResult::Complete;
             }
-        });
+        }, NoJobType, RendererJobQueueIndex); // Make sure we run before the next draw
     }
 
     namespace Editor

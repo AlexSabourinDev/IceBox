@@ -2221,15 +2221,18 @@ namespace IB
 
             // Staging
             StagingBuffer staging = requestStagingBuffer(&Staging, indexSize + vertexSize);
-            memcpy(staging.Memory, desc.Vertices.Data, vertexSize);
-            memcpy(reinterpret_cast<uint8_t*>(staging.Memory) + vertexSize, desc.Indices.Data, indexSize);
+            if (vertexSize + indexSize > 0)
+            {
+                memcpy(staging.Memory, desc.Vertices.Data, vertexSize);
+                memcpy(reinterpret_cast<uint8_t *>(staging.Memory) + vertexSize, desc.Indices.Data, indexSize);
 
-            VkBufferCopy meshCopy = {};
-            meshCopy.srcOffset = staging.Offset;
-            meshCopy.dstOffset = Geometry.Meshes[meshIndex].VertexOffset;
-            meshCopy.size = vertexSize + indexSize;
+                VkBufferCopy meshCopy = {};
+                meshCopy.srcOffset = staging.Offset;
+                meshCopy.dstOffset = Geometry.Meshes[meshIndex].VertexOffset;
+                meshCopy.size = vertexSize + indexSize;
 
-            vkCmdCopyBuffer(commandBuffer, staging.Buffer, Geometry.MeshDataBuffers, 1, &meshCopy);
+                vkCmdCopyBuffer(commandBuffer, staging.Buffer, Geometry.MeshDataBuffers, 1, &meshCopy);
+            }
 
             // End our command buffer
             {

@@ -159,7 +159,7 @@ namespace IB
                                         }
 
                                         return JobResult::Complete;
-                                    }, NoJobType, RendererJobQueueIndex);
+                                    }, RendererJobType, RendererJobQueueIndex);
         JobGraph::addJob(viewDraw, Resources::ViewGatherBit, Resources::RendererBackendBit);
     }
 

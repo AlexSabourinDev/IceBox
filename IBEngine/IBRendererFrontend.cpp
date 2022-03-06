@@ -49,7 +49,7 @@ namespace IB
 
                                                                     return JobResult::Complete;
                                                                 },
-                                                                NoJobType, RendererJobQueueIndex);
+                                                                RendererJobType);
 
                     return Asset::wait(&imageCreate, 1, Create);
                 }
@@ -136,7 +136,7 @@ namespace IB
 
                                                 return JobResult::Complete;
                                             },
-                                            NoJobType, RendererJobQueueIndex);
+                                            RendererJobType);
 
                     // Store mesh for collision detection
                     jobs[1] = launchJob([meshAsset, &meshData](Job::Handle /*currentJob*/)
@@ -158,14 +158,15 @@ namespace IB
             {
                 MeshData *meshData = reinterpret_cast<MeshData *>(Asset::toValue(meshAsset));
 
-                launchJob([meshHandle = meshData->RendererMesh](Job::Handle /*currentJob*/)
-                              {
-                                  destroyMesh(meshHandle);
-                                  return JobResult::Complete;
-                              },
-                              NoJobType, RendererJobQueueIndex);
+                launchJob([meshData](Job::Handle /*currentJob*/)
+                          {
+                              destroyMesh(meshData->RendererMesh);
+                              MeshDataPool.remove(*meshData);
 
-                MeshDataPool.remove(*meshData);
+                              return JobResult::Complete;
+                          },
+                          RendererJobType, RendererJobQueueIndex);
+
             }
         };
         MeshAssetStreamer MeshStreamer;
@@ -216,7 +217,7 @@ namespace IB
 
                                                                       return JobResult::Complete;
                                                                   },
-                                                                  &textureJob, 1, NoJobType, RendererJobQueueIndex);
+                                                                  &textureJob, 1, RendererJobType);
 
                     return Asset::wait(&materialJob, 1, Create);
                 }
@@ -240,14 +241,16 @@ namespace IB
             {
                 RuntimeMaterial *material = reinterpret_cast<RuntimeMaterial *>(Asset::toValue(asset));
                 Asset::releaseResourceAsync(material->AlbedoTexture);
-                launchJob([materialHandle = material->Material](Job::Handle)
-                            {
-                                destroyMaterial(materialHandle);
-                                return JobResult::Complete;
-                            },
-                            NoJobType, RendererJobQueueIndex);
+                // Release in our job queue to maintain ordering with updates and creation
+                launchJob([material](Job::Handle)
+                          {
+                              destroyMaterial(material->Material);
+                              MaterialPool.remove(*material);
+
+                              return JobResult::Complete;
+                          },
+                          RendererJobType, RendererJobQueueIndex);
                 
-                MaterialPool.remove(*material);
             }
         };
         MaterialAssetStreamer MaterialStreamer;
@@ -316,19 +319,17 @@ namespace IB
 
                 if (*assetModified)
                 {
-                    Job::Handle materialUpdate = continueJob([material](Job::Handle /*currentJob*/)
-                                                             {
-                                                                 Resource::Handle textureResource = material->AlbedoTexture;
+                    continueJob([material](Job::Handle /*currentJob*/)
+                                {
+                                    Resource::Handle textureResource = material->AlbedoTexture;
 
-                                                                 ForwardDesc materialDesc = {};
-                                                                 materialDesc.AlbedoTint = material->AlbedoTint;
-                                                                 materialDesc.AlbedoImage = toImageHandle(Asset::getAssetFromResource(textureResource));
-                                                                 material->Material = updateMaterial(material->Material, materialDesc);
-                                                                 return JobResult::Complete;
-                                                             },
-                                                             &textureLoad, 1, NoJobType, RendererJobQueueIndex);
-                    // TODO: Do we need to wait here? Or can we have this job go off on its own?
-                    wait(materialUpdate);
+                                    ForwardDesc materialDesc = {};
+                                    materialDesc.AlbedoTint = material->AlbedoTint;
+                                    materialDesc.AlbedoImage = toImageHandle(Asset::getAssetFromResource(textureResource));
+                                    material->Material = updateMaterial(material->Material, materialDesc);
+                                    return JobResult::Complete;
+                                },
+                                &textureLoad, 1, RendererJobType, RendererJobQueueIndex);
                 }
 
                 ImGui::EndTable();
@@ -749,33 +750,47 @@ namespace IB
                               light->Light = createLight(desc);
                               return JobResult::Complete;
                           },
-                          NoJobType, RendererJobQueueIndex);
+                          RendererJobType, RendererJobQueueIndex);
 
                 return IB::Asset::toHandle(reinterpret_cast<uint64_t>(&directionalLight));
             }
 
             IB::Asset::LoadContinuation loadAsync(IB::Asset::LoadContext *context) override
             {
-                DirectionalLightProperty baseDirectionalLight = {};
-                if (context->BaseAsset != IB::InvalidAsset)
+                enum
                 {
-                    baseDirectionalLight = *toDirectionalLight(context->BaseAsset);
+                    Load = 0,
+                    Create
+                };
+
+                if (context->State == Load)
+                {
+                    DirectionalLightProperty baseDirectionalLight = {};
+                    if (context->BaseAsset != IB::InvalidAsset)
+                    {
+                        baseDirectionalLight = *toDirectionalLight(context->BaseAsset);
+                    }
+
+                    DirectionalLightProperty &directionalLight = *toDirectionalLight(context->LoadingAsset);
+                    Serialization::Delta::fromBinary(&context->Stream, &directionalLight.Desc, baseDirectionalLight.Desc);
+
+                    Job::Handle creation = launchJob([light = &directionalLight](Job::Handle /*currentJob*/)
+                                                     {
+                                                         DirectionalLightDesc desc =
+                                                             {light->Desc.Radiance,
+                                                              packRGBA(light->Desc.Tint)};
+                                                         light->Light = createLight(desc);
+                                                         return JobResult::Complete;
+                                                     },
+                                                     RendererJobType);
+                    context->Data = reinterpret_cast<uint64_t>(&directionalLight);
+                    return Asset::wait(&creation, 1, Create);
+                }
+                else
+                {
+                    return Asset::complete(Asset::toHandle(context->Data));
                 }
 
-                DirectionalLightProperty &directionalLight = *toDirectionalLight(context->LoadingAsset);
-                Serialization::Delta::fromBinary(&context->Stream, &directionalLight.Desc, baseDirectionalLight.Desc);
-
-                launchJob([light = &directionalLight](Job::Handle /*currentJob*/)
-                          {
-                              DirectionalLightDesc desc =
-                                  {light->Desc.Radiance,
-                                   packRGBA(light->Desc.Tint)};
-                              light->Light = createLight(desc);
-                              return JobResult::Complete;
-                          },
-                          NoJobType, RendererJobQueueIndex);
-
-                return Asset::complete(Asset::toHandle(reinterpret_cast<uint64_t>(&directionalLight)));
             }
 
             void saveThreadSafe(IB::Asset::SaveContext *context) override
@@ -792,7 +807,16 @@ namespace IB
 
             void unloadThreadSafe(IB::Asset::Handle assetHandle) override
             {
-                DirectionalLightProperties.remove(*toDirectionalLight(assetHandle));
+                DirectionalLightProperty *light = toDirectionalLight(assetHandle);
+                // Add to queue, since we can update at runtime
+                // we want to make sure our destruction happens in-order
+                launchJob([light](Job::Handle /*currentJob*/)
+                          {
+                              destroyLight(light->Light);
+                              DirectionalLightProperties.remove(*light);
+                              return JobResult::Complete;
+                          },
+                          RendererJobType, RendererJobQueueIndex);
             }
         };
 
@@ -839,7 +863,7 @@ namespace IB
                                       light->Light = updateLight(light->Light, desc);
                                       return JobResult::Complete;
                                   },
-                                  NoJobType, RendererJobQueueIndex);
+                                  RendererJobType, RendererJobQueueIndex);
                     }
 
                     ImGui::EndTable();
@@ -898,7 +922,7 @@ namespace IB
             killRenderer();
             return JobResult::Complete;
         },
-                  NoJobType, RendererJobQueueIndex);
+                  RendererJobType, RendererJobQueueIndex);
     }
 
     MaterialAsset::Handle createMaterialAsset(MaterialAsset::Desc asset)
@@ -906,6 +930,8 @@ namespace IB
         RuntimeMaterial &materialData = MaterialPool.add();
         materialData.AlbedoTint = asset.AlbedoTint;
         Job::Handle textureJob = Asset::loadResourceAsync(asset.AlbedoPath, { ImageType }, &materialData.AlbedoTexture);
+        
+        // Add to our queue, destruction happens on the queue and we want to make sure this happens before it
         continueJob([materialPtr = &materialData](Job::Handle /*currentJob*/) {
             Resource::Handle textureResource = materialPtr->AlbedoTexture;
             ForwardDesc materialDesc = {};
@@ -914,7 +940,7 @@ namespace IB
             materialPtr->Material = createMaterial(materialDesc);
             return JobResult::Complete;
         },
-                    &textureJob, 1, NoJobType, RendererJobQueueIndex);
+                    &textureJob, 1, RendererJobType, RendererJobQueueIndex);
 
         return MaterialAsset::toHandle(reinterpret_cast<uint64_t>(&materialData));
     }
@@ -924,6 +950,7 @@ namespace IB
         DirectionalLightProperty* directionalLight = &DirectionalLightProperties.add();
         directionalLight->Desc = directional;
 
+        // Add to job queue, destruction happens on our queue and we want to make sure this occurs before it
         launchJob([directionalLight](Job::Handle /*currentJob*/)
                   {
                       DirectionalLightDesc desc =
@@ -932,7 +959,7 @@ namespace IB
                       directionalLight->Light = createLight(desc);
                       return JobResult::Complete;
                   },
-                  NoJobType, RendererJobQueueIndex);
+                  RendererJobType, RendererJobQueueIndex);
 
         return Property::toHandle(reinterpret_cast<uint64_t>(directionalLight));
     }
@@ -951,7 +978,7 @@ namespace IB
 
             return JobResult::Complete;
         },
-            NoJobType, RendererJobQueueIndex);
+            RendererJobType, RendererJobQueueIndex);
 
         setCollisionShape(&meshData, meshAsset);
 
@@ -978,7 +1005,7 @@ namespace IB
 
             return JobResult::Complete;
         },
-            NoJobType, RendererJobQueueIndex);
+            RendererJobType, RendererJobQueueIndex);
 
         setCollisionShape(meshData, meshAsset);
 
