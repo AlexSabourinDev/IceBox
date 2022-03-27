@@ -21,7 +21,7 @@ namespace IB
                 IB::Job::Handle LoadingJob = {};
                 IB::Asset::Handle Asset = IB::InvalidAsset;
                 IB::File::Handle File = {};
-                char Path[IB::MaxFilePath] = {};
+                PathString Path = {};
             };
         }
     }
@@ -130,10 +130,10 @@ namespace IB
 
             IB::Job::Handle fileJob = IB::launchJob([resource, loadContext](Job::Handle /*currentJob*/)
             {
-                char fullPath[IB::MaxFilePath] = {};
-                sprintf(fullPath, "%s/%s", AssetPath, resource->Path);
+                IB::PathString fullPath = {};
+                sprintf(fullPath.String, "%s/%s", AssetPath, resource->Path.String);
 
-                resource->File = IB::openFile(fullPath, IB::OpenFileOptions::Read);
+                resource->File = IB::openFile(fullPath.String, IB::OpenFileOptions::Read);
                 if (resource->File != IB::InvalidFile)
                 {
                     loadContext->Stream = { reinterpret_cast<uint8_t *>(IB::mapFile(resource->File)) };
@@ -284,7 +284,7 @@ namespace IB
             resource->Asset = asset;
 
             IB_ASSERT(strlen(assetPath) < IB::MaxFilePath - 1, "Path is too long!");
-            strcpy(resource->Path, assetPath);
+            strcpy(resource->Path.String, assetPath);
 
             // Assure that the writes to our resource are visible
             // before we write our resource to the table
@@ -392,7 +392,7 @@ namespace IB
                 resource->Type = type;
 
                 IB_ASSERT(strlen(assetPath) < IB::MaxFilePath - 1, "Path is too long!");
-                strcpy(resource->Path, assetPath);
+                strcpy(resource->Path.String, assetPath);
 
                 requestHandle = loadBinaryAsync(resource, type, onResourceLoad, data);
                 resource->LoadingJob = requestHandle;
@@ -501,8 +501,8 @@ namespace IB
                 // Our reads are dependent on the volatileLoad above however, perhaps we can avoid the acquire due to a data dependency?
                 threadAcquire();
 
-                char fullPath[IB::MaxFilePath] = {};
-                sprintf(fullPath, "%s/%s", AssetPath, resource->Path);
+                PathString fullPath = {};
+                sprintf(fullPath.String, "%s/%s", AssetPath, resource->Path.String);
 
                 Serialization::WriteStream writeStream = {};
                 Serialization::toBinary(&writeStream, Serialization::Version);
@@ -510,7 +510,7 @@ namespace IB
                 SaveContext saveContext = {&writeStream, resource->Asset};
                 getStreamer(resource->Type)->saveThreadSafe(&saveContext);
 
-                IB::File::Handle file = IB::openFile(fullPath, OpenFileOptions::Create | OpenFileOptions::Overwrite | OpenFileOptions::Write);
+                IB::File::Handle file = IB::openFile(fullPath.String, OpenFileOptions::Create | OpenFileOptions::Overwrite | OpenFileOptions::Write);
                 IB::writeToFile(file, writeStream.Buffer, writeStream.BufferCursor);
                 IB::closeFile(file);
 
@@ -581,7 +581,7 @@ namespace IB
                 // Our reads are dependent on the volatileLoad above however, perhaps we can avoid the acquire due to a data dependency?
                 threadAcquire();
 
-                return resource->Path;
+                return resource->Path.String;
             }
         }
 

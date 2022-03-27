@@ -264,9 +264,15 @@ namespace IB
     };
 
     uint32_t constexpr MaxFilePath = 260;
+
+    struct PathString
+    {
+        char String[MaxFilePath];
+    };
+
     struct FileInfo
     {
-        char Path[MaxFilePath];
+        PathString Path;
         bool IsDirectory;
     };
 

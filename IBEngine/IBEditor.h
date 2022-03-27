@@ -8,6 +8,7 @@
 
 namespace IB
 {
+    struct PathString;
     namespace Mesh
     {
         enum class Handle : uint32_t;
@@ -60,6 +61,7 @@ namespace IB
         IB_API bool isSelected(Entity::Handle entity);
 
         IB_API bool resourceCombo(char const* label, Asset::FourCC type, Resource::Handle* resource, Job::Handle* loadingJob);
+        IB_API bool resourcePathCombo(char const *label, Asset::FourCC type, PathString *resourcePath);
     }
 
     namespace ImGizmo

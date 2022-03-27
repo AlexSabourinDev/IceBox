@@ -15,11 +15,84 @@
 #include <stdio.h>
 
 using namespace IB;
+
 namespace
 {
+    Asset::FourCC const StartupConfigType = Asset::toFourCC("SCFG");
+
+    struct StartupConfig
+    {
+        PathString StartupCellPath;
+    };
+
+    class StartupConfigAssetStreamer : public Asset::IStreamer
+    {
+    public:
+        bool memoryMapped() const override { return true; }
+        Asset::Handle create() override
+        {
+            StartupConfig *config = allocate<StartupConfig>();
+            return Asset::toHandle(reinterpret_cast<uint64_t>(config));
+        }
+        Asset::LoadContinuation loadAsync(Asset::LoadContext *context) override
+        {
+            StartupConfig *startupConfig = reinterpret_cast<StartupConfig *>(Asset::toValue(context->LoadingAsset));
+            fromBinary(&context->Stream, &startupConfig->StartupCellPath);
+            return Asset::complete(Asset::toHandle(reinterpret_cast<uint64_t>(startupConfig)));
+        }
+
+        void saveThreadSafe(Asset::SaveContext *context) override
+        {
+            StartupConfig const *startupConfig = reinterpret_cast<StartupConfig const*>(Asset::toValue(context->Asset));
+
+            toBinary(context->Stream, startupConfig->StartupCellPath);
+        }
+
+        void unloadThreadSafe(Asset::Handle asset) override
+        {
+            StartupConfig *startupConfig = reinterpret_cast<StartupConfig *>(Asset::toValue(asset));
+            deallocate(startupConfig);
+        }
+    };
+
+    StartupConfigAssetStreamer StartupConfigStreamer;
+} // namespace
+
+namespace IB
+{
+    namespace Editor
+    {
+        void startupConfigEditor(Asset::Handle asset, void *data)
+        {
+            bool *assetModified = reinterpret_cast<bool *>(data);
+
+            StartupConfig *startupConfig = reinterpret_cast<StartupConfig *>(Asset::toValue(asset));
+            if (ImGui::BeginTable("Inspector Table", 2))
+            {
+                ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed);
+                ImGui::TableSetupColumn("Data", ImGuiTableColumnFlags_None);
+
+                ImGui::TableNextColumn();
+                ImGui::Text("Startup Cell");
+
+                ImGui::TableNextColumn();
+                ImGui::SetNextItemWidth(-FLT_MIN);
+
+                *assetModified |= resourcePathCombo("#Cell", CellType, &startupConfig->StartupCellPath);
+
+                ImGui::EndTable();
+            }
+        }
+    } // namespace Editor
+}
+
+namespace
+{
+    bool EditorEnabled = true;
+
     // Global until we figure out state storage.
     Resource::Handle CellResource = {};
-    bool EditorAlive = true;
+    bool AppAlive = true;
     uint32_t constexpr PlatformJobQueue = 0;
     Window::Handle WindowHandle;
 
@@ -30,7 +103,7 @@ namespace
             return true;
         }
 
-        if (Editor::onWindowMessage(message))
+        if (EditorEnabled && Editor::onWindowMessage(message))
         {
             return true;
         }
@@ -76,6 +149,10 @@ namespace IB
             uint32_t constexpr maxAlignment = 16;
             RenderFrameAllocators[i] = createStackAllocator(memoryAllocate(maxStackFrameSize, maxAlignment), maxStackFrameSize);
         }
+
+        Asset::addStreamer(StartupConfigType, &StartupConfigStreamer);
+
+        Editor::addAssetEditor(StartupConfigType, &Editor::startupConfigEditor);
     }
 
     void kill()
@@ -91,7 +168,7 @@ namespace IB
     {
         if (processMessageQueue() == MessageQueueState::Quit)
         {
-            EditorAlive = false;
+            AppAlive = false;
         }
 
         return JobResult::Complete;
@@ -133,10 +210,17 @@ namespace IB
         Job::Handle platformJob = reserveJob(&platformMessageQueueJob, NoJobType, PlatformJobQueue);
         JobGraph::addJob(platformJob, Resources::EditorBit, Resources::EditorBit);
 
-        // Writes:
-        // All frontend state (potentially)
-        Job::Handle editorJobHandle = reserveJob(&editorJob);
-        JobGraph::addJob(editorJobHandle, UINT32_MAX, UINT32_MAX);
+        if (EditorEnabled)
+        {
+            // Writes:
+            // All frontend state (potentially)
+            Job::Handle editorJobHandle = reserveJob(&editorJob);
+            JobGraph::addJob(editorJobHandle, UINT32_MAX, UINT32_MAX);
+        }
+        else
+        {
+            
+        }
 
         // Reads:
         // Frontend Renderer state
@@ -201,7 +285,7 @@ int main()
     {
         launchJob([platformEvent](Job::Handle /*currentJob*/) {
             WindowDesc winDesc = {};
-            winDesc.Name = "EngineCat";
+            winDesc.Name = "Snake";
             winDesc.Width = 1024;
             winDesc.Height = 720;
             winDesc.OnWindowMessage = &primaryWindowHandler;
@@ -230,7 +314,7 @@ int main()
     }
 
     {
-        while (EditorAlive)
+        while (AppAlive)
         {
             frame();
         }

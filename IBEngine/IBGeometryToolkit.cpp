@@ -208,10 +208,10 @@ namespace IB
 
                 LineSweepData* lineSweepData = allocate<LineSweepData>();
 
-                char path[MaxFilePath];
-                sprintf(path, "Dynamic_LineSweep_%" PRIu64, Entity::toValue(entity));
+                PathString path;
+                sprintf(path.String, "Dynamic_LineSweep_%" PRIu64, Entity::toValue(entity));
 
-                Job::Handle loadJob = loadResourceAsync(path, MeshType,
+                Job::Handle loadJob = loadResourceAsync(path.String, MeshType,
                     [](void *data, Resource::Handle resource, Asset::ResourceLoad::State)
                     {
                         LineSweepData* lineSweepData = reinterpret_cast<LineSweepData*>(data);

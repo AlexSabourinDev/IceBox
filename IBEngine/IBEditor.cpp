@@ -220,26 +220,26 @@ namespace IB
                 {
                     if (fileInfo.IsDirectory)
                     {
-                        if (ImGui::TreeNode(fileInfo.Path))
+                        if (ImGui::TreeNode(fileInfo.Path.String))
                         {
-                            assetBrowserFileTree(directoryPath, fileInfo.Path, assetBrowser);
+                            assetBrowserFileTree(directoryPath, fileInfo.Path.String, assetBrowser);
                             ImGui::TreePop();
                         }
                     }
                     else
                     {
-                        ImGui::TreeNodeEx(fileInfo.Path, ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen);
+                        ImGui::TreeNodeEx(fileInfo.Path.String, ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen);
 
                         if (ImGui::IsItemClicked())
                         {
-                            Asset::FourCC resourceType = resourcePathToType(fileInfo.Path);
-                            if (strcmp(assetBrowser->SelectedResourceFile.Path, fileInfo.Path) != 0)
+                            Asset::FourCC resourceType = resourcePathToType(fileInfo.Path.String);
+                            if (strcmp(assetBrowser->SelectedResourceFile.Path.String, fileInfo.Path.String) != 0)
                             {
                                 assetBrowser->SelectedResourceFile = fileInfo;
                                 Asset::releaseResourceAsync(assetBrowser->SelectedResource);
                                 assetBrowser->SelectedResource = InvalidResource;
 
-                                Job::Handle loadJob = Asset::loadResourceAsync(fileInfo.Path, resourceType, &assetBrowser->SelectedResource);
+                                Job::Handle loadJob = Asset::loadResourceAsync(fileInfo.Path.String, resourceType, &assetBrowser->SelectedResource);
                                 wait(loadJob); // We want to wait on our load job as this simplifies the rest of the editor code
                             }
 
@@ -265,40 +265,35 @@ namespace IB
             return Asset::toValue(key);
         }
 
-        struct AssetPath
-        {
-            char Path[MaxFilePath];
-        };
-
-        LinearProbeHashMap<Asset::FourCC, DynamicArray<AssetPath>, fourCCHash> AssetList;
+        LinearProbeHashMap<Asset::FourCC, DynamicArray<PathString>, fourCCHash> AssetList;
         void collectAssets(char const *rootPath, char const *folder)
         {
-            char directoryPath[MaxFilePath] = {0};
-            sprintf(directoryPath, "%s%s/", rootPath, folder);
+            PathString directoryPath = {};
+            sprintf(directoryPath.String, "%s%s/", rootPath, folder);
 
-            char searchPath[MaxFilePath] = {0};
-            sprintf(searchPath, "%s*", directoryPath);
+            PathString searchPath = {0};
+            sprintf(searchPath.String, "%s*", directoryPath.String);
 
-            DirectoryIterator directoryTree = {searchPath};
+            DirectoryIterator directoryTree = {searchPath.String};
             FileInfo fileInfo;
             while (iterateDirectory(&directoryTree, &fileInfo))
             {
                 if (fileInfo.IsDirectory)
                 {
-                    collectAssets(directoryPath, fileInfo.Path);
+                    collectAssets(directoryPath.String, fileInfo.Path.String);
                 }
                 else
                 {
-                    Asset::FourCC resourceType = resourcePathToType(fileInfo.Path);
+                    Asset::FourCC resourceType = resourcePathToType(fileInfo.Path.String);
                     if (resourceType != InvalidFourCC)
                     {
                         if (!AssetList.isSet(resourceType))
                         {
-                            AssetList.set(resourceType, DynamicArray<AssetPath>{});
+                            AssetList.set(resourceType, DynamicArray<PathString>{});
                         }
 
-                        AssetPath assetPath;
-                        memcpy(assetPath.Path, fileInfo.Path, MaxFilePath);
+                        PathString assetPath;
+                        memcpy(assetPath.String, fileInfo.Path.String, MaxFilePath);
                         AssetList.getUnsafe(resourceType)->add(assetPath);
                     }
                 }
@@ -314,7 +309,7 @@ namespace IB
 
             char const *resourcePath = Asset::getResourcePath(*resource);
 
-            DynamicArray<AssetPath>* assets = AssetList.getUnsafe(type);
+            DynamicArray<PathString>* assets = AssetList.getUnsafe(type);
             if (assets == nullptr)
             {
                 char const *paths[2] = {"None", resourcePath};
@@ -324,7 +319,7 @@ namespace IB
             {
                 for (uint32_t i = 0; i < assets->count(); i++)
                 {
-                    if (strcmp((*assets)[i].Path, resourcePath) == 0)
+                    if (strcmp((*assets)[i].String, resourcePath) == 0)
                     {
                         currentItem = static_cast<int>(i) + 1;
                         break;
@@ -333,7 +328,7 @@ namespace IB
 
                 struct AssetList
                 {
-                    DynamicArray<AssetPath> *Assets;
+                    DynamicArray<PathString> *Assets;
                     char const *CurrentResource;
                 };
 
@@ -375,7 +370,7 @@ namespace IB
                                              {
                                                  return false;
                                              }
-                                             *text = (*assetList->Assets)[index - 1].Path;
+                                             *text = (*assetList->Assets)[index - 1].String;
                                              return true;
                                          },
                     &assetList, itemCount);
@@ -385,12 +380,92 @@ namespace IB
             {
                 if (currentItem > 0)
                 {
-                   *loadingJob = Asset::loadResourceAsync<Asset::ResourceLoad::Loading>((*assets)[currentItem - 1].Path, type, resource);
+                   *loadingJob = Asset::loadResourceAsync<Asset::ResourceLoad::Loading>((*assets)[currentItem - 1].String, type, resource);
                 }
                 else
                 {
                     *resource = InvalidResource;
                 }
+            }
+
+            return resourceChanged;
+        }
+
+        IB_API bool resourcePathCombo(char const *label, Asset::FourCC type, PathString *resourcePath)
+        {
+            bool resourceChanged = false;
+            int currentItem = 0;
+
+            DynamicArray<PathString> *assets = AssetList.getUnsafe(type);
+            if (assets == nullptr)
+            {
+                char const *paths[2] = {"None", resourcePath->String};
+                resourceChanged = ImGui::Combo(label, &currentItem, paths, resourcePath->String[0] != 0 ? 2 : 1);
+            }
+            else
+            {
+                for (uint32_t i = 0; i < assets->count(); i++)
+                {
+                    if (strcmp((*assets)[i].String, resourcePath->String) == 0)
+                    {
+                        currentItem = static_cast<int>(i) + 1;
+                        break;
+                    }
+                }
+
+                struct AssetList
+                {
+                    DynamicArray<PathString> *Assets;
+                    char const *CurrentResource;
+                };
+
+                AssetList assetList = {assets, resourcePath->String};
+
+                uint32_t itemCount = assets->count() + 1;
+                // If we didn't find our item and we have a valid resource path
+                // This means our resource is likely dynamic or no longer existing.
+                // Add it to the end of the list.
+                bool itemNotInList = currentItem == 0 && resourcePath->String[0] != 0;
+                if (itemNotInList)
+                {
+                    currentItem = itemCount;
+                    itemCount++;
+                }
+
+                resourceChanged = ImGui::Combo(
+                    label, &currentItem, +[](void *data, int index, char const **text)
+                                         {
+                                             if (index == 0)
+                                             {
+                                                 *text = "None";
+                                                 return true;
+                                             }
+
+                                             AssetList *assetList = reinterpret_cast<AssetList *>(data);
+                                             // If we're at the end of the list,
+                                             // That means our asset is not backed by the filesystem
+                                             // And needs special handling.
+                                             if (index == static_cast<int>(assetList->Assets->count()) + 1)
+                                             {
+                                                 *text = assetList->CurrentResource;
+                                                 return true;
+                                             }
+
+                                             // If we made it this far and we're still passed our
+                                             // asset list, we don't have this element.
+                                             if (index >= static_cast<int>(assetList->Assets->count()) + 2)
+                                             {
+                                                 return false;
+                                             }
+                                             *text = (*assetList->Assets)[index - 1].String;
+                                             return true;
+                                         },
+                    &assetList, itemCount);
+            }
+
+            if (resourceChanged)
+            {
+                *resourcePath = (*assets)[currentItem - 1];
             }
 
             return resourceChanged;
@@ -451,7 +526,13 @@ namespace IB
         void kill()
         {
             destroyEntity(CameraHandle);
-            Asset::releaseResourceAsync(AssetBrowser.SelectedResource);
+            Job::Handle releaseHandle = Asset::releaseResourceAsync(AssetBrowser.SelectedResource);
+            wait(releaseHandle);
+
+            for (uint32_t i = 0; i < ModifiedResources.count(); i++)
+            {
+                Asset::releaseResourceAsync(ModifiedResources[i]);
+            }
         }
 
         void frame(Editor::FrameState* state)

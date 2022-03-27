@@ -745,8 +745,8 @@ namespace IB
             }
         }
 
-        static_assert(MaxFilePath == MAX_PATH, "Maximum path values don't match.");
-        memcpy(fileInfo->Path, findData.cFileName, MAX_PATH);
+        static_assert(MaxFilePath >= MAX_PATH, "Maximum path values don't match.");
+        memcpy(fileInfo->Path.String, findData.cFileName, MAX_PATH);
         fileInfo->IsDirectory = (findData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
         return !isDone;
     }
