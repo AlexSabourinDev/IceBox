@@ -131,7 +131,7 @@ namespace
 
     uint32_t constexpr MaxAllocatorPoolSizes[AllocationCategory::Count] = {
         1024 * 1024 * 16,
-        1024 * 1024 * 16,
+        1024 * 1024 * 64,
         1024 * 1024 * 64,
         1024 * 1024 * 512,
     };
@@ -561,7 +561,7 @@ namespace
         } Cleanup;
     };
 
-    uint32_t constexpr StagingSize = 10 * 1024 * 1024; // 10MB of staging space
+    uint32_t constexpr StagingSize = 32 * 1024 * 1024; // 32MB of staging space
     uint32_t constexpr MaxStagingFenceCount = 128;
     uint32_t constexpr MaxTransferCount = 128;
     uint32_t constexpr MaxDescriptorUpdateCount = 128;

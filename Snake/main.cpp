@@ -28,7 +28,6 @@ namespace
     class StartupConfigAssetStreamer : public Asset::IStreamer
     {
     public:
-        bool memoryMapped() const override { return true; }
         Asset::Handle create() override
         {
             StartupConfig *config = allocate<StartupConfig>();
@@ -88,10 +87,10 @@ namespace IB
 
 namespace
 {
-    bool EditorEnabled = true;
+    bool EditorEnabled = false;
 
     // Global until we figure out state storage.
-    Resource::Handle CellResource = {};
+    Resource::Handle CellResource = InvalidResource;
     bool AppAlive = true;
     uint32_t constexpr PlatformJobQueue = 0;
     Window::Handle WindowHandle;
@@ -103,7 +102,7 @@ namespace
             return true;
         }
 
-        if (EditorEnabled && Editor::onWindowMessage(message))
+        if (Editor::onWindowMessage(message))
         {
             return true;
         }
@@ -129,7 +128,8 @@ namespace IB
             RendererFrontendBit = 1 << 1,
             RendererBackendBit = 1 << 2,
             ViewGatherBit = 1 << 3,
-            EditorBit = 1 << 4
+            EditorBit = 1 << 4,
+            ImGuiBackendBit = 1 << 6, // Windowing + backend logic
         };
     };
 
@@ -140,6 +140,7 @@ namespace IB
 
     StackAllocator RenderFrameAllocators[MaxPendingFrameCount];
 
+    Resource::Handle StartupConfigResource;
     void init()
     {
         PendingFrameEvent = IB::createThreadEvent();
@@ -154,6 +155,22 @@ namespace IB
 
         Editor::addAssetEditor(StartupConfigType, &Editor::startupConfigEditor);
         Editor::addLooseResourceType(StartupConfigType, "StartupConfig", ".scfg", true);
+
+        if (!EditorEnabled)
+        {
+            Job::Handle loadJob = Asset::loadResourceAsync("Snake.scfg", StartupConfigType, &StartupConfigResource);
+            continueJob([](Job::Handle)
+                        {
+                            Asset::Handle asset = Asset::getAssetFromResource(StartupConfigResource);
+                            StartupConfig const *config = reinterpret_cast<StartupConfig const *>(Asset::toValue(asset));
+
+                            loadResourceAsync(config->StartupCellPath.String, CellType, &CellResource);
+
+                            Asset::releaseResourceAsync(StartupConfigResource);
+                            return JobResult::Complete;
+                        },
+                        &loadJob, 1);
+        }
     }
 
     void kill()
@@ -209,7 +226,8 @@ namespace IB
 
         // Handles all window messages. Might interact with editor state
         Job::Handle platformJob = reserveJob(&platformMessageQueueJob, NoJobType, PlatformJobQueue);
-        JobGraph::addJob(platformJob, Resources::EditorBit, Resources::EditorBit);
+        JobGraph::addJob(platformJob, Resources::EditorBit, 
+            Resources::EditorBit | Resources::RendererFrontendBit | Resources::ImGuiBackendBit | Resources::RendererBackendBit);
 
         if (EditorEnabled)
         {
@@ -217,10 +235,6 @@ namespace IB
             // All frontend state (potentially)
             Job::Handle editorJobHandle = reserveJob(&editorJob);
             JobGraph::addJob(editorJobHandle, UINT32_MAX, UINT32_MAX);
-        }
-        else
-        {
-            
         }
 
         // Reads:
@@ -248,7 +262,9 @@ namespace IB
             return JobResult::Complete;
         });
 
-        JobGraph::addJob(viewGather, Resources::TransformBit | Resources::RendererFrontendBit, Resources::ViewGatherBit);
+        JobGraph::addJob(viewGather,
+                         Resources::TransformBit | Resources::RendererFrontendBit,
+            Resources::ViewGatherBit);
 
         // Writes:
         // Backend Renderer state
@@ -267,7 +283,7 @@ namespace IB
             return JobResult::Complete;
         },
                                     RendererJobType, RendererJobQueueIndex);
-        JobGraph::addJob(viewDraw, Resources::ViewGatherBit, Resources::RendererBackendBit);
+        JobGraph::addJob(viewDraw, Resources::ViewGatherBit | Resources::ImGuiBackendBit, Resources::RendererBackendBit);
     }
 
     void flushQueuedFrames()
