@@ -48,6 +48,8 @@ namespace IB
         IB_API void addAssetEditor(Asset::FourCC type, AssetEditorCallback* frame);
         IB_API void drawAssetEditor(Asset::FourCC type, Asset::Handle handle, void* parentEditorData = nullptr);
 
+        IB_API void addLooseResourceType(Asset::FourCC type, char const *name, char const *extension, bool allowCreation);
+
         struct FrameState
         {
             Resource::Handle* CellResource;

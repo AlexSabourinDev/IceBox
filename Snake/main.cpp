@@ -153,6 +153,7 @@ namespace IB
         Asset::addStreamer(StartupConfigType, &StartupConfigStreamer);
 
         Editor::addAssetEditor(StartupConfigType, &Editor::startupConfigEditor);
+        Editor::addLooseResourceType(StartupConfigType, "StartupConfig", ".scfg", true);
     }
 
     void kill()

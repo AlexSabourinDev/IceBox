@@ -34,38 +34,6 @@ namespace IB
 
             return path + extensionIndex;
         }
-
-        Asset::FourCC resourcePathToType(char const *assetPath)
-        {
-            char const *extension = getExtension(assetPath);
-
-            if (strcmp(extension, ".cell") == 0)
-            {
-                return CellType;
-            }
-            else if (strcmp(extension, ".mat") == 0)
-            {
-                return MaterialType;
-            }
-            else if (strcmp(extension, ".msh") == 0)
-            {
-                return MeshType;
-            }
-            else if (strcmp(extension, ".tex") == 0)
-            {
-                return ImageType;
-            }
-            else if (strcmp(extension, ".entt") == 0)
-            {
-                return EntityType;
-            }
-            else if (strcmp(extension, ".shdr") == 0)
-            {
-                return ShaderType;
-            }
-
-            return InvalidFourCC;
-        }
     } // namespace
 
     namespace ImGizmo
@@ -168,6 +136,37 @@ namespace IB
         Entity::Handle CameraHandle;
         uint32_t WindowWidth = 0;
         uint32_t WindowHeight = 0;
+
+        namespace 
+        {
+            struct LooseResourceType
+            {
+                Asset::FourCC Type;
+                char const *Name;
+                char const *Extension;
+                bool AllowCreation;
+            };
+            DynamicArray<LooseResourceType> LooseResourceTypes;
+
+            Asset::FourCC resourcePathToType(char const *assetPath)
+            {
+                char const *extension = getExtension(assetPath);
+                for (uint32_t i = 0; i < LooseResourceTypes.count(); i++)
+                {
+                    if (strcmp(extension, LooseResourceTypes[i].Extension) == 0)
+                    {
+                        return LooseResourceTypes[i].Type;
+                    }
+                }
+
+                return InvalidFourCC;
+            }
+        }
+
+        void addLooseResourceType(Asset::FourCC type, char const *name, char const *extension, bool allowCreation)
+        {
+            LooseResourceTypes.add(type, name, extension, allowCreation);
+        }
 
         namespace
         {
@@ -617,6 +616,34 @@ namespace IB
             if (ImGui::Begin("Asset Browser"))
             {
                 assetBrowserFileTree("../Assets/", "Compiled", &AssetBrowser);
+
+                if (ImGui::BeginPopupContextWindow())
+                {
+                    if (ImGui::BeginMenu("Create"))
+                    {
+                        for (uint32_t i = 0; i < LooseResourceTypes.count(); i++)
+                        {
+                            if (LooseResourceTypes[i].AllowCreation && ImGui::MenuItem(LooseResourceTypes[i].Name))
+                            {
+                                Asset::Handle asset = Asset::createAsset(LooseResourceTypes[i].Type);
+                                PathString name;
+
+                                uint32_t nextIndex = 0;
+                                do
+                                {
+                                    sprintf(name.String, "New%s_%u%s", LooseResourceTypes[i].Name, nextIndex, LooseResourceTypes[i].Extension);
+                                    nextIndex++;
+                                } while (Asset::isResourceLoaded(name.String));
+
+                                Resource::Handle newResource = createResourceThreadSafe(name.String, LooseResourceTypes[i].Type, asset);
+                                Asset::saveResourceAsync(newResource);
+                            }
+                        }
+
+                        ImGui::EndMenu();
+                    }
+                    ImGui::EndPopup();
+                }
 
                 if (ImGui::BeginPopupModal("Open Cell?", nullptr, ImGuiWindowFlags_NoResize))
                 {

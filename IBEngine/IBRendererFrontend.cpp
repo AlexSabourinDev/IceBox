@@ -914,6 +914,10 @@ namespace IB
         Editor::addAssetEditor(CameraPropertyType, &Editor::cameraEditor);
         Editor::addAssetEditor(MaterialType, &Editor::materialEditor);
         Editor::addAssetEditor(DirectionalLightPropertyType, &Editor::directionalLightEditor);
+
+        Editor::addLooseResourceType(MaterialType, "Material", ".mat", true);
+        Editor::addLooseResourceType(ImageType, "Texture", ".tex", false);
+        Editor::addLooseResourceType(MeshType, "Mesh", ".msh", false);
     }
 
     void killRendererFrontend()

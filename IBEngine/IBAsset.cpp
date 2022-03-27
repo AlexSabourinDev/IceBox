@@ -544,6 +544,11 @@ namespace IB
 
         Asset::Handle getAssetFromResource(Resource::Handle resourceHandle)
         {
+            if (resourceHandle == InvalidResource)
+            {
+                return InvalidAsset;
+            }
+
             uint32_t hashTableIndex = Resource::toValue(resourceHandle) % MaxTableEntries;
             IB_ASSERT(ResourceHashTable[hashTableIndex].RefCount > 0, "Resource is not loaded!");
 

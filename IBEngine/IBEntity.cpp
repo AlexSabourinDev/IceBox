@@ -604,6 +604,21 @@ namespace IB
 
         class CellAssetStreamer : public Asset::IStreamer
         {
+            IB::Asset::Handle create() override
+            {
+                uint32_t createdCell = MaxCellCount;
+                for (uint32_t i = 0; i < MaxCellCount; i++)
+                {
+                    if (atomicCompareExchange(&CellAllocations[i], false, true) == false)
+                    {
+                        createdCell = i;
+                        break;
+                    }
+                }
+                IB_ASSERT(createdCell != MaxCellCount, "Failed to create a cell! How many cells do we have active?");
+                return IB::Asset::toHandle(createdCell);
+            }
+
             IB::Asset::LoadContinuation loadAsync(IB::Asset::LoadContext *context) override
             {
                 enum State
@@ -615,19 +630,10 @@ namespace IB
 
                 if (context->State == LoadBase)
                 {
-                    uint32_t createdCell = MaxCellCount;
-                    for (uint32_t i = 0; i < MaxCellCount; i++)
-                    {
-                        if (atomicCompareExchange(&CellAllocations[i], false, true) == false)
-                        {
-                            createdCell = i;
-                            break;
-                        }
-                    }
-                    IB_ASSERT(createdCell != MaxCellCount, "Failed to create a cell! How many cells do we have active?");
+                    uint32_t const cellIndex = static_cast<uint32_t>(Asset::toValue(context->LoadingAsset));
 
-                    CellAsset& cell = Cells[createdCell];
-                    context->Data = createdCell;
+                    CellAsset &cell = Cells[cellIndex];
+                    context->Data = cellIndex;
 
                     char const *baseCellPath = "";
                     fromBinary(&context->Stream, &baseCellPath);
@@ -707,6 +713,7 @@ namespace IB
 
             void saveThreadSafe(IB::Asset::SaveContext *context) override
             {
+                IB_ASSERT(context->Asset != InvalidAsset, "Trying to save an invalid asset!");
                 CellAsset const& cell = Cells[Asset::toValue(context->Asset)];
                 char const *baseCellPath = IB::Asset::getResourcePath(cell.BaseCell);
                 toBinary(context->Stream, baseCellPath);
@@ -866,6 +873,9 @@ namespace IB
         Editor::addAssetEditor(CellType, &Editor::cellEditor);
         Editor::addAssetEditor(EntityType, &Editor::entityEditor);
         Editor::addAssetEditor(TransformPropertyType, &Editor::transformEditor);
+
+        Editor::addLooseResourceType(CellType, "Cell", ".cell", true);
+        Editor::addLooseResourceType(EntityType, "Entity", ".entt", false);
     }
 
     void killEntitySystem()
