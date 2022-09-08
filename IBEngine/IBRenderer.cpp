@@ -496,6 +496,20 @@ namespace
         };
     };
 
+    struct ImageAndView
+    {
+        enum ImageType
+        {
+            Color,
+            Depth
+        };
+
+        Allocation Allocation;
+        VkImage Image;
+        VkImageView View;
+        ImageType Type;
+    };
+
     uint32_t constexpr MaxImageCount = 100;
     uint32_t constexpr MaxSamplerCount = 1000;
     uint32_t constexpr FrameBufferCount = 2;
@@ -517,8 +531,6 @@ namespace
             VkExtent2D SurfaceExtents;
             VkPresentModeKHR PresentMode;
             VkSwapchainKHR Swapchain;
-            VkImage SwapchainImages[MaxPhysicalImageCount];
-            uint32_t SwapchainImageCount;
 
             struct
             {
@@ -533,7 +545,7 @@ namespace
             {
                 VkSemaphore AcquireSemaphore;
                 VkSemaphore FinishedSemaphore;
-                VkImageView SwapchainImageView;
+                ImageAndView SwapchainImage;
                 VkCommandBuffer PrimaryCommandBuffer;
                 VkFence FinishedFence;
             } FrameBuffer[FrameBufferCount];
@@ -542,12 +554,7 @@ namespace
 
         struct
         {
-            struct
-            {
-                VkImage Image;
-                VkImageView ImageView;
-                Allocation Allocation;
-            } Images[MaxImageCount];
+            ImageAndView Images[MaxImageCount];
             uint32_t ImageCount = 0;
         } Textures;
 
@@ -708,9 +715,7 @@ namespace
 
         struct
         {
-            Allocation DepthImageAllocation;
-            VkImage DepthImage;
-            VkImageView DepthImageView;
+            ImageAndView DepthImage;
         } FrameBuffer[FrameBufferCount];
         uint32_t InstanceCount = 0;
 
@@ -769,18 +774,13 @@ namespace
         uint32_t Height = 0;
         uint32_t Stride = 0;
         VulkanAllocator *Allocator = nullptr;
-    };
-
-    struct ImageAndView
-    {
-        Allocation Allocation;
-        VkImage Image;
-        VkImageView ImageView;
+        ImageAndView::ImageType Type = ImageAndView::Color;
     };
 
     ImageAndView allocImageAndView(ImageAllocation alloc)
     {
         ImageAndView imageAndView;
+        imageAndView.Type = alloc.Type;
 
         {
             VkImageCreateInfo imageCreate = {};
@@ -837,7 +837,7 @@ namespace
             imageCreateViewInfo.components = {VK_COMPONENT_SWIZZLE_R, VK_COMPONENT_SWIZZLE_G, VK_COMPONENT_SWIZZLE_B, VK_COMPONENT_SWIZZLE_A};
             imageCreateViewInfo.subresourceRange = subresourceRange;
 
-            IB_VKCHECK(vkCreateImageView(alloc.LogicalDevice, &imageCreateViewInfo, NoAllocator, &imageAndView.ImageView));
+            IB_VKCHECK(vkCreateImageView(alloc.LogicalDevice, &imageCreateViewInfo, NoAllocator, &imageAndView.View));
         }
 
         return imageAndView;
@@ -850,10 +850,10 @@ namespace
             vkDestroySwapchainKHR(RendererContext.LogicalDevice, RendererContext.Present.Swapchain, NoAllocator);
             for (uint32_t fb = 0; fb < FrameBufferCount; fb++)
             {
-                vkDestroyImageView(RendererContext.LogicalDevice, RendererContext.Present.FrameBuffer[fb].SwapchainImageView, NoAllocator);
-                vkDestroyImage(RendererContext.LogicalDevice, ForwardPass.FrameBuffer[fb].DepthImage, NoAllocator);
-                vkDestroyImageView(RendererContext.LogicalDevice, ForwardPass.FrameBuffer[fb].DepthImageView, NoAllocator);
-                freeDeviceMemory(&Allocator, ForwardPass.FrameBuffer[fb].DepthImageAllocation);
+                vkDestroyImageView(RendererContext.LogicalDevice, RendererContext.Present.FrameBuffer[fb].SwapchainImage.View, NoAllocator);
+                vkDestroyImage(RendererContext.LogicalDevice, ForwardPass.FrameBuffer[fb].DepthImage.Image, NoAllocator);
+                vkDestroyImageView(RendererContext.LogicalDevice, ForwardPass.FrameBuffer[fb].DepthImage.View, NoAllocator);
+                freeDeviceMemory(&Allocator, ForwardPass.FrameBuffer[fb].DepthImage.Allocation);
             }
         }
 
@@ -895,9 +895,11 @@ namespace
 
             IB_VKCHECK(vkCreateSwapchainKHR(RendererContext.LogicalDevice, &swapchainCreate, NoAllocator, &RendererContext.Present.Swapchain));
 
-            IB_VKCHECK(vkGetSwapchainImagesKHR(RendererContext.LogicalDevice, RendererContext.Present.Swapchain, &RendererContext.Present.SwapchainImageCount, NULL));
-            RendererContext.Present.SwapchainImageCount = RendererContext.Present.SwapchainImageCount < MaxPhysicalImageCount ? RendererContext.Present.SwapchainImageCount : MaxPhysicalImageCount;
-            IB_VKCHECK(vkGetSwapchainImagesKHR(RendererContext.LogicalDevice, RendererContext.Present.Swapchain, &RendererContext.Present.SwapchainImageCount, RendererContext.Present.SwapchainImages));
+            VkImage swapchainImages[FrameBufferCount];
+
+            uint32_t swapchainImageCount = FrameBufferCount;
+            IB_VKCHECK(vkGetSwapchainImagesKHR(RendererContext.LogicalDevice, RendererContext.Present.Swapchain, &swapchainImageCount, swapchainImages));
+            IB_ASSERT(swapchainImageCount >= FrameBufferCount, "Too few swapchain images!");
 
             for (uint32_t fb = 0; fb < FrameBufferCount; fb++)
             {
@@ -913,10 +915,11 @@ namespace
                 imageViewCreate.subresourceRange.levelCount = 1;
                 imageViewCreate.subresourceRange.baseArrayLayer = 0;
                 imageViewCreate.subresourceRange.layerCount = 1;
-                imageViewCreate.image = RendererContext.Present.SwapchainImages[fb];
+                imageViewCreate.image = swapchainImages[fb];
                 imageViewCreate.format = RendererContext.Present.SurfaceFormat.format;
 
-                IB_VKCHECK(vkCreateImageView(RendererContext.LogicalDevice, &imageViewCreate, NoAllocator, &RendererContext.Present.FrameBuffer[fb].SwapchainImageView));
+                RendererContext.Present.FrameBuffer[fb].SwapchainImage.Image = swapchainImages[fb];
+                IB_VKCHECK(vkCreateImageView(RendererContext.LogicalDevice, &imageViewCreate, NoAllocator, &RendererContext.Present.FrameBuffer[fb].SwapchainImage.View));
             }
         }
 
@@ -934,11 +937,9 @@ namespace
                 imageAlloc.Height = surfaceExtents.height;
                 imageAlloc.Stride = 4;
                 imageAlloc.Allocator = &Allocator;
+                imageAlloc.Type = ImageAndView::Depth;
 
-                ImageAndView imageAndView = allocImageAndView(imageAlloc);
-                ForwardPass.FrameBuffer[fb].DepthImage = imageAndView.Image;
-                ForwardPass.FrameBuffer[fb].DepthImageView = imageAndView.ImageView;
-                ForwardPass.FrameBuffer[fb].DepthImageAllocation = imageAndView.Allocation;
+                ForwardPass.FrameBuffer[fb].DepthImage = allocImageAndView(imageAlloc);
             }
         }
     }
@@ -977,11 +978,10 @@ namespace
         VkAccessFlagBits dstAccessMask,
         VkImageLayout oldLayout,
         VkImageLayout newLayout,
-        VkImageAspectFlagBits aspectMask,
-        VkImage image)
+        ImageAndView image)
     {
         VkImageSubresourceRange imageSubresource = {};
-        imageSubresource.aspectMask = aspectMask;
+        imageSubresource.aspectMask = (image.Type == ImageAndView::Color) ? VK_IMAGE_ASPECT_COLOR_BIT : VK_IMAGE_ASPECT_DEPTH_BIT;
         imageSubresource.levelCount = 1;
         imageSubresource.baseMipLevel = 0;
         imageSubresource.baseArrayLayer = 0;
@@ -993,7 +993,7 @@ namespace
         imageBarrier.newLayout = newLayout;
         imageBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
         imageBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        imageBarrier.image = image;
+        imageBarrier.image = image.Image;
         imageBarrier.subresourceRange = imageSubresource;
         imageBarrier.srcAccessMask = sourceAccessMask;
         imageBarrier.dstAccessMask = dstAccessMask;
@@ -1838,11 +1838,11 @@ namespace IB
         {
             vkDestroySemaphore(RendererContext.LogicalDevice, RendererContext.Present.FrameBuffer[fb].AcquireSemaphore, NoAllocator);
             vkDestroySemaphore(RendererContext.LogicalDevice, RendererContext.Present.FrameBuffer[fb].FinishedSemaphore, NoAllocator);
-            vkDestroyImageView(RendererContext.LogicalDevice, RendererContext.Present.FrameBuffer[fb].SwapchainImageView, NoAllocator);
+            vkDestroyImageView(RendererContext.LogicalDevice, RendererContext.Present.FrameBuffer[fb].SwapchainImage.View, NoAllocator);
             vkDestroyFence(RendererContext.LogicalDevice, RendererContext.Present.FrameBuffer[fb].FinishedFence, NoAllocator);
-            vkDestroyImage(RendererContext.LogicalDevice, ForwardPass.FrameBuffer[fb].DepthImage, NoAllocator);
-            vkDestroyImageView(RendererContext.LogicalDevice, ForwardPass.FrameBuffer[fb].DepthImageView, NoAllocator);
-            freeDeviceMemory(&Allocator, ForwardPass.FrameBuffer[fb].DepthImageAllocation);
+            vkDestroyImage(RendererContext.LogicalDevice, ForwardPass.FrameBuffer[fb].DepthImage.Image, NoAllocator);
+            vkDestroyImageView(RendererContext.LogicalDevice, ForwardPass.FrameBuffer[fb].DepthImage.View, NoAllocator);
+            freeDeviceMemory(&Allocator, ForwardPass.FrameBuffer[fb].DepthImage.Allocation);
         }
 
         vkDestroyBuffer(RendererContext.LogicalDevice, Geometry.MeshDataBuffers, NoAllocator);
@@ -1851,7 +1851,7 @@ namespace IB
         for (uint32_t i = 0; i < RendererContext.Textures.ImageCount; i++)
         {
             vkDestroyImage(RendererContext.LogicalDevice, RendererContext.Textures.Images[i].Image, NoAllocator);
-            vkDestroyImageView(RendererContext.LogicalDevice, RendererContext.Textures.Images[i].ImageView, NoAllocator);
+            vkDestroyImageView(RendererContext.LogicalDevice, RendererContext.Textures.Images[i].View, NoAllocator);
             freeDeviceMemory(&Allocator, RendererContext.Textures.Images[i].Allocation);
         }
 
@@ -2234,10 +2234,7 @@ namespace IB
         imageAlloc.Stride = formatSize[desc.Format];
         imageAlloc.Allocator = &Allocator;
 
-        ImageAndView imageAndView = allocImageAndView(imageAlloc);
-        RendererContext.Textures.Images[imageIndex].Image = imageAndView.Image;
-        RendererContext.Textures.Images[imageIndex].ImageView = imageAndView.ImageView;
-        RendererContext.Textures.Images[imageIndex].Allocation = imageAndView.Allocation;
+        RendererContext.Textures.Images[imageIndex] = allocImageAndView(imageAlloc);
 
         StagingBuffer staging = requestStagingBuffer(&Staging, desc.Width * desc.Height * formatSize[desc.Format], formatSize[desc.Format]);
         memcpy(staging.Memory, desc.Data, desc.Width * desc.Height * formatSize[desc.Format]);
@@ -2266,8 +2263,7 @@ namespace IB
                 VK_ACCESS_TRANSFER_WRITE_BIT,
                 VK_IMAGE_LAYOUT_UNDEFINED,
                 VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                VK_IMAGE_ASPECT_COLOR_BIT,
-                RendererContext.Textures.Images[imageIndex].Image);
+                RendererContext.Textures.Images[imageIndex]);
             vkCmdPipelineBarrier(commandBuffer, sourceStage, destinationStage, 0, 0, NULL, 0, NULL, 1, &imageBarrier);
         }
 
@@ -2304,8 +2300,7 @@ namespace IB
                 VK_ACCESS_SHADER_READ_BIT,
                 VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                 VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                VK_IMAGE_ASPECT_COLOR_BIT,
-                RendererContext.Textures.Images[imageIndex].Image);
+                RendererContext.Textures.Images[imageIndex]);
             vkCmdPipelineBarrier(commandBuffer, sourceStage, destinationStage, 0, 0, NULL, 0, NULL, 1, &imageBarrier);
         }
 
@@ -2325,7 +2320,7 @@ namespace IB
             VkWriteDescriptorSet* descriptorWrite = &Staging.DescriptorUpdates.DescriptorWrites[descriptorUpdateIndex];
 
             *imageInfo = {};
-            imageInfo->imageView = RendererContext.Textures.Images[imageIndex].ImageView;
+            imageInfo->imageView = RendererContext.Textures.Images[imageIndex].View;
             imageInfo->imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
             *descriptorWrite = {};
@@ -2593,8 +2588,7 @@ namespace IB
                         VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
                         VK_IMAGE_LAYOUT_UNDEFINED,
                         VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-                        VK_IMAGE_ASPECT_COLOR_BIT,
-                        RendererContext.Present.SwapchainImages[fb]);
+                        RendererContext.Present.FrameBuffer[fb].SwapchainImage);
                     vkCmdPipelineBarrier(currentCommands, sourceStage, destinationStage, 0, 0, NULL, 0, NULL, 1, &colorBarrier);
                 }
 
@@ -2607,7 +2601,6 @@ namespace IB
                         VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
                         VK_IMAGE_LAYOUT_UNDEFINED,
                         VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-                        VK_IMAGE_ASPECT_DEPTH_BIT,
                         ForwardPass.FrameBuffer[fb].DepthImage);
 
                     vkCmdPipelineBarrier(currentCommands, sourceStage, destinationStage, 0, 0, NULL, 0, NULL, 1, &depthBarrier);
@@ -2625,7 +2618,7 @@ namespace IB
 
                 VkRenderingAttachmentInfo forwardImageAttachment = {};
                 forwardImageAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-                forwardImageAttachment.imageView = RendererContext.Present.FrameBuffer[fb].SwapchainImageView;
+                forwardImageAttachment.imageView = RendererContext.Present.FrameBuffer[fb].SwapchainImage.View;
                 forwardImageAttachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
                 forwardImageAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
                 forwardImageAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -2636,7 +2629,7 @@ namespace IB
 
                 VkRenderingAttachmentInfo forwardDepthAttachment = {};
                 forwardDepthAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-                forwardDepthAttachment.imageView = ForwardPass.FrameBuffer[fb].DepthImageView;
+                forwardDepthAttachment.imageView = ForwardPass.FrameBuffer[fb].DepthImage.View;
                 forwardDepthAttachment.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
                 forwardDepthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
                 forwardDepthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
@@ -2788,7 +2781,7 @@ namespace IB
 
                 VkRenderingAttachmentInfo forwardImageAttachment = {};
                 forwardImageAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-                forwardImageAttachment.imageView = RendererContext.Present.FrameBuffer[fb].SwapchainImageView;
+                forwardImageAttachment.imageView = RendererContext.Present.FrameBuffer[fb].SwapchainImage.View;
                 forwardImageAttachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
                 forwardImageAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
                 forwardImageAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -2815,8 +2808,7 @@ namespace IB
                     {},
                     VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
                     VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-                    VK_IMAGE_ASPECT_COLOR_BIT,
-                    RendererContext.Present.SwapchainImages[fb]);
+                    RendererContext.Present.FrameBuffer[fb].SwapchainImage);
 
                 vkCmdPipelineBarrier(currentCommands, sourceStage, destinationStage, 0, 0, NULL, 0, NULL, 1, &colorBarrier);
             }
