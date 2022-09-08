@@ -87,7 +87,7 @@ namespace IB
 
 namespace
 {
-    bool EditorEnabled = false;
+    bool EditorEnabled = true;
 
     // Global until we figure out state storage.
     Resource::Handle CellResource = InvalidResource;
@@ -129,7 +129,7 @@ namespace IB
             RendererBackendBit = 1 << 2,
             ViewGatherBit = 1 << 3,
             EditorBit = 1 << 4,
-            ImGuiBackendBit = 1 << 6, // Windowing + backend logic
+            ImGuiBackendBit = 1 << 5, // Windowing + backend logic
         };
     };
 

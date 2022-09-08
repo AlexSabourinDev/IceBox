@@ -88,7 +88,9 @@ as well as making the creation of a function quite trivial by making the scope i
 That's pretty much it!
 */
 
-#define IB_VKDEBUG
+
+// TODO: Vulkan Validation Layers crash. Investigate if we can debug this somehow.
+//#define IB_VKDEBUG
 
 extern LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam); // ImGui window
 namespace
@@ -704,15 +706,11 @@ namespace
         VkBuffer MaterialBuffer;
         Allocation MaterialBufferAllocation;
 
-        VkRenderPass RenderPass;
-
         struct
         {
             Allocation DepthImageAllocation;
             VkImage DepthImage;
             VkImageView DepthImageView;
-
-            VkFramebuffer Framebuffer;
         } FrameBuffer[FrameBufferCount];
         uint32_t InstanceCount = 0;
 
@@ -723,16 +721,6 @@ namespace
             uint32_t Instances[MaxMaterialInstanceCount];
             uint32_t Count = 0;
         } Cleanup[FrameBufferCount];
-    };
-
-    struct ImGuiPass
-    {
-        VkRenderPass RenderPass;
-
-        struct
-        {
-            VkFramebuffer Framebuffer;
-        } FrameBuffer[FrameBufferCount];
     };
 
     uint32_t constexpr MaxDirectionalLightCount = 32;
@@ -759,13 +747,12 @@ namespace
     Context RendererContext;
     ForwardPass ForwardPass;
     Geometry Geometry;
-    ImGuiPass ImGuiPass;
     Lighting Lighting;
     Staging Staging;
 
     // TODO: Reference to Windows, if we want multiplatform we'll have to change this.
     const char *InstanceExtensions[] = {VK_KHR_SURFACE_EXTENSION_NAME, VK_KHR_WIN32_SURFACE_EXTENSION_NAME};
-    const char *DeviceExtensions[] = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
+    const char *DeviceExtensions[] = {VK_KHR_SWAPCHAIN_EXTENSION_NAME, VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME};
 
 #ifdef IB_VKDEBUG
     const char *ValidationLayers[] = {"VK_LAYER_KHRONOS_validation"};
@@ -867,8 +854,6 @@ namespace
                 vkDestroyImage(RendererContext.LogicalDevice, ForwardPass.FrameBuffer[fb].DepthImage, NoAllocator);
                 vkDestroyImageView(RendererContext.LogicalDevice, ForwardPass.FrameBuffer[fb].DepthImageView, NoAllocator);
                 freeDeviceMemory(&Allocator, ForwardPass.FrameBuffer[fb].DepthImageAllocation);
-                vkDestroyFramebuffer(RendererContext.LogicalDevice, ForwardPass.FrameBuffer[fb].Framebuffer, NoAllocator);
-                vkDestroyFramebuffer(RendererContext.LogicalDevice, ImGuiPass.FrameBuffer[fb].Framebuffer, NoAllocator);
             }
         }
 
@@ -955,45 +940,6 @@ namespace
                 ForwardPass.FrameBuffer[fb].DepthImageView = imageAndView.ImageView;
                 ForwardPass.FrameBuffer[fb].DepthImageAllocation = imageAndView.Allocation;
             }
-
-            // Create our forward pass framebuffers
-            {
-                VkImageView images[] =
-                    {
-                        RendererContext.Present.FrameBuffer[fb].SwapchainImageView,
-                        ForwardPass.FrameBuffer[fb].DepthImageView,
-                    };
-
-                VkFramebufferCreateInfo framebufferCreate = {};
-                framebufferCreate.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-                framebufferCreate.attachmentCount = arrayCount(images);
-                framebufferCreate.width = surfaceExtents.width;
-                framebufferCreate.height = surfaceExtents.height;
-                framebufferCreate.layers = 1;
-                framebufferCreate.renderPass = ForwardPass.RenderPass;
-                framebufferCreate.pAttachments = images;
-
-                IB_VKCHECK(vkCreateFramebuffer(RendererContext.LogicalDevice, &framebufferCreate, NoAllocator, &ForwardPass.FrameBuffer[fb].Framebuffer));
-            }
-
-            // Create our imgui pass framebuffers
-            {
-                VkImageView images[] =
-                    {
-                        RendererContext.Present.FrameBuffer[fb].SwapchainImageView,
-                    };
-
-                VkFramebufferCreateInfo framebufferCreate = {};
-                framebufferCreate.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-                framebufferCreate.attachmentCount = arrayCount(images);
-                framebufferCreate.width = RendererContext.Present.SurfaceExtents.width;
-                framebufferCreate.height = RendererContext.Present.SurfaceExtents.height;
-                framebufferCreate.layers = 1;
-                framebufferCreate.renderPass = ImGuiPass.RenderPass;
-                framebufferCreate.pAttachments = images;
-
-                IB_VKCHECK(vkCreateFramebuffer(RendererContext.LogicalDevice, &framebufferCreate, NoAllocator, &ImGuiPass.FrameBuffer[fb].Framebuffer));
-            }
         }
     }
 } // namespace
@@ -1024,6 +970,35 @@ namespace
         VkSurfaceKHR surface;
         IB_VKCHECK(vkCreateWin32SurfaceKHR(RendererContext.VulkanInstance, &surfaceCreateInfo, NoAllocator, &surface));
         return surface;
+    }
+
+    VkImageMemoryBarrier createImageBarrier(
+        VkAccessFlagBits sourceAccessMask,
+        VkAccessFlagBits dstAccessMask,
+        VkImageLayout oldLayout,
+        VkImageLayout newLayout,
+        VkImageAspectFlagBits aspectMask,
+        VkImage image)
+    {
+        VkImageSubresourceRange imageSubresource = {};
+        imageSubresource.aspectMask = aspectMask;
+        imageSubresource.levelCount = 1;
+        imageSubresource.baseMipLevel = 0;
+        imageSubresource.baseArrayLayer = 0;
+        imageSubresource.layerCount = 1;
+
+        VkImageMemoryBarrier imageBarrier = {};
+        imageBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        imageBarrier.oldLayout = oldLayout;
+        imageBarrier.newLayout = newLayout;
+        imageBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        imageBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        imageBarrier.image = image;
+        imageBarrier.subresourceRange = imageSubresource;
+        imageBarrier.srcAccessMask = sourceAccessMask;
+        imageBarrier.dstAccessMask = dstAccessMask;
+
+        return imageBarrier;
     }
 } // namespace
 
@@ -1193,8 +1168,18 @@ namespace IB
                 physicalDeviceFeatures.multiDrawIndirect = VK_TRUE;
                 physicalDeviceFeatures.drawIndirectFirstInstance = VK_TRUE;
 
+                VkPhysicalDeviceShaderDrawParametersFeatures shaderDrawParamFeatures = {};
+                shaderDrawParamFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_DRAW_PARAMETERS_FEATURES;
+                shaderDrawParamFeatures.shaderDrawParameters = VK_TRUE;
+
+                VkPhysicalDeviceDynamicRenderingFeaturesKHR dynamicRenderingFeature = {};
+                dynamicRenderingFeature.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES_KHR;
+                dynamicRenderingFeature.pNext = &shaderDrawParamFeatures;
+                dynamicRenderingFeature.dynamicRendering = VK_TRUE;
+
                 VkPhysicalDeviceDescriptorIndexingFeatures indexingFeatures = {};
                 indexingFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES_EXT;
+                indexingFeatures.pNext = &dynamicRenderingFeature;
                 indexingFeatures.descriptorBindingPartiallyBound = VK_TRUE;
                 indexingFeatures.runtimeDescriptorArray = VK_TRUE;
 
@@ -1386,51 +1371,6 @@ namespace IB
                 renderSubpass.pDepthStencilAttachment = &depthAttachment;
 
                 VkSubpassDescription subpasses[] = {renderSubpass};
-
-                VkRenderPassCreateInfo createRenderPass = {};
-                createRenderPass.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-                createRenderPass.attachmentCount = arrayCount(attachmentDescriptions);
-                createRenderPass.subpassCount = arrayCount(subpasses);
-                createRenderPass.dependencyCount = 0;
-                createRenderPass.pAttachments = attachmentDescriptions;
-                createRenderPass.pSubpasses = subpasses;
-
-                IB_VKCHECK(vkCreateRenderPass(RendererContext.LogicalDevice, &createRenderPass, NoAllocator, &ForwardPass.RenderPass));
-            }
-
-            // ImGui Renderpass
-            {
-                VkAttachmentDescription output = {};
-                output.samples = VK_SAMPLE_COUNT_1_BIT;
-                output.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
-                output.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-                output.initialLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-                output.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-                output.format = RendererContext.Present.SurfaceFormat.format;
-
-                VkAttachmentDescription attachmentDescriptions[] = {output};
-
-                // Attachments
-                VkAttachmentReference outputAttachment = {};
-                outputAttachment.attachment = 0;
-                outputAttachment.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-
-                VkSubpassDescription renderSubpass = {};
-                renderSubpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-                renderSubpass.colorAttachmentCount = 1;
-                renderSubpass.pColorAttachments = &outputAttachment;
-
-                VkSubpassDescription subpasses[] = {renderSubpass};
-
-                VkRenderPassCreateInfo createRenderPass = {};
-                createRenderPass.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-                createRenderPass.attachmentCount = arrayCount(attachmentDescriptions);
-                createRenderPass.subpassCount = arrayCount(subpasses);
-                createRenderPass.dependencyCount = 0;
-                createRenderPass.pAttachments = attachmentDescriptions;
-                createRenderPass.pSubpasses = subpasses;
-
-                IB_VKCHECK(vkCreateRenderPass(RendererContext.LogicalDevice, &createRenderPass, NoAllocator, &ImGuiPass.RenderPass));
             }
 
             buildSurfaceSwapchain(RendererContext.Present.SurfaceExtents);
@@ -1849,7 +1789,7 @@ namespace IB
             initInfo.MinImageCount = FrameBufferCount;
             initInfo.ImageCount = FrameBufferCount;
             initInfo.CheckVkResultFn = &vulkanCheck;
-            ImGui_ImplVulkan_Init(&initInfo, ImGuiPass.RenderPass);
+            ImGui_ImplVulkan_Init(&initInfo, RendererContext.Present.SurfaceFormat.format);
 
             // Upload ImGui font
             {
@@ -1899,8 +1839,6 @@ namespace IB
             vkDestroySemaphore(RendererContext.LogicalDevice, RendererContext.Present.FrameBuffer[fb].AcquireSemaphore, NoAllocator);
             vkDestroySemaphore(RendererContext.LogicalDevice, RendererContext.Present.FrameBuffer[fb].FinishedSemaphore, NoAllocator);
             vkDestroyImageView(RendererContext.LogicalDevice, RendererContext.Present.FrameBuffer[fb].SwapchainImageView, NoAllocator);
-            vkDestroyFramebuffer(RendererContext.LogicalDevice, ForwardPass.FrameBuffer[fb].Framebuffer, NoAllocator);
-            vkDestroyFramebuffer(RendererContext.LogicalDevice, ImGuiPass.FrameBuffer[fb].Framebuffer, NoAllocator);
             vkDestroyFence(RendererContext.LogicalDevice, RendererContext.Present.FrameBuffer[fb].FinishedFence, NoAllocator);
             vkDestroyImage(RendererContext.LogicalDevice, ForwardPass.FrameBuffer[fb].DepthImage, NoAllocator);
             vkDestroyImageView(RendererContext.LogicalDevice, ForwardPass.FrameBuffer[fb].DepthImageView, NoAllocator);
@@ -1957,8 +1895,6 @@ namespace IB
             vkDestroyFence(RendererContext.LogicalDevice, Staging.Fences[i], NoAllocator);
         }
 
-        vkDestroyRenderPass(RendererContext.LogicalDevice, ForwardPass.RenderPass, NoAllocator);
-        vkDestroyRenderPass(RendererContext.LogicalDevice, ImGuiPass.RenderPass, NoAllocator);
         vkDestroySwapchainKHR(RendererContext.LogicalDevice, RendererContext.Present.Swapchain, NoAllocator);
         vkDestroyPipelineCache(RendererContext.LogicalDevice, RendererContext.PipelineCache, NoAllocator);
         vkDestroyDescriptorPool(RendererContext.LogicalDevice, RendererContext.DescriptorPool, NoAllocator);
@@ -2088,10 +2024,16 @@ namespace IB
         viewportStateCreate.scissorCount = 1;
         viewportStateCreate.pScissors = &scissor;
 
+        VkPipelineRenderingCreateInfoKHR pipelineRenderingCreateInfo = {};
+        pipelineRenderingCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO_KHR;
+        pipelineRenderingCreateInfo.colorAttachmentCount = 1;
+        pipelineRenderingCreateInfo.pColorAttachmentFormats = &RendererContext.Present.SurfaceFormat.format;
+        pipelineRenderingCreateInfo.depthAttachmentFormat = VK_FORMAT_D32_SFLOAT;
+
         VkGraphicsPipelineCreateInfo baseGraphicsPipelineCreate = {};
         baseGraphicsPipelineCreate.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+        baseGraphicsPipelineCreate.pNext = &pipelineRenderingCreateInfo;
         baseGraphicsPipelineCreate.layout = ForwardPass.PipelineLayout;
-        baseGraphicsPipelineCreate.renderPass = ForwardPass.RenderPass;
         baseGraphicsPipelineCreate.pVertexInputState = &vertexInputCreate;
         baseGraphicsPipelineCreate.pInputAssemblyState = &inputAssemblyCreate;
         baseGraphicsPipelineCreate.pRasterizationState = &rasterizationCreate;
@@ -2317,30 +2259,15 @@ namespace IB
 
         // Image barrier UNDEFINED -> TRANSFER
         {
-            VkAccessFlagBits sourceAccessMask = {};
-            VkAccessFlagBits dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-
             VkPipelineStageFlags sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
             VkPipelineStageFlags destinationStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
-
-            VkImageSubresourceRange imageSubresource = {};
-            imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-            imageSubresource.levelCount = 1;
-            imageSubresource.baseMipLevel = 0;
-            imageSubresource.baseArrayLayer = 0;
-            imageSubresource.layerCount = 1;
-
-            VkImageMemoryBarrier imageBarrier = {};
-            imageBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-            imageBarrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-            imageBarrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-            imageBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-            imageBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-            imageBarrier.image = RendererContext.Textures.Images[imageIndex].Image;
-            imageBarrier.subresourceRange = imageSubresource;
-            imageBarrier.srcAccessMask = sourceAccessMask;
-            imageBarrier.dstAccessMask = dstAccessMask;
-
+            VkImageMemoryBarrier imageBarrier = createImageBarrier(
+                VkAccessFlagBits{},
+                VK_ACCESS_TRANSFER_WRITE_BIT,
+                VK_IMAGE_LAYOUT_UNDEFINED,
+                VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                VK_IMAGE_ASPECT_COLOR_BIT,
+                RendererContext.Textures.Images[imageIndex].Image);
             vkCmdPipelineBarrier(commandBuffer, sourceStage, destinationStage, 0, 0, NULL, 0, NULL, 1, &imageBarrier);
         }
 
@@ -2370,30 +2297,15 @@ namespace IB
 
         // Image barrier TRANSFER -> FRAGMENT_SHADER
         {
-            VkAccessFlagBits sourceAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-            VkAccessFlagBits dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-
             VkPipelineStageFlags sourceStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
             VkPipelineStageFlags destinationStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-
-            VkImageSubresourceRange imageSubresource = {};
-            imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-            imageSubresource.levelCount = 1;
-            imageSubresource.baseMipLevel = 0;
-            imageSubresource.baseArrayLayer = 0;
-            imageSubresource.layerCount = 1;
-
-            VkImageMemoryBarrier imageBarrier = {};
-            imageBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-            imageBarrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-            imageBarrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-            imageBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-            imageBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-            imageBarrier.image = RendererContext.Textures.Images[imageIndex].Image;
-            imageBarrier.subresourceRange = imageSubresource;
-            imageBarrier.srcAccessMask = sourceAccessMask;
-            imageBarrier.dstAccessMask = dstAccessMask;
-
+            VkImageMemoryBarrier imageBarrier = createImageBarrier(
+                VK_ACCESS_TRANSFER_WRITE_BIT,
+                VK_ACCESS_SHADER_READ_BIT,
+                VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                VK_IMAGE_ASPECT_COLOR_BIT,
+                RendererContext.Textures.Images[imageIndex].Image);
             vkCmdPipelineBarrier(commandBuffer, sourceStage, destinationStage, 0, 0, NULL, 0, NULL, 1, &imageBarrier);
         }
 
@@ -2673,28 +2585,72 @@ namespace IB
 
             // Forward pass
             {
+                {
+                    VkPipelineStageFlags sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+                    VkPipelineStageFlags destinationStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+                    VkImageMemoryBarrier colorBarrier = createImageBarrier(
+                        VkAccessFlagBits{},
+                        VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+                        VK_IMAGE_LAYOUT_UNDEFINED,
+                        VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                        VK_IMAGE_ASPECT_COLOR_BIT,
+                        RendererContext.Present.SwapchainImages[fb]);
+                    vkCmdPipelineBarrier(currentCommands, sourceStage, destinationStage, 0, 0, NULL, 0, NULL, 1, &colorBarrier);
+                }
+
+                {
+                    VkPipelineStageFlags sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+                    VkPipelineStageFlags destinationStage = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+
+                    VkImageMemoryBarrier depthBarrier = createImageBarrier(
+                        VkAccessFlagBits{},
+                        VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+                        VK_IMAGE_LAYOUT_UNDEFINED,
+                        VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+                        VK_IMAGE_ASPECT_DEPTH_BIT,
+                        ForwardPass.FrameBuffer[fb].DepthImage);
+
+                    vkCmdPipelineBarrier(currentCommands, sourceStage, destinationStage, 0, 0, NULL, 0, NULL, 1, &depthBarrier);
+                }
+
                 float color[4] = {0.8f, 0.5f, 0.1f, 0.0f};
                 VkClearColorValue clearColor = {};
                 memcpy(clearColor.float32, &color, sizeof(float) * 4);
 
                 VkClearValue colorClear = {};
                 colorClear.color = clearColor;
-                VkClearValue depthClear = {};
-                depthClear.depthStencil = {1.0f, 0};
-                VkClearValue clearValues[] = {colorClear, depthClear};
 
                 VkRect2D renderArea = {};
                 renderArea.extent = RendererContext.Present.SurfaceExtents;
 
-                VkRenderPassBeginInfo renderPassBeginInfo = {};
-                renderPassBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-                renderPassBeginInfo.renderPass = ForwardPass.RenderPass;
-                renderPassBeginInfo.framebuffer = ForwardPass.FrameBuffer[fb].Framebuffer;
-                renderPassBeginInfo.renderArea = renderArea;
-                renderPassBeginInfo.clearValueCount = arrayCount(clearValues);
-                renderPassBeginInfo.pClearValues = clearValues;
+                VkRenderingAttachmentInfo forwardImageAttachment = {};
+                forwardImageAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+                forwardImageAttachment.imageView = RendererContext.Present.FrameBuffer[fb].SwapchainImageView;
+                forwardImageAttachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+                forwardImageAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+                forwardImageAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+                forwardImageAttachment.clearValue = colorClear;
 
-                vkCmdBeginRenderPass(currentCommands, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
+                VkClearValue depthClear = {};
+                depthClear.depthStencil = {1.0f, 0};
+
+                VkRenderingAttachmentInfo forwardDepthAttachment = {};
+                forwardDepthAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+                forwardDepthAttachment.imageView = ForwardPass.FrameBuffer[fb].DepthImageView;
+                forwardDepthAttachment.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+                forwardDepthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+                forwardDepthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+                forwardDepthAttachment.clearValue = depthClear;
+
+                VkRenderingInfo renderInfo = {};
+                renderInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
+                renderInfo.renderArea = renderArea;
+                renderInfo.layerCount = 1;
+                renderInfo.colorAttachmentCount = 1;
+                renderInfo.pColorAttachments = &forwardImageAttachment;
+                renderInfo.pDepthAttachment = &forwardDepthAttachment;
+
+                vkCmdBeginRendering(currentCommands, &renderInfo);
 
                 VkViewport viewport = {};
                 viewport.x = 0;
@@ -2821,26 +2777,48 @@ namespace IB
                     }
                 }
 
-                vkCmdEndRenderPass(currentCommands);
+                vkCmdEndRendering(currentCommands);
             }
 
             // ImGui Pass
             if (view.ImGuiDrawData != nullptr)
             {
-                VkRenderPassBeginInfo renderPassBeginInfo = {};
-                renderPassBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-                renderPassBeginInfo.renderPass = ImGuiPass.RenderPass;
-                renderPassBeginInfo.framebuffer = ImGuiPass.FrameBuffer[fb].Framebuffer;
-
                 VkRect2D renderArea = {};
                 renderArea.extent = RendererContext.Present.SurfaceExtents;
 
-                renderPassBeginInfo.renderArea = renderArea;
-                vkCmdBeginRenderPass(currentCommands, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
+                VkRenderingAttachmentInfo forwardImageAttachment = {};
+                forwardImageAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+                forwardImageAttachment.imageView = RendererContext.Present.FrameBuffer[fb].SwapchainImageView;
+                forwardImageAttachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+                forwardImageAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+                forwardImageAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+
+                VkRenderingInfo renderInfo = {};
+                renderInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
+                renderInfo.renderArea = renderArea;
+                renderInfo.layerCount = 1;
+                renderInfo.colorAttachmentCount = 1;
+                renderInfo.pColorAttachments = &forwardImageAttachment;
+
+                vkCmdBeginRendering(currentCommands, &renderInfo);
 
                 ImGui_ImplVulkan_RenderDrawData(view.ImGuiDrawData, currentCommands);
 
-                vkCmdEndRenderPass(currentCommands);
+                vkCmdEndRendering(currentCommands);
+            }
+
+            {
+                VkPipelineStageFlags sourceStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+                VkPipelineStageFlags destinationStage = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+                VkImageMemoryBarrier colorBarrier = createImageBarrier(
+                    VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+                    {},
+                    VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                    VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+                    VK_IMAGE_ASPECT_COLOR_BIT,
+                    RendererContext.Present.SwapchainImages[fb]);
+
+                vkCmdPipelineBarrier(currentCommands, sourceStage, destinationStage, 0, 0, NULL, 0, NULL, 1, &colorBarrier);
             }
 
             vkEndCommandBuffer(currentCommands);
