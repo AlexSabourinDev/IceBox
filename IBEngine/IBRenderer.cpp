@@ -545,7 +545,7 @@ namespace
             {
                 VkSemaphore AcquireSemaphore;
                 VkSemaphore FinishedSemaphore;
-                ImageAndView SwapchainImage;
+                ImageAndView SwapchainImage; // Special case ImageAndView. Image is not allocated - no allocation object.
                 VkCommandBuffer PrimaryCommandBuffer;
                 VkFence FinishedFence;
             } FrameBuffer[FrameBufferCount];
@@ -769,7 +769,6 @@ namespace
         VkPhysicalDevice PhysicalDevice;
         uint32_t ImageUsage;
         VkFormat Format;
-        VkImageAspectFlagBits ImageAspect;
         uint32_t Width = 0;
         uint32_t Height = 0;
         uint32_t Stride = 0;
@@ -823,7 +822,7 @@ namespace
         // Image view
         {
             VkImageSubresourceRange subresourceRange = {};
-            subresourceRange.aspectMask = alloc.ImageAspect;
+            subresourceRange.aspectMask = (alloc.Type == ImageAndView::Color) ? VK_IMAGE_ASPECT_COLOR_BIT : VK_IMAGE_ASPECT_DEPTH_BIT;
             subresourceRange.levelCount = 1;
             subresourceRange.layerCount = 1;
             subresourceRange.baseMipLevel = 0;
@@ -932,7 +931,6 @@ namespace
                 imageAlloc.PhysicalDevice = RendererContext.PhysicalDevice;
                 imageAlloc.ImageUsage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
                 imageAlloc.Format = VK_FORMAT_D32_SFLOAT;
-                imageAlloc.ImageAspect = VK_IMAGE_ASPECT_DEPTH_BIT;
                 imageAlloc.Width = surfaceExtents.width;
                 imageAlloc.Height = surfaceExtents.height;
                 imageAlloc.Stride = 4;
@@ -2228,7 +2226,6 @@ namespace IB
         imageAlloc.PhysicalDevice = RendererContext.PhysicalDevice;
         imageAlloc.ImageUsage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
         imageAlloc.Format = formats[desc.Format];
-        imageAlloc.ImageAspect = VK_IMAGE_ASPECT_COLOR_BIT;
         imageAlloc.Width = desc.Width;
         imageAlloc.Height = desc.Height;
         imageAlloc.Stride = formatSize[desc.Format];
