@@ -11,57 +11,20 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\SDK\cJSON\cJSON.h" />
-    <ClInclude Include="..\SDK\imgui_docking\imgui\imconfig.h" />
-    <ClInclude Include="..\SDK\imgui_docking\imgui\imgui.h" />
-    <ClInclude Include="..\SDK\imgui_docking\imgui\imgui_impl_vulkan.h" />
-    <ClInclude Include="..\SDK\imgui_docking\imgui\imgui_impl_win32.h" />
-    <ClInclude Include="..\SDK\imgui_docking\imgui\imgui_internal.h" />
-    <ClInclude Include="..\SDK\imgui_docking\imgui\imstb_rectpack.h" />
-    <ClInclude Include="..\SDK\imgui_docking\imgui\imstb_textedit.h" />
-    <ClInclude Include="..\SDK\imgui_docking\imgui\imstb_truetype.h" />
     <ClInclude Include="IBBinary.h" />
     <ClInclude Include="IBCollection.h" />
     <ClInclude Include="IBAllocator.h" />
-    <ClInclude Include="IBAsset.h" />
-    <ClInclude Include="IBEditor.h" />
     <ClInclude Include="IBEngineAPI.h" />
-    <ClInclude Include="IBEntity.h" />
-    <ClInclude Include="IBGeometryToolkit.h" />
     <ClInclude Include="IBJobs.h" />
     <ClInclude Include="IBLogging.h" />
     <ClInclude Include="IBMath.h" />
     <ClInclude Include="IBPlatform.h" />
-    <ClInclude Include="IBRenderer.h" />
-    <ClInclude Include="IBRendererFrontend.h" />
-    <ClInclude Include="IBSerialization.h" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="..\SDK\cJSON\cJSON.c" />
-    <ClCompile Include="..\SDK\imgui_docking\imgui\imgui.cpp" />
-    <ClCompile Include="..\SDK\imgui_docking\imgui\imgui_demo.cpp" />
-    <ClCompile Include="..\SDK\imgui_docking\imgui\imgui_draw.cpp" />
-    <ClCompile Include="..\SDK\imgui_docking\imgui\imgui_impl_vulkan.cpp" />
-    <ClCompile Include="..\SDK\imgui_docking\imgui\imgui_impl_win32.cpp" />
-    <ClCompile Include="..\SDK\imgui_docking\imgui\imgui_tables.cpp" />
-    <ClCompile Include="..\SDK\imgui_docking\imgui\imgui_widgets.cpp" />
     <ClCompile Include="IBAllocator.cpp" />
-    <ClCompile Include="IBAsset.cpp" />
-    <ClCompile Include="IBEditor.cpp" />
-    <ClCompile Include="IBEntity.cpp" />
-    <ClCompile Include="IBGeometryToolkit.cpp" />
     <ClCompile Include="IBJobs.cpp" />
     <ClCompile Include="IBLogging.cpp" />
-    <ClCompile Include="IBRenderer.cpp" />
-    <ClCompile Include="IBRendererFrontend.cpp" />
-    <ClCompile Include="IBSerialization.cpp" />
-    <ClCompile Include="Platform\IBPlatformWin32.cpp" />
-  </ItemGroup>
-  <ItemGroup>
-    <FxCompile Include="..\Assets\Raw\SampleForward.hlsl">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
-    </FxCompile>
+    <ClCompile Include="IBPlatformWin32.cpp" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>15.0</VCProjectVersion>

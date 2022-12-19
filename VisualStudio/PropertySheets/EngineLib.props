@@ -5,11 +5,11 @@
   <PropertyGroup />
   <ItemDefinitionGroup>
     <Link>
-      <AdditionalLibraryDirectories>$(SolutionDir)..\Lib\;$(SolutionDir)..\SDK\VulkanSDK\1.3.224.1\Lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>IBEngine.Lib;vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(SolutionDir)..\Lib\;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>IBEngine.Lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <ClCompile>
-      <AdditionalIncludeDirectories>$(SolutionDir)..\;$(SolutionDir)..\SDK\imgui_docking</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)..\</AdditionalIncludeDirectories>
     </ClCompile>
   </ItemDefinitionGroup>
   <ItemGroup />
