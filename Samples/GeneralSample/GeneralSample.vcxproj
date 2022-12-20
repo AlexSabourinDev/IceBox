@@ -74,6 +74,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="SampleChooseYourOwnAdventure.cpp" />
     <ClCompile Include="SampleCollection.cpp" />
     <ClCompile Include="SampleMemory.cpp" />
     <ClCompile Include="SampleThreading.cpp" />

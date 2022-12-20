@@ -3,9 +3,24 @@
 #include "IBAllocator.h"
 #include "IBLogging.h"
 #include <string.h>
+#include <stdint.h>
 
 namespace IB
 {
+    template< typename T >
+    struct Span
+    {
+        T& operator[](uint32_t i) const { return Begin[i]; }
+        T* Begin = nullptr;
+        uint32_t Count = 0;
+    };
+
+    template< typename T, uint32_t Count >
+    Span<T> asSpan(T(&arr)[Count])
+    {
+        return Span<T>{arr, Count};
+    }
+
     template< typename T >
     class DynamicArray final
     {
