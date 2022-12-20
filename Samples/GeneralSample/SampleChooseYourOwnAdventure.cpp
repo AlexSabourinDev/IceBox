@@ -33,7 +33,7 @@ TextNode const Supressed =
     "Yup, they're still supressed.\n"
     "Play Again?\n"
     "Y? N?\n",
-    IB::asSpan(PlayAgainOptions)
+    IB::toSpan(PlayAgainOptions)
 };
 
 TextNode const NotSupressed =
@@ -41,7 +41,7 @@ TextNode const NotSupressed =
     "Yup, they're not supressed.\n"
     "Play Again?"
     "Y? N?\n",
-    IB::asSpan(PlayAgainOptions)
+    IB::toSpan(PlayAgainOptions)
 };
 
 TextOption const EntryOptions[] =
@@ -54,7 +54,7 @@ TextNode const Entry =
     "You've discovered that the pills you've been taking are actually supressing your INCREDIBLE powers.\n"
     "Keep taking them?\n"
     "Y? N?\n",
-    IB::asSpan(EntryOptions)
+    IB::toSpan(EntryOptions)
 };
 
 void sampleChooseYourOwnAdventure()

@@ -18,7 +18,7 @@ namespace IB
     };
 
     template< typename T, uint32_t Count >
-    Span<T> asSpan(T(&arr)[Count])
+    Span<T> toSpan(T(&arr)[Count])
     {
         return Span<T>{arr, Count};
     }
