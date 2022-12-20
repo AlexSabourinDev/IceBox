@@ -44,7 +44,7 @@ TextNode const NotSupressed =
     IB::asSpan(PlayAgainOptions)
 };
 
-TextOption EntryOptions[] =
+TextOption const EntryOptions[] =
 {
     { &Supressed, "yY" },
     { &NotSupressed, "nN"}
@@ -54,7 +54,7 @@ TextNode const Entry =
     "You've discovered that the pills you've been taking are actually supressing your INCREDIBLE powers.\n"
     "Keep taking them?\n"
     "Y? N?\n",
-    EntryOptions, 2
+    IB::asSpan(EntryOptions)
 };
 
 void sampleChooseYourOwnAdventure()

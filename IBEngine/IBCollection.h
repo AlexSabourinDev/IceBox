@@ -11,6 +11,8 @@ namespace IB
     struct Span
     {
         T& operator[](uint32_t i) const { return Begin[i]; }
+        operator Span<T const>(){ return Span<T const>{Begin, Count}; }
+
         T* Begin = nullptr;
         uint32_t Count = 0;
     };
