@@ -52,9 +52,18 @@ namespace IB
             uint32_t FreeBlocks[MaxMemoryBlocks] = {};
             uint32_t FreeBlockCount = 0;
         };
+
+        struct Allocation
+        {
+            VkDeviceMemory Memory = {};
+            VkDeviceSize Offset = {};
+            uint32_t Id = 0;
+            uint32_t PoolIndex = 0;
+        };
     }
 }
-   
+  
+// Core API
 namespace IB
 {
     VkAllocationCallbacks *const NoVkAllocator = nullptr;
@@ -98,14 +107,64 @@ namespace IB
 	
     struct GraphicsAPIDesc
     {
-        VkInstance Instance; // Takes ownership of the instance
-        VkSurfaceKHR MainSurface; // Used to select/initialize our device.
+        // Win32
+        void* Win32MainWindowHandle;
+        void* Win32MainInstanceHandle;
     };
-
-    void initVkInstance(VkInstance* instance); // Instance will be killed by graphics API.
 
 	void initGraphicsAPI(GraphicsAPI* graphicsAPI, GraphicsAPIDesc desc);
     void killGraphicsAPI(GraphicsAPI* graphicsAPI);
+}
+
+// Texture
+namespace IB
+{
+    struct Texture
+    {
+        VkMemory::Allocation Allocation = {};
+        VkImage Image = {};
+        VkImageView View = {};
+        VkImageAspectFlags Aspect = {};
+    };
+
+    // Modifies texture's layout immediately.
+    VkImageMemoryBarrier createMemoryBarrier(
+        Texture* texture,
+        VkAccessFlagBits sourceAccessMask,
+        VkAccessFlagBits dstAccessMask,
+        VkImageLayout oldLayout,
+        VkImageLayout newLayout);
+}
+
+// Surface
+namespace IB
+{
+    uint32_t constexpr FramebufferCount = 2;
+
+    struct GraphicsSurface
+    {
+        VkSurfaceKHR VulkanSurface;
+        VkSurfaceFormatKHR Format;
+        VkExtent2D Extents;
+        VkPresentModeKHR PresentMode;
+        VkSwapchainKHR Swapchain;
+
+        struct
+        {
+            Texture Texture;
+            VkSemaphore AcquireSemaphore;
+        } Framebuffers[FramebufferCount];
+    };
+
+    struct SurfaceDesc
+    {
+        void* Win32WindowHandle = nullptr;
+        void* Win32InstanceHandle = nullptr;
+        bool UseVSync = true;
+    };
+
+    void initWin32GraphicsSurface(GraphicsAPI* api, GraphicsSurface* surface, SurfaceDesc desc);
+    void killGraphicsSurface(GraphicsAPI* api, GraphicsSurface* surface);
 }
 
 // TODO: Move to CPP when in a good place
@@ -134,14 +193,6 @@ namespace IB
             1024 * 1024 * 64,
             1024 * 1024 * 64,
             1024 * 1024 * 512,
-        };
-
-        struct Allocation
-        {
-            VkDeviceMemory Memory = {};
-            VkDeviceSize Offset = {};
-            uint32_t Id = 0;
-            uint32_t PoolIndex = 0;
         };
 
         struct AllocationRequest
@@ -452,7 +503,7 @@ namespace IB
     }
 }
 
-// Main API
+// Core API
 namespace IB
 {
     // #define IB_VKDEBUG
@@ -467,36 +518,36 @@ namespace IB
     uint32_t constexpr MaxImageSamplerCount = 1000;
     uint32_t constexpr MaxDescriptorSetCount = 1000;
     uint32_t constexpr MaxSampledImageCount = 1000;
-
-    void initVkInstance(VkInstance* instance)
-    {
-        VkApplicationInfo appInfo = {};
-        appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
-        appInfo.pNext = NULL;
-        appInfo.pApplicationName = "IceBox";
-        appInfo.applicationVersion = 1;
-        appInfo.pEngineName = "IceBox";
-        appInfo.engineVersion = 1;
-        appInfo.apiVersion = VK_MAKE_VERSION(1, 2, VK_HEADER_VERSION);
-
-        VkInstanceCreateInfo createInfo = {};
-        createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
-        createInfo.pNext = NULL;
-        createInfo.pApplicationInfo = &appInfo;
-        createInfo.enabledExtensionCount = arrayCount(InstanceExtensions);
-        createInfo.ppEnabledExtensionNames = InstanceExtensions;
-
-#ifdef IB_VKDEBUG
-        createInfo.enabledLayerCount = arrayCount(ValidationLayers);
-        createInfo.ppEnabledLayerNames = ValidationLayers;
-#endif // IB_VKDEBUG
-
-        IB_VKCHECK(vkCreateInstance(&createInfo, NoVkAllocator, instance));
-    }
-
+    
+    // Forward from surface API
+    VkSurfaceKHR createWin32VkSurface(VkInstance vkInstance, void* windowHandle, void* instanceHandle);
     void initGraphicsAPI(GraphicsAPI* graphicsAPI, GraphicsAPIDesc desc)
 	{
-        graphicsAPI->Instance = desc.Instance;
+        // Instance
+        {
+            VkApplicationInfo appInfo = {};
+            appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
+            appInfo.pNext = NULL;
+            appInfo.pApplicationName = "IceBox";
+            appInfo.applicationVersion = 1;
+            appInfo.pEngineName = "IceBox";
+            appInfo.engineVersion = 1;
+            appInfo.apiVersion = VK_MAKE_VERSION(1, 2, VK_HEADER_VERSION);
+
+            VkInstanceCreateInfo createInfo = {};
+            createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
+            createInfo.pNext = NULL;
+            createInfo.pApplicationInfo = &appInfo;
+            createInfo.enabledExtensionCount = arrayCount(InstanceExtensions);
+            createInfo.ppEnabledExtensionNames = InstanceExtensions;
+
+    #ifdef IB_VKDEBUG
+            createInfo.enabledLayerCount = arrayCount(ValidationLayers);
+            createInfo.ppEnabledLayerNames = ValidationLayers;
+    #endif // IB_VKDEBUG
+
+            IB_VKCHECK(vkCreateInstance(&createInfo, NoVkAllocator, &graphicsAPI->Instance));
+        }
 
         // Device
         {
@@ -559,6 +610,9 @@ namespace IB
                         }
                     }
 
+                    // Create a temporary surface based on our main window to select our device.
+                    VkSurfaceKHR const temporarySurface = createWin32VkSurface(graphicsAPI->Instance, desc.Win32MainWindowHandle, desc.Win32MainInstanceHandle);
+
                     // Find our present queue
                     for (uint32_t propIndex = 0; propIndex < queuePropertyCounts[deviceIndex]; propIndex++)
                     {
@@ -568,7 +622,7 @@ namespace IB
                         }
 
                         VkBool32 supportsPresent = VK_FALSE;
-                        IB_VKCHECK(vkGetPhysicalDeviceSurfaceSupportKHR(physicalDevices[deviceIndex], propIndex, desc.MainSurface, &supportsPresent));
+                        IB_VKCHECK(vkGetPhysicalDeviceSurfaceSupportKHR(physicalDevices[deviceIndex], propIndex, temporarySurface, &supportsPresent));
 
                         if (supportsPresent)
                         {
@@ -576,6 +630,8 @@ namespace IB
                             break;
                         }
                     }
+
+                    vkDestroySurfaceKHR(graphicsAPI->Instance, temporarySurface, NoVkAllocator);
 
                     // Did we find a device supporting both graphics, present and compute.
                     if (graphicsQueue != UINT32_MAX && presentQueue != UINT32_MAX && computeQueue != UINT32_MAX)
@@ -710,6 +766,209 @@ namespace IB
        
         vkDestroyDevice(graphicsAPI->LogicalDevice, NoVkAllocator);
         vkDestroyInstance(graphicsAPI->Instance, NoVkAllocator);
+    }
+}
+
+// Texture
+namespace IB
+{
+    VkImageMemoryBarrier createMemoryBarrier(
+        Texture* texture,
+        VkAccessFlagBits sourceAccessMask,
+        VkAccessFlagBits dstAccessMask,
+        VkImageLayout oldLayout,
+        VkImageLayout newLayout)
+    {
+        VkImageSubresourceRange imageSubresource = {};
+        imageSubresource.aspectMask = texture->Aspect;
+        imageSubresource.levelCount = 1;
+        imageSubresource.baseMipLevel = 0;
+        imageSubresource.baseArrayLayer = 0;
+        imageSubresource.layerCount = 1;
+
+        VkImageMemoryBarrier imageBarrier = {};
+        imageBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        imageBarrier.oldLayout = oldLayout;
+        imageBarrier.newLayout = newLayout;
+        imageBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        imageBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        imageBarrier.image = texture->Image;
+        imageBarrier.subresourceRange = imageSubresource;
+        imageBarrier.srcAccessMask = sourceAccessMask;
+        imageBarrier.dstAccessMask = dstAccessMask;
+
+        return imageBarrier;
+    }
+}
+
+// Surface
+namespace IB
+{
+    VkSurfaceKHR createWin32VkSurface(VkInstance vkInstance, void* windowHandle, void* instanceHandle)
+    {
+        VkWin32SurfaceCreateInfoKHR surfaceCreateInfo = {};
+        surfaceCreateInfo.sType = VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR;
+        surfaceCreateInfo.hinstance = reinterpret_cast<HINSTANCE>(instanceHandle);
+        surfaceCreateInfo.hwnd = reinterpret_cast<HWND>(windowHandle);
+
+        VkSurfaceKHR surface;
+        IB_VKCHECK(vkCreateWin32SurfaceKHR(vkInstance, &surfaceCreateInfo, IB::NoVkAllocator, &surface));
+
+        return surface;
+    }
+
+    void initWin32GraphicsSurface(GraphicsAPI* api, GraphicsSurface* surface, SurfaceDesc desc)
+    {
+        surface->VulkanSurface = createWin32VkSurface(api->Instance, desc.Win32WindowHandle, desc.Win32InstanceHandle);
+
+        // Extents
+        {
+            VkSurfaceCapabilitiesKHR surfaceCapabilities;
+            IB_VKCHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(api->PhysicalDevice, surface->VulkanSurface, &surfaceCapabilities));
+
+            IB_ASSERT(surfaceCapabilities.currentExtent.width != UINT32_MAX, "Surface has invalid width.");
+            surface->Extents = surfaceCapabilities.currentExtent;
+        }
+
+        // Present mode
+        surface->PresentMode = VK_PRESENT_MODE_FIFO_KHR;
+        if (!desc.UseVSync)
+        {
+            uint32_t constexpr maxPresentModes = 100;
+            uint32_t presentModeCount;
+            VkPresentModeKHR presentModes[maxPresentModes];
+
+            IB_VKCHECK(vkGetPhysicalDeviceSurfacePresentModesKHR(api->PhysicalDevice, surface->VulkanSurface, &presentModeCount, NULL));
+            IB_ASSERT(presentModeCount > 0, "Failed to find a present mode.");
+            presentModeCount = presentModeCount < maxPresentModes ? presentModeCount : maxPresentModes;
+            IB_VKCHECK(vkGetPhysicalDeviceSurfacePresentModesKHR(api->PhysicalDevice, surface->VulkanSurface, &presentModeCount, presentModes));
+
+            for (uint32_t i = 0; i < presentModeCount; i++)
+            {
+                if (VK_PRESENT_MODE_MAILBOX_KHR == presentModes[i])
+                {
+                    surface->PresentMode = VK_PRESENT_MODE_MAILBOX_KHR;
+                    break;
+                }
+            }
+        }
+
+        // Surface format
+        {
+            uint32_t constexpr maxSurfaceFormatCount = 100;
+            uint32_t surfaceFormatCount;
+            VkSurfaceFormatKHR surfaceFormats[maxSurfaceFormatCount];
+
+            IB_VKCHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(api->PhysicalDevice, surface->VulkanSurface, &surfaceFormatCount, NULL));
+            IB_ASSERT(surfaceFormatCount > 0, "Failed to find any surface formats.");
+            surfaceFormatCount = surfaceFormatCount < maxSurfaceFormatCount ? surfaceFormatCount : maxSurfaceFormatCount;
+            IB_VKCHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(api->PhysicalDevice, surface->VulkanSurface, &surfaceFormatCount, surfaceFormats));
+
+            if (1 == surfaceFormatCount && VK_FORMAT_UNDEFINED == surfaceFormats[0].format)
+            {
+                surface->Format.format = VK_FORMAT_R8G8B8A8_UNORM;
+                surface->Format.colorSpace = VK_COLORSPACE_SRGB_NONLINEAR_KHR;
+            }
+            else
+            {
+                surface->Format = surfaceFormats[0];
+                for (uint32_t i = 0; i < surfaceFormatCount; i++)
+                {
+                    if (VK_FORMAT_R8G8B8A8_UNORM == surfaceFormats[i].format && VK_COLORSPACE_SRGB_NONLINEAR_KHR == surfaceFormats[i].colorSpace)
+                    {
+                        surface->Format = surfaceFormats[i];
+                        break;
+                    }
+                }
+            }
+        }
+
+        // Swapchain
+        {
+            VkSwapchainCreateInfoKHR swapchainCreate = {};
+            swapchainCreate.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
+            swapchainCreate.pNext = NULL;
+            swapchainCreate.minImageCount = FramebufferCount;
+            swapchainCreate.imageArrayLayers = 1;
+            swapchainCreate.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_STORAGE_BIT;
+            swapchainCreate.surface = surface->VulkanSurface;
+            swapchainCreate.imageFormat = surface->Format.format;
+            swapchainCreate.imageColorSpace = surface->Format.colorSpace;
+            swapchainCreate.imageExtent = surface->Extents;
+            swapchainCreate.preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
+            swapchainCreate.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+            swapchainCreate.presentMode = surface->PresentMode;
+            swapchainCreate.clipped = VK_TRUE;
+            swapchainCreate.pQueueFamilyIndices = NULL;
+            swapchainCreate.queueFamilyIndexCount = 0;
+
+            uint32_t swapchainShareIndices[2];
+            if (api->Queues[GraphicsQueue::Graphics].Index != api->Queues[GraphicsQueue::Present].Index)
+            {
+                swapchainShareIndices[0] = api->Queues[GraphicsQueue::Graphics].Index;
+                swapchainShareIndices[1] = api->Queues[GraphicsQueue::Present].Index;
+
+                swapchainCreate.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
+                swapchainCreate.queueFamilyIndexCount = 2;
+                swapchainCreate.pQueueFamilyIndices = swapchainShareIndices;
+            }
+            else
+            {
+                swapchainCreate.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
+            }
+
+            IB_VKCHECK(vkCreateSwapchainKHR(api->LogicalDevice, &swapchainCreate, NoVkAllocator, &surface->Swapchain));
+
+            VkImage swapchainImages[FramebufferCount];
+
+            uint32_t swapchainImageCount = FramebufferCount;
+            IB_VKCHECK(vkGetSwapchainImagesKHR(api->LogicalDevice, surface->Swapchain, &swapchainImageCount, swapchainImages));
+            IB_ASSERT(swapchainImageCount >= FramebufferCount, "Too few swapchain images!");
+
+            for (uint32_t fb = 0; fb < FramebufferCount; fb++)
+            {
+                VkImageViewCreateInfo imageViewCreate = {};
+                imageViewCreate.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+                imageViewCreate.viewType = VK_IMAGE_VIEW_TYPE_2D;
+                imageViewCreate.components.r = VK_COMPONENT_SWIZZLE_R;
+                imageViewCreate.components.g = VK_COMPONENT_SWIZZLE_G;
+                imageViewCreate.components.b = VK_COMPONENT_SWIZZLE_B;
+                imageViewCreate.components.a = VK_COMPONENT_SWIZZLE_A;
+                imageViewCreate.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+                imageViewCreate.subresourceRange.baseMipLevel = 0;
+                imageViewCreate.subresourceRange.levelCount = 1;
+                imageViewCreate.subresourceRange.baseArrayLayer = 0;
+                imageViewCreate.subresourceRange.layerCount = 1;
+                imageViewCreate.image = swapchainImages[fb];
+                imageViewCreate.format = surface->Format.format;
+
+                surface->Framebuffers[fb].Texture.Aspect = VK_IMAGE_ASPECT_COLOR_BIT;
+                surface->Framebuffers[fb].Texture.Image = swapchainImages[fb];
+                IB_VKCHECK(vkCreateImageView(api->LogicalDevice, &imageViewCreate, NoVkAllocator, &surface->Framebuffers[fb].Texture.View));
+            }
+        }
+
+        // Acquire semaphore
+        {
+            VkSemaphoreCreateInfo semaphoreCreateInfo = {};
+            semaphoreCreateInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+
+            for (uint32_t i = 0; i < FramebufferCount; i++)
+            {
+                IB_VKCHECK(vkCreateSemaphore(api->LogicalDevice, &semaphoreCreateInfo, NoVkAllocator, &surface->Framebuffers[i].AcquireSemaphore));
+            }
+        }
+    }
+
+    void killGraphicsSurface(GraphicsAPI* api, GraphicsSurface* surface)
+    {
+        for (uint32_t fb = 0; fb < FramebufferCount; fb++)
+        {
+            vkDestroySemaphore(api->LogicalDevice, surface->Framebuffers[fb].AcquireSemaphore, NoVkAllocator);
+            vkDestroyImageView(api->LogicalDevice, surface->Framebuffers[fb].Texture.View, NoVkAllocator);
+        }
+        vkDestroySwapchainKHR(api->LogicalDevice, surface->Swapchain, NoVkAllocator);
+        vkDestroySurfaceKHR(api->Instance, surface->VulkanSurface, NoVkAllocator);
     }
 }
 

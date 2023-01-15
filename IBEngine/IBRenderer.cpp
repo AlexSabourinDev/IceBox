@@ -120,19 +120,12 @@ namespace IB
         {
             struct
             {
-                VkSurfaceKHR Surface;
-                VkSurfaceFormatKHR SurfaceFormat;
-                VkExtent2D SurfaceExtents;
-                VkPresentModeKHR PresentMode;
-                VkSwapchainKHR Swapchain;
-
+                GraphicsSurface Surface;
                 VkFence ImmediateFence;
 
                 struct
                 {
-                    VkSemaphore AcquireSemaphore;
                     VkSemaphore FinishedSemaphore;
-                    ImageAndView SwapchainImage; // Special case ImageAndView. Image is not allocated - no allocation object.
                     VkCommandBuffer PrimaryCommandBuffer;
                     VkFence FinishedFence;
                 } FrameBuffer[FrameBufferCount];
@@ -418,103 +411,6 @@ namespace IB
 
             return imageAndView;
         }
-
-        void buildSurfaceSwapchain(VkExtent2D surfaceExtents)
-        {
-            if (RendererContext.Present.Swapchain != VK_NULL_HANDLE)
-            {
-                vkDestroySwapchainKHR(API.LogicalDevice, RendererContext.Present.Swapchain, IB::NoVkAllocator);
-                for (uint32_t fb = 0; fb < FrameBufferCount; fb++)
-                {
-                    vkDestroyImageView(API.LogicalDevice, RendererContext.Present.FrameBuffer[fb].SwapchainImage.View, IB::NoVkAllocator);
-                    vkDestroyImage(API.LogicalDevice, ForwardPass.FrameBuffer[fb].DepthImage.Image, IB::NoVkAllocator);
-                    vkDestroyImageView(API.LogicalDevice, ForwardPass.FrameBuffer[fb].DepthImage.View, IB::NoVkAllocator);
-                    freeDeviceMemory(&Allocator, ForwardPass.FrameBuffer[fb].DepthImage.Allocation);
-                }
-            }
-
-            RendererContext.Present.SurfaceExtents = surfaceExtents;
-
-            // Swapchain
-            {
-                VkSwapchainCreateInfoKHR swapchainCreate = {};
-                swapchainCreate.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
-                swapchainCreate.pNext = NULL;
-                swapchainCreate.minImageCount = FrameBufferCount;
-                swapchainCreate.imageArrayLayers = 1;
-                swapchainCreate.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_STORAGE_BIT;
-                swapchainCreate.surface = RendererContext.Present.Surface;
-                swapchainCreate.imageFormat = RendererContext.Present.SurfaceFormat.format;
-                swapchainCreate.imageColorSpace = RendererContext.Present.SurfaceFormat.colorSpace;
-                swapchainCreate.imageExtent = surfaceExtents;
-                swapchainCreate.preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
-                swapchainCreate.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
-                swapchainCreate.presentMode = RendererContext.Present.PresentMode;
-                swapchainCreate.clipped = VK_TRUE;
-                swapchainCreate.pQueueFamilyIndices = NULL;
-                swapchainCreate.queueFamilyIndexCount = 0;
-
-                uint32_t swapchainShareIndices[2];
-                if (API.Queues[GraphicsQueue::Graphics].Index != API.Queues[GraphicsQueue::Present].Index)
-                {
-                    swapchainShareIndices[0] = API.Queues[GraphicsQueue::Graphics].Index;
-                    swapchainShareIndices[1] = API.Queues[GraphicsQueue::Present].Index;
-
-                    swapchainCreate.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
-                    swapchainCreate.queueFamilyIndexCount = 2;
-                    swapchainCreate.pQueueFamilyIndices = swapchainShareIndices;
-                }
-                else
-                {
-                    swapchainCreate.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
-                }
-
-                IB_VKCHECK(vkCreateSwapchainKHR(API.LogicalDevice, &swapchainCreate, NoVkAllocator, &RendererContext.Present.Swapchain));
-
-                VkImage swapchainImages[FrameBufferCount];
-
-                uint32_t swapchainImageCount = FrameBufferCount;
-                IB_VKCHECK(vkGetSwapchainImagesKHR(API.LogicalDevice, RendererContext.Present.Swapchain, &swapchainImageCount, swapchainImages));
-                IB_ASSERT(swapchainImageCount >= FrameBufferCount, "Too few swapchain images!");
-
-                for (uint32_t fb = 0; fb < FrameBufferCount; fb++)
-                {
-                    VkImageViewCreateInfo imageViewCreate = {};
-                    imageViewCreate.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-                    imageViewCreate.viewType = VK_IMAGE_VIEW_TYPE_2D;
-                    imageViewCreate.components.r = VK_COMPONENT_SWIZZLE_R;
-                    imageViewCreate.components.g = VK_COMPONENT_SWIZZLE_G;
-                    imageViewCreate.components.b = VK_COMPONENT_SWIZZLE_B;
-                    imageViewCreate.components.a = VK_COMPONENT_SWIZZLE_A;
-                    imageViewCreate.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-                    imageViewCreate.subresourceRange.baseMipLevel = 0;
-                    imageViewCreate.subresourceRange.levelCount = 1;
-                    imageViewCreate.subresourceRange.baseArrayLayer = 0;
-                    imageViewCreate.subresourceRange.layerCount = 1;
-                    imageViewCreate.image = swapchainImages[fb];
-                    imageViewCreate.format = RendererContext.Present.SurfaceFormat.format;
-
-                    RendererContext.Present.FrameBuffer[fb].SwapchainImage.Image = swapchainImages[fb];
-                    IB_VKCHECK(vkCreateImageView(API.LogicalDevice, &imageViewCreate, NoVkAllocator, &RendererContext.Present.FrameBuffer[fb].SwapchainImage.View));
-                }
-            }
-
-            for (uint32_t fb = 0; fb < FrameBufferCount; fb++)
-            {
-                // Depth image
-                {
-                    ImageAllocation imageAlloc = {};
-                    imageAlloc.ImageUsage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
-                    imageAlloc.Format = VK_FORMAT_D32_SFLOAT;
-                    imageAlloc.Width = surfaceExtents.width;
-                    imageAlloc.Height = surfaceExtents.height;
-                    imageAlloc.Stride = 4;
-                    imageAlloc.Type = ImageAndView::Depth;
-
-                    ForwardPass.FrameBuffer[fb].DepthImage = allocImageAndView(imageAlloc);
-                }
-            }
-        }
     } // namespace
 } // namespace IB
 
@@ -532,21 +428,6 @@ namespace IB
 {
 namespace
 {
-    VkSurfaceKHR createSurface(VkInstance instance, IB::Window::Handle window)
-    {
-        HWND windowHandle;
-        HINSTANCE instanceHandle;
-        IB::Win32::getWindowHandleAndInstance(window, &windowHandle, &instanceHandle);
-
-        VkWin32SurfaceCreateInfoKHR surfaceCreateInfo = {};
-        surfaceCreateInfo.sType = VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR;
-        surfaceCreateInfo.hinstance = instanceHandle;
-        surfaceCreateInfo.hwnd = windowHandle;
-
-        VkSurfaceKHR surface;
-        IB_VKCHECK(vkCreateWin32SurfaceKHR(instance, &surfaceCreateInfo, IB::NoVkAllocator, &surface));
-        return surface;
-    }
 
     VkImageMemoryBarrier createImageBarrier(
         VkAccessFlagBits sourceAccessMask,
@@ -582,11 +463,10 @@ namespace IB
 {
     void initRenderer(RendererDesc const &desc)
     {
-        VkInstance instance;
-        initVkInstance(&instance);
-        RendererContext.Present.Surface = createSurface(instance, desc.Window);
-
-        initGraphicsAPI(&API, {instance, RendererContext.Present.Surface});
+        HWND windowHandle;
+        HINSTANCE instanceHandle;
+        Win32::getWindowHandleAndInstance(desc.Window, &windowHandle, &instanceHandle);
+        initGraphicsAPI(&API, {windowHandle, instanceHandle});
         VkMemory::initAllocator(&Allocator);
 
         for (uint32_t i = 0; i < GraphicsQueue::Count; i++)
@@ -611,77 +491,6 @@ namespace IB
         }
 
         {
-            VkSemaphoreCreateInfo semaphoreCreateInfo = {};
-            semaphoreCreateInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-
-            for (uint32_t i = 0; i < FrameBufferCount; i++)
-            {
-                IB_VKCHECK(vkCreateSemaphore(API.LogicalDevice, &semaphoreCreateInfo, NoVkAllocator, &RendererContext.Present.FrameBuffer[i].AcquireSemaphore));
-            }
-        }
-
-        {
-            uint32_t constexpr maxSurfaceFormatCount = 100;
-            uint32_t surfaceFormatCount;
-            VkSurfaceFormatKHR surfaceFormats[maxSurfaceFormatCount];
-
-            IB_VKCHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(API.PhysicalDevice, RendererContext.Present.Surface, &surfaceFormatCount, NULL));
-            IB_ASSERT(surfaceFormatCount > 0, "Failed to find any surface formats.");
-            surfaceFormatCount = surfaceFormatCount < maxSurfaceFormatCount ? surfaceFormatCount : maxSurfaceFormatCount;
-            IB_VKCHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(API.PhysicalDevice, RendererContext.Present.Surface, &surfaceFormatCount, surfaceFormats));
-
-            if (1 == surfaceFormatCount && VK_FORMAT_UNDEFINED == surfaceFormats[0].format)
-            {
-                RendererContext.Present.SurfaceFormat.format = VK_FORMAT_R8G8B8A8_UNORM;
-                RendererContext.Present.SurfaceFormat.colorSpace = VK_COLORSPACE_SRGB_NONLINEAR_KHR;
-            }
-            else
-            {
-                RendererContext.Present.SurfaceFormat = surfaceFormats[0];
-                for (uint32_t i = 0; i < surfaceFormatCount; i++)
-                {
-                    if (VK_FORMAT_R8G8B8A8_UNORM == surfaceFormats[i].format && VK_COLORSPACE_SRGB_NONLINEAR_KHR == surfaceFormats[i].colorSpace)
-                    {
-                        RendererContext.Present.SurfaceFormat = surfaceFormats[i];
-                        break;
-                    }
-                }
-            }
-        }
-
-        {
-            VkSurfaceCapabilitiesKHR surfaceCapabilities;
-            IB_VKCHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(API.PhysicalDevice, RendererContext.Present.Surface, &surfaceCapabilities));
-
-            IB_ASSERT(surfaceCapabilities.currentExtent.width != UINT32_MAX, "Surface has invalid width.");
-            RendererContext.Present.SurfaceExtents = surfaceCapabilities.currentExtent;
-        }
-
-        RendererContext.Present.PresentMode = VK_PRESENT_MODE_FIFO_KHR;
-
-        bool constexpr useVSync = true;
-        if (!useVSync)
-        {
-            uint32_t constexpr maxPresentModes = 100;
-            uint32_t presentModeCount;
-            VkPresentModeKHR presentModes[maxPresentModes];
-
-            IB_VKCHECK(vkGetPhysicalDeviceSurfacePresentModesKHR(API.PhysicalDevice, RendererContext.Present.Surface, &presentModeCount, NULL));
-            IB_ASSERT(presentModeCount > 0, "Failed to find a present mode.");
-            presentModeCount = presentModeCount < maxPresentModes ? presentModeCount : maxPresentModes;
-            IB_VKCHECK(vkGetPhysicalDeviceSurfacePresentModesKHR(API.PhysicalDevice, RendererContext.Present.Surface, &presentModeCount, presentModes));
-
-            for (uint32_t i = 0; i < presentModeCount; i++)
-            {
-                if (VK_PRESENT_MODE_MAILBOX_KHR == presentModes[i])
-                {
-                    RendererContext.Present.PresentMode = VK_PRESENT_MODE_MAILBOX_KHR;
-                    break;
-                }
-            }
-        }
-
-        {
             // Forward Renderpass
             {
                 VkAttachmentDescription output = {};
@@ -690,7 +499,7 @@ namespace IB
                 output.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
                 output.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
                 output.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-                output.format = RendererContext.Present.SurfaceFormat.format;
+                output.format = RendererContext.Present.Surface.Format.format;
 
                 VkAttachmentDescription depth = {};
                 depth.samples = VK_SAMPLE_COUNT_1_BIT;
@@ -722,7 +531,27 @@ namespace IB
                 VkSubpassDescription subpasses[] = {renderSubpass};
             }
 
-            buildSurfaceSwapchain(RendererContext.Present.SurfaceExtents);
+            initWin32GraphicsSurface(&API, &RendererContext.Present.Surface,
+                {
+                    windowHandle,
+                    instanceHandle
+                });
+
+            for (uint32_t fb = 0; fb < FrameBufferCount; fb++)
+            {
+                // Depth image
+                {
+                    ImageAllocation imageAlloc = {};
+                    imageAlloc.ImageUsage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+                    imageAlloc.Format = VK_FORMAT_D32_SFLOAT;
+                    imageAlloc.Width = RendererContext.Present.Surface.Extents.width;
+                    imageAlloc.Height = RendererContext.Present.Surface.Extents.height;
+                    imageAlloc.Stride = 4;
+                    imageAlloc.Type = ImageAndView::Depth;
+
+                    ForwardPass.FrameBuffer[fb].DepthImage = allocImageAndView(imageAlloc);
+                }
+            }
 
             {
                 VkSemaphoreCreateInfo semaphoreCreateInfo = {};
@@ -1120,10 +949,6 @@ namespace IB
         // ImGui
         {
             ImGui::CreateContext();
-
-            HWND windowHandle;
-            HINSTANCE instanceHandle;
-            IB::Win32::getWindowHandleAndInstance(desc.Window, &windowHandle, &instanceHandle);
             ImGui_ImplWin32_Init(windowHandle);
 
             ImGui_ImplVulkan_InitInfo initInfo = {};
@@ -1138,7 +963,7 @@ namespace IB
             initInfo.MinImageCount = FrameBufferCount;
             initInfo.ImageCount = FrameBufferCount;
             initInfo.CheckVkResultFn = &vkCheck;
-            ImGui_ImplVulkan_Init(&initInfo, RendererContext.Present.SurfaceFormat.format);
+            ImGui_ImplVulkan_Init(&initInfo, RendererContext.Present.Surface.Format.format);
 
             // Upload ImGui font
             {
@@ -1183,11 +1008,10 @@ namespace IB
         ImGui_ImplWin32_Shutdown();
         ImGui::DestroyContext();
 
+        killGraphicsSurface(&API, &RendererContext.Present.Surface);
         for (uint32_t fb = 0; fb < FrameBufferCount; fb++)
         {
-            vkDestroySemaphore(API.LogicalDevice, RendererContext.Present.FrameBuffer[fb].AcquireSemaphore, NoVkAllocator);
             vkDestroySemaphore(API.LogicalDevice, RendererContext.Present.FrameBuffer[fb].FinishedSemaphore, NoVkAllocator);
-            vkDestroyImageView(API.LogicalDevice, RendererContext.Present.FrameBuffer[fb].SwapchainImage.View, NoVkAllocator);
             vkDestroyFence(API.LogicalDevice, RendererContext.Present.FrameBuffer[fb].FinishedFence, NoVkAllocator);
             vkDestroyImage(API.LogicalDevice, ForwardPass.FrameBuffer[fb].DepthImage.Image, NoVkAllocator);
             vkDestroyImageView(API.LogicalDevice, ForwardPass.FrameBuffer[fb].DepthImage.View, NoVkAllocator);
@@ -1238,9 +1062,6 @@ namespace IB
         {
             vkDestroyFence(API.LogicalDevice, Staging.Fences[i], NoVkAllocator);
         }
-
-        vkDestroySwapchainKHR(API.LogicalDevice, RendererContext.Present.Swapchain, NoVkAllocator);
-        vkDestroySurfaceKHR(API.Instance, RendererContext.Present.Surface, NoVkAllocator);
 
         VkMemory::killAllocator(API.LogicalDevice, &Allocator);
         killGraphicsAPI(&API);
@@ -1348,13 +1169,13 @@ namespace IB
 
         VkPipelineShaderStageCreateInfo shaderStages[] = {vertexStage, fragStage};
         VkRect2D scissor = {};
-        scissor.extent = RendererContext.Present.SurfaceExtents;
+        scissor.extent = RendererContext.Present.Surface.Extents;
 
         VkViewport viewport = {};
         viewport.x = 0;
         viewport.y = 0;
-        viewport.width = (float)RendererContext.Present.SurfaceExtents.width;
-        viewport.height = (float)RendererContext.Present.SurfaceExtents.height;
+        viewport.width = (float)RendererContext.Present.Surface.Extents.width;
+        viewport.height = (float)RendererContext.Present.Surface.Extents.height;
         viewport.minDepth = 0.0f;
         viewport.maxDepth = 1.0f;
 
@@ -1368,7 +1189,7 @@ namespace IB
         VkPipelineRenderingCreateInfoKHR pipelineRenderingCreateInfo = {};
         pipelineRenderingCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO_KHR;
         pipelineRenderingCreateInfo.colorAttachmentCount = 1;
-        pipelineRenderingCreateInfo.pColorAttachmentFormats = &RendererContext.Present.SurfaceFormat.format;
+        pipelineRenderingCreateInfo.pColorAttachmentFormats = &RendererContext.Present.Surface.Format.format;
         pipelineRenderingCreateInfo.depthAttachmentFormat = VK_FORMAT_D32_SFLOAT;
 
         VkGraphicsPipelineCreateInfo baseGraphicsPipelineCreate = {};
@@ -1845,14 +1666,17 @@ namespace IB
         uint32_t fb = RendererContext.Present.ActiveFrame;
 
         uint32_t imageIndex = 0;
-        VkResult result = vkAcquireNextImageKHR(API.LogicalDevice, RendererContext.Present.Swapchain, UINT64_MAX, RendererContext.Present.FrameBuffer[fb].AcquireSemaphore, VK_NULL_HANDLE, &imageIndex);
+        VkResult result = vkAcquireNextImageKHR(API.LogicalDevice, RendererContext.Present.Surface.Swapchain, UINT64_MAX, RendererContext.Present.Surface.Framebuffers[fb].AcquireSemaphore, VK_NULL_HANDLE, &imageIndex);
         if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR)
         {
-            vkDeviceWaitIdle(API.LogicalDevice);
-            VkSurfaceCapabilitiesKHR surfaceCapabilities;
-            IB_VKCHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(API.PhysicalDevice, RendererContext.Present.Surface, &surfaceCapabilities));
-            IB_ASSERT(surfaceCapabilities.currentExtent.width != UINT32_MAX, "Surface extents are undefined.");
-            buildSurfaceSwapchain(surfaceCapabilities.currentExtent);
+            // TODO
+            IB_ASSERT(false, "To Implement.");
+
+            //vkDeviceWaitIdle(API.LogicalDevice);
+            //VkSurfaceCapabilitiesKHR surfaceCapabilities;
+            //IB_VKCHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(API.PhysicalDevice, RendererContext.Present.Surface, &surfaceCapabilities));
+            //IB_ASSERT(surfaceCapabilities.currentExtent.width != UINT32_MAX, "Surface extents are undefined.");
+            //buildSurfaceSwapchain(surfaceCapabilities.currentExtent);
             return;
         }
 
@@ -1917,12 +1741,12 @@ namespace IB
                 {
                     VkPipelineStageFlags sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
                     VkPipelineStageFlags destinationStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-                    VkImageMemoryBarrier colorBarrier = createImageBarrier(
+                    VkImageMemoryBarrier colorBarrier = createMemoryBarrier(
+                        &RendererContext.Present.Surface.Framebuffers[fb].Texture,
                         VkAccessFlagBits{},
                         VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
                         VK_IMAGE_LAYOUT_UNDEFINED,
-                        VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-                        RendererContext.Present.FrameBuffer[fb].SwapchainImage);
+                        VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
                     vkCmdPipelineBarrier(currentCommands, sourceStage, destinationStage, 0, 0, NULL, 0, NULL, 1, &colorBarrier);
                 }
 
@@ -1948,11 +1772,11 @@ namespace IB
                 colorClear.color = clearColor;
 
                 VkRect2D renderArea = {};
-                renderArea.extent = RendererContext.Present.SurfaceExtents;
+                renderArea.extent = RendererContext.Present.Surface.Extents;
 
                 VkRenderingAttachmentInfo forwardImageAttachment = {};
                 forwardImageAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-                forwardImageAttachment.imageView = RendererContext.Present.FrameBuffer[fb].SwapchainImage.View;
+                forwardImageAttachment.imageView = RendererContext.Present.Surface.Framebuffers[fb].Texture.View;
                 forwardImageAttachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
                 forwardImageAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
                 forwardImageAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -1982,14 +1806,14 @@ namespace IB
                 VkViewport viewport = {};
                 viewport.x = 0;
                 viewport.y = 0;
-                viewport.width = (float)RendererContext.Present.SurfaceExtents.width;
-                viewport.height = (float)RendererContext.Present.SurfaceExtents.height;
+                viewport.width = (float)RendererContext.Present.Surface.Extents.width;
+                viewport.height = (float)RendererContext.Present.Surface.Extents.height;
                 viewport.minDepth = 0.0f;
                 viewport.maxDepth = 1.0f;
                 vkCmdSetViewport(currentCommands, 0, 1, &viewport);
 
                 VkRect2D scissor = {};
-                scissor.extent = RendererContext.Present.SurfaceExtents;
+                scissor.extent = RendererContext.Present.Surface.Extents;
                 vkCmdSetScissor(currentCommands, 0, 1, &scissor);
 
                 VkDescriptorSet set = ForwardPass.ShaderDescriptor;
@@ -2111,11 +1935,11 @@ namespace IB
             if (view.ImGuiDrawData != nullptr)
             {
                 VkRect2D renderArea = {};
-                renderArea.extent = RendererContext.Present.SurfaceExtents;
+                renderArea.extent = RendererContext.Present.Surface.Extents;
 
                 VkRenderingAttachmentInfo forwardImageAttachment = {};
                 forwardImageAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-                forwardImageAttachment.imageView = RendererContext.Present.FrameBuffer[fb].SwapchainImage.View;
+                forwardImageAttachment.imageView = RendererContext.Present.Surface.Framebuffers[fb].Texture.View;
                 forwardImageAttachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
                 forwardImageAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
                 forwardImageAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -2137,12 +1961,12 @@ namespace IB
             {
                 VkPipelineStageFlags sourceStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
                 VkPipelineStageFlags destinationStage = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
-                VkImageMemoryBarrier colorBarrier = createImageBarrier(
+                VkImageMemoryBarrier colorBarrier = createMemoryBarrier(
+                    &RendererContext.Present.Surface.Framebuffers[fb].Texture,
                     VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
                     {},
                     VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-                    VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-                    RendererContext.Present.FrameBuffer[fb].SwapchainImage);
+                    VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
 
                 vkCmdPipelineBarrier(currentCommands, sourceStage, destinationStage, 0, 0, NULL, 0, NULL, 1, &colorBarrier);
             }
@@ -2156,7 +1980,7 @@ namespace IB
         submitInfo.commandBufferCount = 1;
         submitInfo.pCommandBuffers = &currentCommands;
         submitInfo.waitSemaphoreCount = 1;
-        submitInfo.pWaitSemaphores = &RendererContext.Present.FrameBuffer[fb].AcquireSemaphore;
+        submitInfo.pWaitSemaphores = &RendererContext.Present.Surface.Framebuffers[fb].AcquireSemaphore;
         submitInfo.signalSemaphoreCount = 1;
         submitInfo.pSignalSemaphores = &RendererContext.Present.FrameBuffer[fb].FinishedSemaphore;
         submitInfo.pWaitDstStageMask = &dstStageMask;
@@ -2168,17 +1992,18 @@ namespace IB
         presentInfo.waitSemaphoreCount = 1;
         presentInfo.pWaitSemaphores = &RendererContext.Present.FrameBuffer[fb].FinishedSemaphore;
         presentInfo.swapchainCount = 1;
-        presentInfo.pSwapchains = &RendererContext.Present.Swapchain;
+        presentInfo.pSwapchains = &RendererContext.Present.Surface.Swapchain;
         presentInfo.pImageIndices = &imageIndex;
 
         VkResult presentResult = vkQueuePresentKHR(API.Queues[GraphicsQueue::Present].Queue, &presentInfo);
         if (presentResult == VK_ERROR_OUT_OF_DATE_KHR || presentResult == VK_SUBOPTIMAL_KHR)
         {
-            vkDeviceWaitIdle(API.LogicalDevice);
-            VkSurfaceCapabilitiesKHR surfaceCapabilities;
-            IB_VKCHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(API.PhysicalDevice, RendererContext.Present.Surface, &surfaceCapabilities));
-            IB_ASSERT(surfaceCapabilities.currentExtent.width != UINT32_MAX, "Failed to get surface extents.");
-            buildSurfaceSwapchain(surfaceCapabilities.currentExtent);
+            IB_ASSERT(false, "To Implement.");
+            //vkDeviceWaitIdle(API.LogicalDevice);
+            //VkSurfaceCapabilitiesKHR surfaceCapabilities;
+            //IB_VKCHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(API.PhysicalDevice, RendererContext.Present.Surface, &surfaceCapabilities));
+            //IB_ASSERT(surfaceCapabilities.currentExtent.width != UINT32_MAX, "Failed to get surface extents.");
+            //buildSurfaceSwapchain(surfaceCapabilities.currentExtent);
         }
 
         RendererContext.Present.ActiveFrame = (RendererContext.Present.ActiveFrame + 1) % FrameBufferCount;
