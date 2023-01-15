@@ -455,7 +455,7 @@ namespace IB
 // Main API
 namespace IB
 {
-    #define IB_VKDEBUG
+    // #define IB_VKDEBUG
 
     const char *InstanceExtensions[] = {VK_KHR_SURFACE_EXTENSION_NAME, VK_KHR_WIN32_SURFACE_EXTENSION_NAME};
     const char *DeviceExtensions[] = {VK_KHR_SWAPCHAIN_EXTENSION_NAME, VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME};

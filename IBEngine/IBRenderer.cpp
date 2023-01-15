@@ -1240,8 +1240,6 @@ namespace IB
         }
 
         vkDestroySwapchainKHR(API.LogicalDevice, RendererContext.Present.Swapchain, NoVkAllocator);
-        vkDestroyPipelineCache(API.LogicalDevice, API.PipelineCache, NoVkAllocator);
-        vkDestroyDescriptorPool(API.LogicalDevice, API.DescriptorPool, NoVkAllocator);
         vkDestroySurfaceKHR(API.Instance, RendererContext.Present.Surface, NoVkAllocator);
 
         VkMemory::killAllocator(API.LogicalDevice, &Allocator);
