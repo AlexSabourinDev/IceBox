@@ -468,16 +468,6 @@ namespace IB
         initGraphicsAPI({windowHandle, instanceHandle}, &API);
         VkMemory::initAllocator(&Allocator);
 
-        for (uint32_t i = 0; i < GraphicsQueue::Count; i++)
-        {
-            VkCommandPoolCreateInfo commandPoolCreateInfo = {};
-            commandPoolCreateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-            commandPoolCreateInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
-            commandPoolCreateInfo.queueFamilyIndex = API.Queues[i].Index;
-
-            IB_VKCHECK(vkCreateCommandPool(API.LogicalDevice, &commandPoolCreateInfo, NoVkAllocator, &API.Queues[i].CommandPool));
-        }
-
         {
             VkFenceCreateInfo fenceCreateInfo = {};
             fenceCreateInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
@@ -490,46 +480,6 @@ namespace IB
         }
 
         {
-            // Forward Renderpass
-            {
-                VkAttachmentDescription output = {};
-                output.samples = VK_SAMPLE_COUNT_1_BIT;
-                output.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-                output.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-                output.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-                output.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-                output.format = RendererContext.Present.Surface.Format.format;
-
-                VkAttachmentDescription depth = {};
-                depth.samples = VK_SAMPLE_COUNT_1_BIT;
-                depth.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-                depth.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-                depth.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-                depth.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-                depth.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-                depth.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-                depth.format = VK_FORMAT_D32_SFLOAT;
-
-                VkAttachmentDescription attachmentDescriptions[] = {output, depth};
-
-                // Attachments
-                VkAttachmentReference outputAttachment = {};
-                outputAttachment.attachment = 0;
-                outputAttachment.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-
-                VkAttachmentReference depthAttachment = {};
-                depthAttachment.attachment = 1;
-                depthAttachment.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-
-                VkSubpassDescription renderSubpass = {};
-                renderSubpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-                renderSubpass.colorAttachmentCount = 1;
-                renderSubpass.pColorAttachments = &outputAttachment;
-                renderSubpass.pDepthStencilAttachment = &depthAttachment;
-
-                VkSubpassDescription subpasses[] = {renderSubpass};
-            }
-
             initWin32GraphicsSurface(&API,
                 {
                     windowHandle,

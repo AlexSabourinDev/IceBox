@@ -812,6 +812,17 @@ namespace IB
 
             IB_VKCHECK(vkCreatePipelineCache(outGraphicsAPI->LogicalDevice, &pipelineCacheCreate, NoVkAllocator, &outGraphicsAPI->PipelineCache));
         }
+
+        // Create the command pools
+        for (uint32_t i = 0; i < GraphicsQueue::Count; i++)
+        {
+            VkCommandPoolCreateInfo commandPoolCreateInfo = {};
+            commandPoolCreateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+            commandPoolCreateInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+            commandPoolCreateInfo.queueFamilyIndex = outGraphicsAPI->Queues[i].Index;
+
+            IB_VKCHECK(vkCreateCommandPool(outGraphicsAPI->LogicalDevice, &commandPoolCreateInfo, NoVkAllocator, &outGraphicsAPI->Queues[i].CommandPool));
+        }
     }
 
     void killGraphicsAPI(GraphicsAPI* graphicsAPI)
