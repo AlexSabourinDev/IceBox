@@ -150,6 +150,7 @@ namespace IB
         GraphicsQueue::Enum QueueType;
     };
 
+    // TODO: Remove - not a useful abstraction.
     void initCommandBuffer(GraphicsAPI* api, CommandBufferDesc desc, CommandBuffer* outCommandBuffer);
     void killCommandBuffer(GraphicsAPI* api, CommandBuffer* commandBuffer);
 
@@ -225,6 +226,55 @@ namespace IB
     };
     void presentSurface(GraphicsAPI* api, SurfacePresentDesc presentDesc, SurfacePresentResult* outPresentResult);
     void rebuildSurface(GraphicsAPI* api, GraphicsSurface* surface);
+}
+
+// Staging
+namespace IB
+{
+    uint32_t constexpr StagingSize = 32 * 1024 * 1024; // 32MB of staging space
+    uint32_t constexpr MaxStagingFenceCount = 128;
+    uint32_t constexpr MaxTransferCount = 128;
+    uint32_t constexpr MaxDescriptorUpdateCount = 128;
+    struct StagingCore
+    {
+        VkBuffer Buffer;
+        IB::VkMemory::Allocation Allocation;
+        void* MappedMemory = nullptr;
+        uint32_t WriteOffset = 0;
+
+        VkFence Fences[MaxStagingFenceCount];
+        uint32_t ActiveFenceCount = 0;
+
+        struct
+        {
+            CommandBuffer Commands[MaxTransferCount];
+            uint32_t ActiveCount = 0;
+        } Transfers;
+
+        struct
+        {
+            VkDescriptorImageInfo DescriptorInfos[MaxDescriptorUpdateCount];
+            VkWriteDescriptorSet DescriptorWrites[MaxDescriptorUpdateCount];
+            uint32_t ActiveCount = 0;
+        } DescriptorUpdates;
+    };
+
+    struct StagingBuffer
+    {
+        VkBuffer Buffer;
+        void* Memory;
+        uint32_t Offset;
+        VkFence Fence;
+    };
+
+    struct StagingDesc
+    {
+        VkMemory::Allocator* Allocator;
+    };
+
+    void initStaging(GraphicsAPI* api, StagingDesc desc, StagingCore* outStaging);
+    void killStaging(GraphicsAPI* api, VkMemory::Allocator* allocator, StagingCore* staging);
+    StagingBuffer requestStagingBuffer(StagingCore* staging, uint32_t size, uint32_t alignment = 1);
 }
 
 // TODO: Move to CPP when in a good place
@@ -1137,6 +1187,82 @@ namespace IB
         //IB_VKCHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(API.PhysicalDevice, RendererContext.Present.Surface, &surfaceCapabilities));
         //IB_ASSERT(surfaceCapabilities.currentExtent.width != UINT32_MAX, "Surface extents are undefined.");
         //buildSurfaceSwapchain(surfaceCapabilities.currentExtent);
+    }
+}
+
+// Staging
+namespace IB
+{
+    void initStaging(GraphicsAPI* api, StagingDesc desc, StagingCore* outStaging)
+    {
+        // Staging Buffer
+        {
+            VkBufferCreateInfo bufferCreate = {};
+            bufferCreate.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+            bufferCreate.size = StagingSize;
+            bufferCreate.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+
+            IB_VKCHECK(vkCreateBuffer(api->LogicalDevice, &bufferCreate, NoVkAllocator, &outStaging->Buffer));
+
+            VkMemoryRequirements memoryRequirements;
+            vkGetBufferMemoryRequirements(api->LogicalDevice, outStaging->Buffer, &memoryRequirements);
+
+            VkMemory::AllocationRequest request;
+            request.Alignment = memoryRequirements.alignment;
+            request.Size = StagingSize;
+            request.LogicalDevice = api->LogicalDevice;
+            request.PhysicalDevice = api->PhysicalDevice;
+            request.RequiredFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+            request.PreferedFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+            request.TypeBits = memoryRequirements.memoryTypeBits;
+            request.Category = VkMemory::Category::TransferSource;
+
+            outStaging->Allocation = allocateDeviceMemory(desc.Allocator, request);
+            IB_VKCHECK(vkBindBufferMemory(api->LogicalDevice, outStaging->Buffer, outStaging->Allocation.Memory, outStaging->Allocation.Offset));
+
+            outStaging->MappedMemory = mapAllocation(api->LogicalDevice, desc.Allocator, outStaging->Allocation);
+        }
+
+        // Fences
+        {
+            VkFenceCreateInfo fenceCreateInfo = {};
+            fenceCreateInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;        
+            for (uint32_t i = 0; i < MaxStagingFenceCount; i++)
+            {
+                IB_VKCHECK(vkCreateFence(api->LogicalDevice, &fenceCreateInfo, NoVkAllocator, &outStaging->Fences[i]));
+            }
+        }
+    }
+
+    void killStaging(GraphicsAPI* api, VkMemory::Allocator* allocator, StagingCore* staging)
+    {
+        vkDestroyBuffer(api->LogicalDevice, staging->Buffer, NoVkAllocator);
+        freeDeviceMemory(allocator, staging->Allocation);
+
+        for (uint32_t i = 0; i < MaxStagingFenceCount; i++)
+        {
+            vkDestroyFence(api->LogicalDevice, staging->Fences[i], NoVkAllocator);
+        }
+    }
+
+    StagingBuffer requestStagingBuffer(StagingCore* staging, uint32_t size, uint32_t alignment)
+    {
+        uint32_t alignmentBump = staging->WriteOffset % alignment;
+        alignmentBump = alignmentBump != 0 ? alignment - alignmentBump : alignmentBump;
+
+        IB_ASSERT(staging->WriteOffset + size + alignmentBump < StagingSize, "TODO: Handle flushing our staging buffer if we reach the maximum.");
+
+        staging->WriteOffset += alignmentBump;
+
+        StagingBuffer stagingBuffer = {};
+        stagingBuffer.Buffer = staging->Buffer;
+        stagingBuffer.Memory = reinterpret_cast<uint8_t*>(staging->MappedMemory) + staging->WriteOffset;
+        stagingBuffer.Offset = staging->WriteOffset;
+        IB_ASSERT(staging->ActiveFenceCount < MaxStagingFenceCount, "TODO: Handle flushing if we run out of fences.");
+        stagingBuffer.Fence = staging->Fences[staging->ActiveFenceCount++];
+        staging->WriteOffset += size;
+
+        return stagingBuffer;
     }
 }
 

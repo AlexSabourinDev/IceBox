@@ -149,62 +149,6 @@ namespace IB
             } Cleanup;
         };
 
-        uint32_t constexpr StagingSize = 32 * 1024 * 1024; // 32MB of staging space
-        uint32_t constexpr MaxStagingFenceCount = 128;
-        uint32_t constexpr MaxTransferCount = 128;
-        uint32_t constexpr MaxDescriptorUpdateCount = 128;
-        struct Staging
-        {
-            VkBuffer Buffer;
-            IB::VkMemory::Allocation Allocation;
-            void* MappedMemory = nullptr;
-            uint32_t WriteOffset = 0;
-
-            VkFence Fences[MaxStagingFenceCount];
-            uint32_t ActiveFenceCount = 0;
-
-            struct
-            {
-                CommandBuffer Commands[MaxTransferCount];
-                uint32_t ActiveCount = 0;
-            } Transfers;
-
-            struct
-            {
-                VkDescriptorImageInfo DescriptorInfos[MaxDescriptorUpdateCount];
-                VkWriteDescriptorSet DescriptorWrites[MaxDescriptorUpdateCount];
-                uint32_t ActiveCount = 0;
-            } DescriptorUpdates;
-        };
-
-        struct StagingBuffer
-        {
-            VkBuffer Buffer;
-            void* Memory;
-            uint32_t Offset;
-            VkFence Fence;
-        };
-
-        StagingBuffer requestStagingBuffer(Staging* staging, uint32_t size, uint32_t alignment = 1)
-        {
-            uint32_t alignmentBump = staging->WriteOffset % alignment;
-            alignmentBump = alignmentBump != 0 ? alignment - alignmentBump : alignmentBump;
-
-            IB_ASSERT(staging->WriteOffset + size + alignmentBump < StagingSize, "TODO: Handle flushing our staging buffer if we reach the maximum.");
-
-            staging->WriteOffset += alignmentBump;
-
-            StagingBuffer stagingBuffer = {};
-            stagingBuffer.Buffer = staging->Buffer;
-            stagingBuffer.Memory = reinterpret_cast<uint8_t*>(staging->MappedMemory) + staging->WriteOffset;
-            stagingBuffer.Offset = staging->WriteOffset;
-            IB_ASSERT(staging->ActiveFenceCount < MaxStagingFenceCount, "TODO: Handle flushing if we run out of fences.");
-            stagingBuffer.Fence = staging->Fences[staging->ActiveFenceCount++];
-            staging->WriteOffset += size;
-
-            return stagingBuffer;
-        }
-
         uint32_t constexpr MeshBufferChunkCount = FrameBufferCount;
         uint32_t constexpr MaxMeshCount = 1000;
         uint32_t constexpr MeshBufferChunkSize = 1024 * 1024 * 16;
@@ -333,7 +277,7 @@ namespace IB
         ForwardPass ForwardPass;
         Geometry Geometry;
         Lighting Lighting;
-        Staging Staging;
+        StagingCore Staging;
 
         struct ImageAllocation
         {
@@ -467,16 +411,12 @@ namespace IB
         Win32::getWindowHandleAndInstance(desc.Window, &windowHandle, &instanceHandle);
         initGraphicsAPI({windowHandle, instanceHandle}, &API);
         VkMemory::initAllocator(&Allocator);
+        initStaging(&API, {&Allocator}, &Staging);
 
         {
             VkFenceCreateInfo fenceCreateInfo = {};
             fenceCreateInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
             IB_VKCHECK(vkCreateFence(API.LogicalDevice, &fenceCreateInfo, NoVkAllocator, &RendererContext.Present.ImmediateFence));
-        
-            for (uint32_t i = 0; i < MaxStagingFenceCount; i++)
-            {
-                IB_VKCHECK(vkCreateFence(API.LogicalDevice, &fenceCreateInfo, NoVkAllocator, &Staging.Fences[i]));
-            }
         }
 
         {
@@ -595,34 +535,6 @@ namespace IB
 
                 IB_VKCHECK(vkCreatePipelineLayout(API.LogicalDevice, &pipelineLayoutCreate, NoVkAllocator, &ForwardPass.PipelineLayout));
             }
-        }
-
-        // Staging Buffer
-        {
-            VkBufferCreateInfo bufferCreate = {};
-            bufferCreate.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-            bufferCreate.size = StagingSize;
-            bufferCreate.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-
-            IB_VKCHECK(vkCreateBuffer(API.LogicalDevice, &bufferCreate, NoVkAllocator, &Staging.Buffer));
-
-            VkMemoryRequirements memoryRequirements;
-            vkGetBufferMemoryRequirements(API.LogicalDevice, Staging.Buffer, &memoryRequirements);
-
-            VkMemory::AllocationRequest request;
-            request.Alignment = memoryRequirements.alignment;
-            request.Size = StagingSize;
-            request.LogicalDevice = API.LogicalDevice;
-            request.PhysicalDevice = API.PhysicalDevice;
-            request.RequiredFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-            request.PreferedFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-            request.TypeBits = memoryRequirements.memoryTypeBits;
-            request.Category = VkMemory::Category::TransferSource;
-
-            Staging.Allocation = allocateDeviceMemory(&Allocator, request);
-            IB_VKCHECK(vkBindBufferMemory(API.LogicalDevice, Staging.Buffer, Staging.Allocation.Memory, Staging.Allocation.Offset));
-
-            Staging.MappedMemory = mapAllocation(API.LogicalDevice, &Allocator, Staging.Allocation);
         }
 
         // Indirect Draw Buffer
@@ -960,9 +872,6 @@ namespace IB
         vkDestroyBuffer(API.LogicalDevice, Lighting.LightBuffer, NoVkAllocator);
         freeDeviceMemory(&Allocator, Lighting.LightBufferAllocation);
 
-        vkDestroyBuffer(API.LogicalDevice, Staging.Buffer, NoVkAllocator);
-        freeDeviceMemory(&Allocator, Staging.Allocation);
-
         for (uint32_t fb = 0; fb < FrameBufferCount; fb++)
         {
             vkDestroyBuffer(API.LogicalDevice, IndirectDraw.FrameBuffer[fb].Buffer, NoVkAllocator);
@@ -974,11 +883,7 @@ namespace IB
 
         vkDestroyFence(API.LogicalDevice, RendererContext.Present.ImmediateFence, NoVkAllocator);
 
-        for (uint32_t i = 0; i < MaxStagingFenceCount; i++)
-        {
-            vkDestroyFence(API.LogicalDevice, Staging.Fences[i], NoVkAllocator);
-        }
-
+        killStaging(&API, &Allocator, &Staging);
         VkMemory::killAllocator(API.LogicalDevice, &Allocator);
         killGraphicsAPI(&API);
     }
