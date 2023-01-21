@@ -78,7 +78,7 @@ namespace IB
 
     struct GraphicsQueue
     {
-        enum
+        enum Enum
         {
             Present = 0,
             Graphics,
@@ -112,7 +112,7 @@ namespace IB
         void* Win32MainInstanceHandle;
     };
 
-	void initGraphicsAPI(GraphicsAPI* graphicsAPI, GraphicsAPIDesc desc);
+	void initGraphicsAPI(GraphicsAPIDesc desc, GraphicsAPI* outGraphicsAPI);
     void killGraphicsAPI(GraphicsAPI* graphicsAPI);
 }
 
@@ -127,13 +127,39 @@ namespace IB
         VkImageAspectFlags Aspect = {};
     };
 
-    // Modifies texture's layout immediately.
     VkImageMemoryBarrier createMemoryBarrier(
-        Texture* texture,
+        Texture const* texture,
         VkAccessFlagBits sourceAccessMask,
         VkAccessFlagBits dstAccessMask,
         VkImageLayout oldLayout,
         VkImageLayout newLayout);
+}
+
+// Command buffer
+namespace IB
+{
+    struct CommandBuffer
+    {
+        VkCommandBuffer Commands;
+        VkSemaphore FinishedSemaphore;
+        GraphicsQueue::Enum QueueType;
+    };
+
+    struct CommandBufferDesc
+    {
+        GraphicsQueue::Enum QueueType;
+    };
+
+    void initCommandBuffer(GraphicsAPI* api, CommandBufferDesc desc, CommandBuffer* outCommandBuffer);
+    void killCommandBuffer(GraphicsAPI* api, CommandBuffer* commandBuffer);
+
+    struct SubmitCommandBufferDesc
+    {
+        CommandBuffer* CommandBuffer;
+        VkSemaphore WaitSemaphore;
+        VkFence SubmissionFence;
+    };
+    void submitCommandBuffer(GraphicsAPI* api, SubmitCommandBufferDesc desc);
 }
 
 // Surface
@@ -163,8 +189,42 @@ namespace IB
         bool UseVSync = true;
     };
 
-    void initWin32GraphicsSurface(GraphicsAPI* api, GraphicsSurface* surface, SurfaceDesc desc);
+    void initWin32GraphicsSurface(GraphicsAPI* api, SurfaceDesc desc, GraphicsSurface* outSurface);
     void killGraphicsSurface(GraphicsAPI* api, GraphicsSurface* surface);
+
+    struct SurfaceState
+    {
+        enum Enum
+        {
+            Ok = 0,
+            ShouldRebuild
+        };
+    };
+
+    struct SurfacePrepareDesc
+    {
+        GraphicsSurface* Surface;
+        uint32_t Framebuffer;
+    };
+    struct SurfacePrepareResult
+    {
+        uint32_t ImageIndex;
+        SurfaceState::Enum SurfaceState;
+    };
+    bool prepareSurface(GraphicsAPI* api, SurfacePrepareDesc prepareDesc, SurfacePrepareResult* outPrepareResult);
+
+    struct SurfacePresentDesc
+    {
+        GraphicsSurface* Surface;
+        SurfacePrepareResult PrepareResult;
+        CommandBuffer PresentCommands;
+    };
+    struct SurfacePresentResult
+    {
+        SurfaceState::Enum SurfaceState;
+    };
+    void presentSurface(GraphicsAPI* api, SurfacePresentDesc presentDesc, SurfacePresentResult* outPresentResult);
+    void rebuildSurface(GraphicsAPI* api, GraphicsSurface* surface);
 }
 
 // TODO: Move to CPP when in a good place
@@ -521,7 +581,7 @@ namespace IB
     
     // Forward from surface API
     VkSurfaceKHR createWin32VkSurface(VkInstance vkInstance, void* windowHandle, void* instanceHandle);
-    void initGraphicsAPI(GraphicsAPI* graphicsAPI, GraphicsAPIDesc desc)
+    void initGraphicsAPI(GraphicsAPIDesc desc, GraphicsAPI* outGraphicsAPI)
 	{
         // Instance
         {
@@ -546,7 +606,7 @@ namespace IB
             createInfo.ppEnabledLayerNames = ValidationLayers;
     #endif // IB_VKDEBUG
 
-            IB_VKCHECK(vkCreateInstance(&createInfo, NoVkAllocator, &graphicsAPI->Instance));
+            IB_VKCHECK(vkCreateInstance(&createInfo, NoVkAllocator, &outGraphicsAPI->Instance));
         }
 
         // Device
@@ -562,10 +622,10 @@ namespace IB
 
             // Enumerate the physical device properties
             {
-                IB_VKCHECK(vkEnumeratePhysicalDevices(graphicsAPI->Instance, &physicalDeviceCount, NULL));
+                IB_VKCHECK(vkEnumeratePhysicalDevices(outGraphicsAPI->Instance, &physicalDeviceCount, NULL));
                 physicalDeviceCount = physicalDeviceCount <= maxPhysicalDeviceCount ? physicalDeviceCount : maxPhysicalDeviceCount;
 
-                IB_VKCHECK(vkEnumeratePhysicalDevices(graphicsAPI->Instance, &physicalDeviceCount, physicalDevices));
+                IB_VKCHECK(vkEnumeratePhysicalDevices(outGraphicsAPI->Instance, &physicalDeviceCount, physicalDevices));
                 for (uint32_t deviceIndex = 0; deviceIndex < physicalDeviceCount; deviceIndex++)
                 {
                     vkGetPhysicalDeviceQueueFamilyProperties(physicalDevices[deviceIndex], &queuePropertyCounts[deviceIndex], NULL);
@@ -611,7 +671,7 @@ namespace IB
                     }
 
                     // Create a temporary surface based on our main window to select our device.
-                    VkSurfaceKHR const temporarySurface = createWin32VkSurface(graphicsAPI->Instance, desc.Win32MainWindowHandle, desc.Win32MainInstanceHandle);
+                    VkSurfaceKHR const temporarySurface = createWin32VkSurface(outGraphicsAPI->Instance, desc.Win32MainWindowHandle, desc.Win32MainInstanceHandle);
 
                     // Find our present queue
                     for (uint32_t propIndex = 0; propIndex < queuePropertyCounts[deviceIndex]; propIndex++)
@@ -631,22 +691,22 @@ namespace IB
                         }
                     }
 
-                    vkDestroySurfaceKHR(graphicsAPI->Instance, temporarySurface, NoVkAllocator);
+                    vkDestroySurfaceKHR(outGraphicsAPI->Instance, temporarySurface, NoVkAllocator);
 
                     // Did we find a device supporting both graphics, present and compute.
                     if (graphicsQueue != UINT32_MAX && presentQueue != UINT32_MAX && computeQueue != UINT32_MAX)
                     {
-                        graphicsAPI->Queues[GraphicsQueue::Graphics].Index = graphicsQueue;
-                        graphicsAPI->Queues[GraphicsQueue::Compute].Index = computeQueue;
-                        graphicsAPI->Queues[GraphicsQueue::Present].Index = presentQueue;
-                        graphicsAPI->Queues[GraphicsQueue::Transfer].Index = transferQueue;
+                        outGraphicsAPI->Queues[GraphicsQueue::Graphics].Index = graphicsQueue;
+                        outGraphicsAPI->Queues[GraphicsQueue::Compute].Index = computeQueue;
+                        outGraphicsAPI->Queues[GraphicsQueue::Present].Index = presentQueue;
+                        outGraphicsAPI->Queues[GraphicsQueue::Transfer].Index = transferQueue;
                         physicalDeviceIndex = deviceIndex;
                         break;
                     }
                 }
 
                 IB_ASSERT(physicalDeviceIndex != UINT32_MAX, "Failed to select a physical device!");
-                graphicsAPI->PhysicalDevice = physicalDevices[physicalDeviceIndex];
+                outGraphicsAPI->PhysicalDevice = physicalDevices[physicalDeviceIndex];
             }
         }
 
@@ -662,7 +722,7 @@ namespace IB
                     bool queueFound = false;
                     for (uint32_t j = 0; j < i; j++)
                     {
-                        if (graphicsAPI->Queues[j].Index == graphicsAPI->Queues[i].Index)
+                        if (outGraphicsAPI->Queues[j].Index == outGraphicsAPI->Queues[i].Index)
                         {
                             queueFound = true;
                         }
@@ -679,7 +739,7 @@ namespace IB
                 VkDeviceQueueCreateInfo createQueueInfo = {};
                 createQueueInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
                 createQueueInfo.queueCount = 1;
-                createQueueInfo.queueFamilyIndex = graphicsAPI->Queues[i].Index;
+                createQueueInfo.queueFamilyIndex = outGraphicsAPI->Queues[i].Index;
                 createQueueInfo.pQueuePriorities = &queuePriority;
 
                 queueCreateInfo[queueCreateInfoCount++] = createQueueInfo;
@@ -719,10 +779,10 @@ namespace IB
             deviceCreateInfo.ppEnabledLayerNames = ValidationLayers;
 #endif // IB_VKDEBUG
 
-            IB_VKCHECK(vkCreateDevice(graphicsAPI->PhysicalDevice, &deviceCreateInfo, NoVkAllocator, &graphicsAPI->LogicalDevice));
+            IB_VKCHECK(vkCreateDevice(outGraphicsAPI->PhysicalDevice, &deviceCreateInfo, NoVkAllocator, &outGraphicsAPI->LogicalDevice));
             for (uint32_t i = 0; i < GraphicsQueue::Count; i++)
             {
-                vkGetDeviceQueue(graphicsAPI->LogicalDevice, graphicsAPI->Queues[i].Index, 0, &graphicsAPI->Queues[i].Queue);
+                vkGetDeviceQueue(outGraphicsAPI->LogicalDevice, outGraphicsAPI->Queues[i].Index, 0, &outGraphicsAPI->Queues[i].Queue);
             }
         }
 
@@ -742,7 +802,7 @@ namespace IB
             descriptorPoolCreate.poolSizeCount = arrayCount(descriptorPoolSizes);
             descriptorPoolCreate.pPoolSizes = descriptorPoolSizes;
 
-            IB_VKCHECK(vkCreateDescriptorPool(graphicsAPI->LogicalDevice, &descriptorPoolCreate, NoVkAllocator, &graphicsAPI->DescriptorPool));
+            IB_VKCHECK(vkCreateDescriptorPool(outGraphicsAPI->LogicalDevice, &descriptorPoolCreate, NoVkAllocator, &outGraphicsAPI->DescriptorPool));
         }
 
         // Create the pipeline cache
@@ -750,7 +810,7 @@ namespace IB
             VkPipelineCacheCreateInfo pipelineCacheCreate = {};
             pipelineCacheCreate.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO;
 
-            IB_VKCHECK(vkCreatePipelineCache(graphicsAPI->LogicalDevice, &pipelineCacheCreate, NoVkAllocator, &graphicsAPI->PipelineCache));
+            IB_VKCHECK(vkCreatePipelineCache(outGraphicsAPI->LogicalDevice, &pipelineCacheCreate, NoVkAllocator, &outGraphicsAPI->PipelineCache));
         }
     }
 
@@ -801,6 +861,56 @@ namespace IB
     }
 }
 
+// CommandBuffer
+namespace IB
+{
+    void initCommandBuffer(GraphicsAPI* api, CommandBufferDesc desc, CommandBuffer* outCommandBuffer)
+    {
+        outCommandBuffer->QueueType = desc.QueueType;
+
+        // CommandBuffer
+        VkCommandBufferAllocateInfo commandBufferAllocateInfo = {};
+        commandBufferAllocateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+        commandBufferAllocateInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        commandBufferAllocateInfo.commandBufferCount = 1;
+        commandBufferAllocateInfo.commandPool = api->Queues[desc.QueueType].CommandPool;
+
+        IB_VKCHECK(vkAllocateCommandBuffers(api->LogicalDevice, &commandBufferAllocateInfo, &outCommandBuffer->Commands));
+
+        // Semaphore
+        VkSemaphoreCreateInfo semaphoreCreateInfo = {};
+        semaphoreCreateInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+        IB_VKCHECK(vkCreateSemaphore(api->LogicalDevice, &semaphoreCreateInfo, NoVkAllocator, &outCommandBuffer->FinishedSemaphore));
+    }
+
+    void killCommandBuffer(GraphicsAPI* api, CommandBuffer* commandBuffer)
+    {
+        vkFreeCommandBuffers(api->LogicalDevice, api->Queues[commandBuffer->QueueType].CommandPool, 1, &commandBuffer->Commands);
+        vkDestroySemaphore(api->LogicalDevice, commandBuffer->FinishedSemaphore, NoVkAllocator);
+    }
+
+    void submitCommandBuffer(GraphicsAPI* api, SubmitCommandBufferDesc desc)
+    {
+        VkPipelineStageFlags dstStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+        VkSubmitInfo submitInfo = {};
+        submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        submitInfo.commandBufferCount = 1;
+        submitInfo.pCommandBuffers = &desc.CommandBuffer->Commands;
+        
+        if(desc.WaitSemaphore != VK_NULL_HANDLE)
+        {
+            submitInfo.waitSemaphoreCount = 1;
+            submitInfo.pWaitSemaphores = &desc.WaitSemaphore;
+        }
+
+        submitInfo.signalSemaphoreCount = 1;
+        submitInfo.pSignalSemaphores = &desc.CommandBuffer->FinishedSemaphore;
+        submitInfo.pWaitDstStageMask = &dstStageMask;
+
+        IB_VKCHECK(vkQueueSubmit(api->Queues[desc.CommandBuffer->QueueType].Queue, 1, &submitInfo, desc.SubmissionFence));
+    }
+}
+
 // Surface
 namespace IB
 {
@@ -817,37 +927,37 @@ namespace IB
         return surface;
     }
 
-    void initWin32GraphicsSurface(GraphicsAPI* api, GraphicsSurface* surface, SurfaceDesc desc)
+    void initWin32GraphicsSurface(GraphicsAPI* api, SurfaceDesc desc, GraphicsSurface* outSurface)
     {
-        surface->VulkanSurface = createWin32VkSurface(api->Instance, desc.Win32WindowHandle, desc.Win32InstanceHandle);
+        outSurface->VulkanSurface = createWin32VkSurface(api->Instance, desc.Win32WindowHandle, desc.Win32InstanceHandle);
 
         // Extents
         {
             VkSurfaceCapabilitiesKHR surfaceCapabilities;
-            IB_VKCHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(api->PhysicalDevice, surface->VulkanSurface, &surfaceCapabilities));
+            IB_VKCHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(api->PhysicalDevice, outSurface->VulkanSurface, &surfaceCapabilities));
 
             IB_ASSERT(surfaceCapabilities.currentExtent.width != UINT32_MAX, "Surface has invalid width.");
-            surface->Extents = surfaceCapabilities.currentExtent;
+            outSurface->Extents = surfaceCapabilities.currentExtent;
         }
 
         // Present mode
-        surface->PresentMode = VK_PRESENT_MODE_FIFO_KHR;
+        outSurface->PresentMode = VK_PRESENT_MODE_FIFO_KHR;
         if (!desc.UseVSync)
         {
             uint32_t constexpr maxPresentModes = 100;
             uint32_t presentModeCount;
             VkPresentModeKHR presentModes[maxPresentModes];
 
-            IB_VKCHECK(vkGetPhysicalDeviceSurfacePresentModesKHR(api->PhysicalDevice, surface->VulkanSurface, &presentModeCount, NULL));
+            IB_VKCHECK(vkGetPhysicalDeviceSurfacePresentModesKHR(api->PhysicalDevice, outSurface->VulkanSurface, &presentModeCount, NULL));
             IB_ASSERT(presentModeCount > 0, "Failed to find a present mode.");
             presentModeCount = presentModeCount < maxPresentModes ? presentModeCount : maxPresentModes;
-            IB_VKCHECK(vkGetPhysicalDeviceSurfacePresentModesKHR(api->PhysicalDevice, surface->VulkanSurface, &presentModeCount, presentModes));
+            IB_VKCHECK(vkGetPhysicalDeviceSurfacePresentModesKHR(api->PhysicalDevice, outSurface->VulkanSurface, &presentModeCount, presentModes));
 
             for (uint32_t i = 0; i < presentModeCount; i++)
             {
                 if (VK_PRESENT_MODE_MAILBOX_KHR == presentModes[i])
                 {
-                    surface->PresentMode = VK_PRESENT_MODE_MAILBOX_KHR;
+                    outSurface->PresentMode = VK_PRESENT_MODE_MAILBOX_KHR;
                     break;
                 }
             }
@@ -859,24 +969,24 @@ namespace IB
             uint32_t surfaceFormatCount;
             VkSurfaceFormatKHR surfaceFormats[maxSurfaceFormatCount];
 
-            IB_VKCHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(api->PhysicalDevice, surface->VulkanSurface, &surfaceFormatCount, NULL));
+            IB_VKCHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(api->PhysicalDevice, outSurface->VulkanSurface, &surfaceFormatCount, NULL));
             IB_ASSERT(surfaceFormatCount > 0, "Failed to find any surface formats.");
             surfaceFormatCount = surfaceFormatCount < maxSurfaceFormatCount ? surfaceFormatCount : maxSurfaceFormatCount;
-            IB_VKCHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(api->PhysicalDevice, surface->VulkanSurface, &surfaceFormatCount, surfaceFormats));
+            IB_VKCHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(api->PhysicalDevice, outSurface->VulkanSurface, &surfaceFormatCount, surfaceFormats));
 
             if (1 == surfaceFormatCount && VK_FORMAT_UNDEFINED == surfaceFormats[0].format)
             {
-                surface->Format.format = VK_FORMAT_R8G8B8A8_UNORM;
-                surface->Format.colorSpace = VK_COLORSPACE_SRGB_NONLINEAR_KHR;
+                outSurface->Format.format = VK_FORMAT_R8G8B8A8_UNORM;
+                outSurface->Format.colorSpace = VK_COLORSPACE_SRGB_NONLINEAR_KHR;
             }
             else
             {
-                surface->Format = surfaceFormats[0];
+                outSurface->Format = surfaceFormats[0];
                 for (uint32_t i = 0; i < surfaceFormatCount; i++)
                 {
                     if (VK_FORMAT_R8G8B8A8_UNORM == surfaceFormats[i].format && VK_COLORSPACE_SRGB_NONLINEAR_KHR == surfaceFormats[i].colorSpace)
                     {
-                        surface->Format = surfaceFormats[i];
+                        outSurface->Format = surfaceFormats[i];
                         break;
                     }
                 }
@@ -891,13 +1001,13 @@ namespace IB
             swapchainCreate.minImageCount = FramebufferCount;
             swapchainCreate.imageArrayLayers = 1;
             swapchainCreate.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_STORAGE_BIT;
-            swapchainCreate.surface = surface->VulkanSurface;
-            swapchainCreate.imageFormat = surface->Format.format;
-            swapchainCreate.imageColorSpace = surface->Format.colorSpace;
-            swapchainCreate.imageExtent = surface->Extents;
+            swapchainCreate.surface = outSurface->VulkanSurface;
+            swapchainCreate.imageFormat = outSurface->Format.format;
+            swapchainCreate.imageColorSpace = outSurface->Format.colorSpace;
+            swapchainCreate.imageExtent = outSurface->Extents;
             swapchainCreate.preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
             swapchainCreate.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
-            swapchainCreate.presentMode = surface->PresentMode;
+            swapchainCreate.presentMode = outSurface->PresentMode;
             swapchainCreate.clipped = VK_TRUE;
             swapchainCreate.pQueueFamilyIndices = NULL;
             swapchainCreate.queueFamilyIndexCount = 0;
@@ -917,12 +1027,12 @@ namespace IB
                 swapchainCreate.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
             }
 
-            IB_VKCHECK(vkCreateSwapchainKHR(api->LogicalDevice, &swapchainCreate, NoVkAllocator, &surface->Swapchain));
+            IB_VKCHECK(vkCreateSwapchainKHR(api->LogicalDevice, &swapchainCreate, NoVkAllocator, &outSurface->Swapchain));
 
             VkImage swapchainImages[FramebufferCount];
 
             uint32_t swapchainImageCount = FramebufferCount;
-            IB_VKCHECK(vkGetSwapchainImagesKHR(api->LogicalDevice, surface->Swapchain, &swapchainImageCount, swapchainImages));
+            IB_VKCHECK(vkGetSwapchainImagesKHR(api->LogicalDevice, outSurface->Swapchain, &swapchainImageCount, swapchainImages));
             IB_ASSERT(swapchainImageCount >= FramebufferCount, "Too few swapchain images!");
 
             for (uint32_t fb = 0; fb < FramebufferCount; fb++)
@@ -940,11 +1050,11 @@ namespace IB
                 imageViewCreate.subresourceRange.baseArrayLayer = 0;
                 imageViewCreate.subresourceRange.layerCount = 1;
                 imageViewCreate.image = swapchainImages[fb];
-                imageViewCreate.format = surface->Format.format;
+                imageViewCreate.format = outSurface->Format.format;
 
-                surface->Framebuffers[fb].Texture.Aspect = VK_IMAGE_ASPECT_COLOR_BIT;
-                surface->Framebuffers[fb].Texture.Image = swapchainImages[fb];
-                IB_VKCHECK(vkCreateImageView(api->LogicalDevice, &imageViewCreate, NoVkAllocator, &surface->Framebuffers[fb].Texture.View));
+                outSurface->Framebuffers[fb].Texture.Aspect = VK_IMAGE_ASPECT_COLOR_BIT;
+                outSurface->Framebuffers[fb].Texture.Image = swapchainImages[fb];
+                IB_VKCHECK(vkCreateImageView(api->LogicalDevice, &imageViewCreate, NoVkAllocator, &outSurface->Framebuffers[fb].Texture.View));
             }
         }
 
@@ -955,7 +1065,7 @@ namespace IB
 
             for (uint32_t i = 0; i < FramebufferCount; i++)
             {
-                IB_VKCHECK(vkCreateSemaphore(api->LogicalDevice, &semaphoreCreateInfo, NoVkAllocator, &surface->Framebuffers[i].AcquireSemaphore));
+                IB_VKCHECK(vkCreateSemaphore(api->LogicalDevice, &semaphoreCreateInfo, NoVkAllocator, &outSurface->Framebuffers[i].AcquireSemaphore));
             }
         }
     }
@@ -969,6 +1079,53 @@ namespace IB
         }
         vkDestroySwapchainKHR(api->LogicalDevice, surface->Swapchain, NoVkAllocator);
         vkDestroySurfaceKHR(api->Instance, surface->VulkanSurface, NoVkAllocator);
+    }
+
+    bool prepareSurface(GraphicsAPI* api, SurfacePrepareDesc prepareDesc, SurfacePrepareResult* outPrepareResult)
+    {
+        VkSemaphore acquireSemaphore = prepareDesc.Surface->Framebuffers[prepareDesc.Framebuffer].AcquireSemaphore;
+        VkResult acquireResult = vkAcquireNextImageKHR(api->LogicalDevice, prepareDesc.Surface->Swapchain, UINT64_MAX, acquireSemaphore, VK_NULL_HANDLE, &outPrepareResult->ImageIndex);
+        
+        if (acquireResult == VK_ERROR_OUT_OF_DATE_KHR || acquireResult == VK_SUBOPTIMAL_KHR)
+        {
+            outPrepareResult->SurfaceState = SurfaceState::ShouldRebuild;
+        }
+        else
+        {
+            outPrepareResult->SurfaceState = SurfaceState::Ok;
+        }
+        
+        return (acquireResult == VK_SUCCESS);
+    }
+
+    void presentSurface(GraphicsAPI* api, SurfacePresentDesc presentDesc, SurfacePresentResult* outPresentResult)
+    {
+        VkPresentInfoKHR presentInfo = {};
+        presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+        presentInfo.waitSemaphoreCount = 1;
+        presentInfo.pWaitSemaphores = &presentDesc.PresentCommands.FinishedSemaphore;
+        presentInfo.swapchainCount = 1;
+        presentInfo.pSwapchains = &presentDesc.Surface->Swapchain;
+        presentInfo.pImageIndices = &presentDesc.PrepareResult.ImageIndex;
+
+        VkResult presentResult = vkQueuePresentKHR(api->Queues[GraphicsQueue::Present].Queue, &presentInfo);
+        if (presentResult == VK_ERROR_OUT_OF_DATE_KHR || presentResult == VK_SUBOPTIMAL_KHR)
+        {
+            outPresentResult->SurfaceState = SurfaceState::ShouldRebuild;
+        }
+        else
+        {
+            outPresentResult->SurfaceState = SurfaceState::Ok;
+        }
+    }
+
+    void rebuildSurface(GraphicsAPI* /*api*/, GraphicsSurface* /*surface*/)
+    {
+        //vkDeviceWaitIdle(API.LogicalDevice);
+        //VkSurfaceCapabilitiesKHR surfaceCapabilities;
+        //IB_VKCHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(API.PhysicalDevice, RendererContext.Present.Surface, &surfaceCapabilities));
+        //IB_ASSERT(surfaceCapabilities.currentExtent.width != UINT32_MAX, "Surface extents are undefined.");
+        //buildSurfaceSwapchain(surfaceCapabilities.currentExtent);
     }
 }
 
