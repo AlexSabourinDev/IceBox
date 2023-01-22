@@ -125,7 +125,8 @@ namespace IB
 
                 struct
                 {
-                    CommandBuffer PrimaryCommandBuffer;
+                    VkCommandBuffer PrimaryCommandBuffer;
+                    VkSemaphore FinishedSemaphore;
                     VkFence FinishedFence;
                 } FrameBuffer[FrameBufferCount];
                 uint32_t ActiveFrame = 0;
@@ -445,7 +446,18 @@ namespace IB
 
             for (uint32_t fb = 0; fb < FrameBufferCount; fb++)
             {
-                initCommandBuffer(&API, { GraphicsQueue::Graphics }, &RendererContext.Present.FrameBuffer[fb].PrimaryCommandBuffer);
+                VkCommandBufferAllocateInfo commandBufferAllocateInfo = {};
+                commandBufferAllocateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+                commandBufferAllocateInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+                commandBufferAllocateInfo.commandBufferCount = 1;
+                commandBufferAllocateInfo.commandPool = API.Queues[GraphicsQueue::Graphics].CommandPool;
+
+                IB_VKCHECK(vkAllocateCommandBuffers(API.LogicalDevice, &commandBufferAllocateInfo, &RendererContext.Present.FrameBuffer[fb].PrimaryCommandBuffer));
+
+                // Semaphore
+                VkSemaphoreCreateInfo semaphoreCreateInfo = {};
+                semaphoreCreateInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+                IB_VKCHECK(vkCreateSemaphore(API.LogicalDevice, &semaphoreCreateInfo, NoVkAllocator, &RendererContext.Present.FrameBuffer[fb].FinishedSemaphore));
 
                 VkFenceCreateInfo fenceCreateInfo = {};
                 fenceCreateInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
@@ -807,22 +819,26 @@ namespace IB
 
             // Upload ImGui font
             {
-                CommandBuffer uploadCommands;
-                initCommandBuffer(&API, { GraphicsQueue::Graphics }, &uploadCommands);
+                VkCommandBuffer uploadCommands = allocCommandBuffer(&API, GraphicsQueue::Graphics);
 
                 VkCommandBufferBeginInfo beginBufferInfo = {};
                 beginBufferInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
                 beginBufferInfo.flags |= VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
 
-                IB_VKCHECK(vkBeginCommandBuffer(uploadCommands.Commands, &beginBufferInfo));
-                ImGui_ImplVulkan_CreateFontsTexture(uploadCommands.Commands);
-                IB_VKCHECK(vkEndCommandBuffer(uploadCommands.Commands));
+                IB_VKCHECK(vkBeginCommandBuffer(uploadCommands, &beginBufferInfo));
+                ImGui_ImplVulkan_CreateFontsTexture(uploadCommands);
+                IB_VKCHECK(vkEndCommandBuffer(uploadCommands));
 
-                submitCommandBuffer(&API, { &uploadCommands, VK_NULL_HANDLE, RendererContext.Present.ImmediateFence });
+                VkSubmitInfo submitInfo = {};
+                submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+                submitInfo.commandBufferCount = 1;
+                submitInfo.pCommandBuffers = &uploadCommands;
+                IB_VKCHECK(vkQueueSubmit(API.Queues[GraphicsQueue::Graphics].Queue, 1, &submitInfo, RendererContext.Present.ImmediateFence));
+
                 IB_VKCHECK(vkWaitForFences(API.LogicalDevice, 1, &RendererContext.Present.ImmediateFence, VK_TRUE, UINT64_MAX));
                 IB_VKCHECK(vkResetFences(API.LogicalDevice, 1, &RendererContext.Present.ImmediateFence));
 
-                killCommandBuffer(&API, &uploadCommands);
+                freeCommandBuffer(&API, GraphicsQueue::Graphics, uploadCommands);
                 ImGui_ImplVulkan_DestroyFontUploadObjects();
             }
         }
@@ -839,7 +855,8 @@ namespace IB
         killGraphicsSurface(&API, &RendererContext.Present.Surface);
         for (uint32_t fb = 0; fb < FrameBufferCount; fb++)
         {
-            killCommandBuffer(&API, &RendererContext.Present.FrameBuffer[fb].PrimaryCommandBuffer);
+            freeCommandBuffer(&API, GraphicsQueue::Graphics, RendererContext.Present.FrameBuffer[fb].PrimaryCommandBuffer);
+            vkDestroySemaphore(API.LogicalDevice, RendererContext.Present.FrameBuffer[fb].FinishedSemaphore, NoVkAllocator);
             vkDestroyFence(API.LogicalDevice, RendererContext.Present.FrameBuffer[fb].FinishedFence, NoVkAllocator);
             vkDestroyImage(API.LogicalDevice, ForwardPass.FrameBuffer[fb].DepthImage.Image, NoVkAllocator);
             vkDestroyImageView(API.LogicalDevice, ForwardPass.FrameBuffer[fb].DepthImage.View, NoVkAllocator);
@@ -1068,13 +1085,12 @@ namespace IB
             uint32_t vertexSize = desc.Vertices.Count * sizeof(Vertex);
             uint32_t indexSize = desc.Indices.Count * sizeof(uint16_t);
 
-            CommandBuffer commandBuffer;
-            initCommandBuffer(&API, { GraphicsQueue::Transfer }, &commandBuffer);
+            VkCommandBuffer commandBuffer = allocCommandBuffer(&API, GraphicsQueue::Transfer);
 
             VkCommandBufferBeginInfo beginBufferInfo = {};
             beginBufferInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
             beginBufferInfo.flags |= VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-            IB_VKCHECK(vkBeginCommandBuffer(commandBuffer.Commands, &beginBufferInfo));
+            IB_VKCHECK(vkBeginCommandBuffer(commandBuffer, &beginBufferInfo));
 
             uint32_t chunkOffset = Geometry.NextOffset % MeshBufferChunkSize;
             // We're out of memory. Try to pack the empty space caused by freed geometry and try again
@@ -1114,7 +1130,7 @@ namespace IB
 
                 if (copyCount > 0)
                 {
-                    vkCmdCopyBuffer(commandBuffer.Commands, Geometry.MeshDataBuffers, Geometry.MeshDataBuffers, copyCount, copyRegions);
+                    vkCmdCopyBuffer(commandBuffer, Geometry.MeshDataBuffers, Geometry.MeshDataBuffers, copyCount, copyRegions);
                 }
             }
 
@@ -1145,13 +1161,19 @@ namespace IB
                 meshCopy.dstOffset = Geometry.Meshes[meshIndex].VertexOffset;
                 meshCopy.size = vertexSize + indexSize;
 
-                vkCmdCopyBuffer(commandBuffer.Commands, staging.Buffer, Geometry.MeshDataBuffers, 1, &meshCopy);
+                vkCmdCopyBuffer(commandBuffer, staging.Buffer, Geometry.MeshDataBuffers, 1, &meshCopy);
             }
 
             // End our command buffer
             {
-                IB_VKCHECK(vkEndCommandBuffer(commandBuffer.Commands));
-                submitCommandBuffer(&API, {&commandBuffer, VK_NULL_HANDLE, staging.Fence});
+                IB_VKCHECK(vkEndCommandBuffer(commandBuffer));
+
+                VkSubmitInfo submitInfo = {};
+                submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+                submitInfo.commandBufferCount = 1;
+                submitInfo.pCommandBuffers = &commandBuffer;
+                IB_VKCHECK(vkQueueSubmit(API.Queues[GraphicsQueue::Transfer].Queue, 1, &submitInfo, staging.Fence));
+
                 Staging.Transfers.Commands[Staging.Transfers.ActiveCount++] = commandBuffer;
             }
         }
@@ -1202,14 +1224,13 @@ namespace IB
         StagingBuffer staging = requestStagingBuffer(&Staging, desc.Width * desc.Height * formatSize[desc.Format], formatSize[desc.Format]);
         memcpy(staging.Memory, desc.Data, desc.Width * desc.Height * formatSize[desc.Format]);
 
-        CommandBuffer commandBuffer;
-        initCommandBuffer(&API, {GraphicsQueue::Transfer}, &commandBuffer);
+        VkCommandBuffer commandBuffer = allocCommandBuffer(&API, GraphicsQueue::Transfer);
 
         VkCommandBufferBeginInfo beginBufferInfo = {};
         beginBufferInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
         beginBufferInfo.flags |= VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
 
-        IB_VKCHECK(vkBeginCommandBuffer(commandBuffer.Commands, &beginBufferInfo));
+        IB_VKCHECK(vkBeginCommandBuffer(commandBuffer, &beginBufferInfo));
 
         // Image barrier UNDEFINED -> TRANSFER
         {
@@ -1221,7 +1242,7 @@ namespace IB
                 VK_IMAGE_LAYOUT_UNDEFINED,
                 VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                 RendererContext.Textures.Images[imageIndex]);
-            vkCmdPipelineBarrier(commandBuffer.Commands, sourceStage, destinationStage, 0, 0, NULL, 0, NULL, 1, &imageBarrier);
+            vkCmdPipelineBarrier(commandBuffer, sourceStage, destinationStage, 0, 0, NULL, 0, NULL, 1, &imageBarrier);
         }
 
         // Image copy
@@ -1245,7 +1266,7 @@ namespace IB
             copyRegion.imageOffset = {};
             copyRegion.imageExtent = extent;
 
-            vkCmdCopyBufferToImage(commandBuffer.Commands, staging.Buffer, RendererContext.Textures.Images[imageIndex].Image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copyRegion);
+            vkCmdCopyBufferToImage(commandBuffer, staging.Buffer, RendererContext.Textures.Images[imageIndex].Image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copyRegion);
         }
 
         // Image barrier TRANSFER -> FRAGMENT_SHADER
@@ -1258,11 +1279,17 @@ namespace IB
                 VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                 VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
                 RendererContext.Textures.Images[imageIndex]);
-            vkCmdPipelineBarrier(commandBuffer.Commands, sourceStage, destinationStage, 0, 0, NULL, 0, NULL, 1, &imageBarrier);
+            vkCmdPipelineBarrier(commandBuffer, sourceStage, destinationStage, 0, 0, NULL, 0, NULL, 1, &imageBarrier);
         }
 
-        IB_VKCHECK(vkEndCommandBuffer(commandBuffer.Commands));
-        submitCommandBuffer(&API, {&commandBuffer, VK_NULL_HANDLE, staging.Fence});
+        IB_VKCHECK(vkEndCommandBuffer(commandBuffer));
+
+        VkSubmitInfo submitInfo = {};
+        submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        submitInfo.commandBufferCount = 1;
+        submitInfo.pCommandBuffers = &commandBuffer;
+        IB_VKCHECK(vkQueueSubmit(API.Queues[GraphicsQueue::Transfer].Queue, 1, &submitInfo, staging.Fence));
+
         Staging.Transfers.Commands[Staging.Transfers.ActiveCount++] = commandBuffer;
 
         // Queue up our shader descriptor update
@@ -1303,23 +1330,28 @@ namespace IB
         memcpy(staging.Memory, &matData, sizeof(ForwardMaterial));
 
         {
-            CommandBuffer commandBuffer;
-            initCommandBuffer(&API, {GraphicsQueue::Transfer}, &commandBuffer);
+            VkCommandBuffer commandBuffer = allocCommandBuffer(&API, GraphicsQueue::Transfer);
 
             VkCommandBufferBeginInfo beginBufferInfo = {};
             beginBufferInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
             beginBufferInfo.flags |= VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
 
-            IB_VKCHECK(vkBeginCommandBuffer(commandBuffer.Commands, &beginBufferInfo));
+            IB_VKCHECK(vkBeginCommandBuffer(commandBuffer, &beginBufferInfo));
 
             VkBufferCopy copy = {};
             copy.srcOffset = staging.Offset;
             copy.dstOffset = instanceIndex * sizeof(ForwardMaterial);
             copy.size = sizeof(ForwardMaterial);
-            vkCmdCopyBuffer(commandBuffer.Commands, staging.Buffer, ForwardPass.MaterialBuffer, 1, &copy);
+            vkCmdCopyBuffer(commandBuffer, staging.Buffer, ForwardPass.MaterialBuffer, 1, &copy);
 
-            IB_VKCHECK(vkEndCommandBuffer(commandBuffer.Commands));
-            submitCommandBuffer(&API, {&commandBuffer, VK_NULL_HANDLE, staging.Fence });
+            IB_VKCHECK(vkEndCommandBuffer(commandBuffer));
+
+            VkSubmitInfo submitInfo = {};
+            submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+            submitInfo.commandBufferCount = 1;
+            submitInfo.pCommandBuffers = &commandBuffer;
+            IB_VKCHECK(vkQueueSubmit(API.Queues[GraphicsQueue::Transfer].Queue, 1, &submitInfo, staging.Fence));
+
             Staging.Transfers.Commands[Staging.Transfers.ActiveCount++] = commandBuffer;
         }
 
@@ -1356,23 +1388,28 @@ namespace IB
         memcpy(staging.Memory, &lightData, sizeof(lightData));
 
         {
-            CommandBuffer commandBuffer;
-            initCommandBuffer(&API, { GraphicsQueue::Transfer }, &commandBuffer);
+            VkCommandBuffer commandBuffer = allocCommandBuffer(&API, GraphicsQueue::Transfer);
 
             VkCommandBufferBeginInfo beginBufferInfo = {};
             beginBufferInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
             beginBufferInfo.flags |= VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
 
-            IB_VKCHECK(vkBeginCommandBuffer(commandBuffer.Commands, &beginBufferInfo));
+            IB_VKCHECK(vkBeginCommandBuffer(commandBuffer, &beginBufferInfo));
 
             VkBufferCopy copy = {};
             copy.srcOffset = staging.Offset;
             copy.dstOffset = instanceIndex * sizeof(DirectionalLight);
             copy.size = sizeof(DirectionalLight);
-            vkCmdCopyBuffer(commandBuffer.Commands, staging.Buffer, Lighting.LightBuffer, 1, &copy);
+            vkCmdCopyBuffer(commandBuffer, staging.Buffer, Lighting.LightBuffer, 1, &copy);
 
-            IB_VKCHECK(vkEndCommandBuffer(commandBuffer.Commands));
-            submitCommandBuffer(&API, { &commandBuffer, VK_NULL_HANDLE, staging.Fence});
+            IB_VKCHECK(vkEndCommandBuffer(commandBuffer));
+            
+            VkSubmitInfo submitInfo = {};
+            submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+            submitInfo.commandBufferCount = 1;
+            submitInfo.pCommandBuffers = &commandBuffer;
+            IB_VKCHECK(vkQueueSubmit(API.Queues[GraphicsQueue::Transfer].Queue, 1, &submitInfo, staging.Fence));
+
             Staging.Transfers.Commands[Staging.Transfers.ActiveCount++] = commandBuffer;
         }
 
@@ -1418,10 +1455,8 @@ namespace IB
         return ImGui_ImplWin32_WndProcHandler(hwnd, msg, wparam, lparam);
     }
 
-    void recordCommands(CommandBuffer* commandBuffer, uint32_t fb, ViewDesc const &view)
+    void recordCommands(VkCommandBuffer currentCommands, uint32_t fb, ViewDesc const &view)
     {
-        VkCommandBuffer currentCommands = commandBuffer->Commands;
-
         IB_VKCHECK(vkResetCommandBuffer(currentCommands, 0));
 
         VkCommandBufferBeginInfo beginBufferInfo = {};
@@ -1698,10 +1733,7 @@ namespace IB
 
             if (Staging.Transfers.ActiveCount > 0)
             {
-                for(uint32_t i = 0; i < Staging.Transfers.ActiveCount; i++)
-                {
-                    killCommandBuffer(&API, &Staging.Transfers.Commands[i]);
-                }
+                freeCommandBuffers(&API, GraphicsQueue::Transfer, Staging.Transfers.ActiveCount, Staging.Transfers.Commands);
                 Staging.Transfers.ActiveCount = 0;
             }
 
@@ -1735,17 +1767,22 @@ namespace IB
         SurfacePrepareResult prepareResult;
         if(prepareSurface(&API, { &RendererContext.Present.Surface, fb }, &prepareResult))
         {
-            recordCommands(&RendererContext.Present.FrameBuffer[fb].PrimaryCommandBuffer, fb, view);
+            recordCommands(RendererContext.Present.FrameBuffer[fb].PrimaryCommandBuffer, fb, view);
 
-            submitCommandBuffer(&API, 
-                {
-                    &RendererContext.Present.FrameBuffer[fb].PrimaryCommandBuffer,
-                    RendererContext.Present.Surface.Framebuffers[fb].AcquireSemaphore,
-                    RendererContext.Present.FrameBuffer[fb].FinishedFence
-                });
+            VkPipelineStageFlags dstStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+            VkSubmitInfo submitInfo = {};
+            submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+            submitInfo.commandBufferCount = 1;
+            submitInfo.pCommandBuffers = &RendererContext.Present.FrameBuffer[fb].PrimaryCommandBuffer;
+            submitInfo.waitSemaphoreCount = 1;
+            submitInfo.pWaitSemaphores = &RendererContext.Present.Surface.Framebuffers[fb].AcquireSemaphore;
+            submitInfo.signalSemaphoreCount = 1;
+            submitInfo.pSignalSemaphores = &RendererContext.Present.FrameBuffer[fb].FinishedSemaphore;
+            submitInfo.pWaitDstStageMask = &dstStageMask;
+            IB_VKCHECK(vkQueueSubmit(API.Queues[GraphicsQueue::Graphics].Queue, 1, &submitInfo, RendererContext.Present.FrameBuffer[fb].FinishedFence));
 
             SurfacePresentResult presentResult;
-            presentSurface(&API, { &RendererContext.Present.Surface, prepareResult, RendererContext.Present.FrameBuffer[fb].PrimaryCommandBuffer }, &presentResult);
+            presentSurface(&API, { &RendererContext.Present.Surface, prepareResult, RendererContext.Present.FrameBuffer[fb].FinishedSemaphore }, &presentResult);
 
             if(presentResult.SurfaceState == SurfaceState::ShouldRebuild)
             {

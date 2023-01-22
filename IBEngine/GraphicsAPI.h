@@ -138,29 +138,9 @@ namespace IB
 // Command buffer
 namespace IB
 {
-    struct CommandBuffer
-    {
-        VkCommandBuffer Commands;
-        VkSemaphore FinishedSemaphore;
-        GraphicsQueue::Enum QueueType;
-    };
-
-    struct CommandBufferDesc
-    {
-        GraphicsQueue::Enum QueueType;
-    };
-
-    // TODO: Remove - not a useful abstraction.
-    void initCommandBuffer(GraphicsAPI* api, CommandBufferDesc desc, CommandBuffer* outCommandBuffer);
-    void killCommandBuffer(GraphicsAPI* api, CommandBuffer* commandBuffer);
-
-    struct SubmitCommandBufferDesc
-    {
-        CommandBuffer* CommandBuffer;
-        VkSemaphore WaitSemaphore;
-        VkFence SubmissionFence;
-    };
-    void submitCommandBuffer(GraphicsAPI* api, SubmitCommandBufferDesc desc);
+    VkCommandBuffer allocCommandBuffer(GraphicsAPI* api, GraphicsQueue::Enum queue);
+    void freeCommandBuffer(GraphicsAPI* api, GraphicsQueue::Enum queue, VkCommandBuffer commands);
+    void freeCommandBuffers(GraphicsAPI* api, GraphicsQueue::Enum queue, uint32_t commandCount, VkCommandBuffer* commands);
 }
 
 // Surface
@@ -218,7 +198,7 @@ namespace IB
     {
         GraphicsSurface* Surface;
         SurfacePrepareResult PrepareResult;
-        CommandBuffer PresentCommands;
+        VkSemaphore WaitSemaphore;
     };
     struct SurfacePresentResult
     {
@@ -247,7 +227,7 @@ namespace IB
 
         struct
         {
-            CommandBuffer Commands[MaxTransferCount];
+            VkCommandBuffer Commands[MaxTransferCount];
             uint32_t ActiveCount = 0;
         } Transfers;
 
@@ -925,51 +905,31 @@ namespace IB
 // CommandBuffer
 namespace IB
 {
-    void initCommandBuffer(GraphicsAPI* api, CommandBufferDesc desc, CommandBuffer* outCommandBuffer)
+    VkCommandBuffer allocCommandBuffer(GraphicsAPI* api, GraphicsQueue::Enum queue)
     {
-        outCommandBuffer->QueueType = desc.QueueType;
-
         // CommandBuffer
         VkCommandBufferAllocateInfo commandBufferAllocateInfo = {};
         commandBufferAllocateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
         commandBufferAllocateInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
         commandBufferAllocateInfo.commandBufferCount = 1;
-        commandBufferAllocateInfo.commandPool = api->Queues[desc.QueueType].CommandPool;
+        commandBufferAllocateInfo.commandPool = api->Queues[queue].CommandPool;
 
-        IB_VKCHECK(vkAllocateCommandBuffers(api->LogicalDevice, &commandBufferAllocateInfo, &outCommandBuffer->Commands));
+        VkCommandBuffer commandBuffer;
+        IB_VKCHECK(vkAllocateCommandBuffers(api->LogicalDevice, &commandBufferAllocateInfo, &commandBuffer));
 
-        // Semaphore
-        VkSemaphoreCreateInfo semaphoreCreateInfo = {};
-        semaphoreCreateInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-        IB_VKCHECK(vkCreateSemaphore(api->LogicalDevice, &semaphoreCreateInfo, NoVkAllocator, &outCommandBuffer->FinishedSemaphore));
+        return commandBuffer;
     }
 
-    void killCommandBuffer(GraphicsAPI* api, CommandBuffer* commandBuffer)
+    void freeCommandBuffer(GraphicsAPI* api, GraphicsQueue::Enum queue, VkCommandBuffer commands)
     {
-        vkFreeCommandBuffers(api->LogicalDevice, api->Queues[commandBuffer->QueueType].CommandPool, 1, &commandBuffer->Commands);
-        vkDestroySemaphore(api->LogicalDevice, commandBuffer->FinishedSemaphore, NoVkAllocator);
+        vkFreeCommandBuffers(api->LogicalDevice, api->Queues[queue].CommandPool, 1, &commands);
     }
 
-    void submitCommandBuffer(GraphicsAPI* api, SubmitCommandBufferDesc desc)
+    void freeCommandBuffers(GraphicsAPI* api, GraphicsQueue::Enum queue, uint32_t count, VkCommandBuffer* commands)
     {
-        VkPipelineStageFlags dstStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
-        VkSubmitInfo submitInfo = {};
-        submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-        submitInfo.commandBufferCount = 1;
-        submitInfo.pCommandBuffers = &desc.CommandBuffer->Commands;
-        
-        if(desc.WaitSemaphore != VK_NULL_HANDLE)
-        {
-            submitInfo.waitSemaphoreCount = 1;
-            submitInfo.pWaitSemaphores = &desc.WaitSemaphore;
-        }
-
-        submitInfo.signalSemaphoreCount = 1;
-        submitInfo.pSignalSemaphores = &desc.CommandBuffer->FinishedSemaphore;
-        submitInfo.pWaitDstStageMask = &dstStageMask;
-
-        IB_VKCHECK(vkQueueSubmit(api->Queues[desc.CommandBuffer->QueueType].Queue, 1, &submitInfo, desc.SubmissionFence));
+        vkFreeCommandBuffers(api->LogicalDevice, api->Queues[queue].CommandPool, count, commands);
     }
+
 }
 
 // Surface
@@ -1164,7 +1124,7 @@ namespace IB
         VkPresentInfoKHR presentInfo = {};
         presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
         presentInfo.waitSemaphoreCount = 1;
-        presentInfo.pWaitSemaphores = &presentDesc.PresentCommands.FinishedSemaphore;
+        presentInfo.pWaitSemaphores = &presentDesc.WaitSemaphore;
         presentInfo.swapchainCount = 1;
         presentInfo.pSwapchains = &presentDesc.Surface->Swapchain;
         presentInfo.pImageIndices = &presentDesc.PrepareResult.ImageIndex;
