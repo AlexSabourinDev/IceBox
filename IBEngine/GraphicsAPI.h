@@ -948,6 +948,81 @@ namespace IB
         return surface;
     }
 
+    void buildSwapchain(GraphicsAPI* api, GraphicsSurface* surface)
+    {
+        VkSwapchainKHR oldSwapchain = surface->Swapchain;
+
+        // Destroy our previous imageview
+        for (uint32_t fb = 0; fb < FramebufferCount; fb++)
+        {
+            vkDestroyImageView(api->LogicalDevice, surface->Framebuffers[fb].Texture.View, NoVkAllocator);
+        }
+
+        VkSwapchainCreateInfoKHR swapchainCreate = {};
+        swapchainCreate.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
+        swapchainCreate.pNext = NULL;
+        swapchainCreate.minImageCount = FramebufferCount;
+        swapchainCreate.imageArrayLayers = 1;
+        swapchainCreate.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_STORAGE_BIT;
+        swapchainCreate.surface = surface->VulkanSurface;
+        swapchainCreate.imageFormat = surface->Format.format;
+        swapchainCreate.imageColorSpace = surface->Format.colorSpace;
+        swapchainCreate.imageExtent = surface->Extents;
+        swapchainCreate.preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
+        swapchainCreate.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+        swapchainCreate.presentMode = surface->PresentMode;
+        swapchainCreate.clipped = VK_TRUE;
+        swapchainCreate.pQueueFamilyIndices = NULL;
+        swapchainCreate.queueFamilyIndexCount = 0;
+        swapchainCreate.oldSwapchain = surface->Swapchain;
+
+        uint32_t swapchainShareIndices[2];
+        if (api->Queues[GraphicsQueue::Graphics].Index != api->Queues[GraphicsQueue::Present].Index)
+        {
+            swapchainShareIndices[0] = api->Queues[GraphicsQueue::Graphics].Index;
+            swapchainShareIndices[1] = api->Queues[GraphicsQueue::Present].Index;
+
+            swapchainCreate.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
+            swapchainCreate.queueFamilyIndexCount = 2;
+            swapchainCreate.pQueueFamilyIndices = swapchainShareIndices;
+        }
+        else
+        {
+            swapchainCreate.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        }
+
+        IB_VKCHECK(vkCreateSwapchainKHR(api->LogicalDevice, &swapchainCreate, NoVkAllocator, &surface->Swapchain));
+        vkDestroySwapchainKHR(api->LogicalDevice, oldSwapchain, NoVkAllocator);
+
+        VkImage swapchainImages[FramebufferCount];
+
+        uint32_t swapchainImageCount = FramebufferCount;
+        IB_VKCHECK(vkGetSwapchainImagesKHR(api->LogicalDevice, surface->Swapchain, &swapchainImageCount, swapchainImages));
+        IB_ASSERT(swapchainImageCount >= FramebufferCount, "Too few swapchain images!");
+
+        for (uint32_t fb = 0; fb < FramebufferCount; fb++)
+        {
+            VkImageViewCreateInfo imageViewCreate = {};
+            imageViewCreate.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+            imageViewCreate.viewType = VK_IMAGE_VIEW_TYPE_2D;
+            imageViewCreate.components.r = VK_COMPONENT_SWIZZLE_R;
+            imageViewCreate.components.g = VK_COMPONENT_SWIZZLE_G;
+            imageViewCreate.components.b = VK_COMPONENT_SWIZZLE_B;
+            imageViewCreate.components.a = VK_COMPONENT_SWIZZLE_A;
+            imageViewCreate.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+            imageViewCreate.subresourceRange.baseMipLevel = 0;
+            imageViewCreate.subresourceRange.levelCount = 1;
+            imageViewCreate.subresourceRange.baseArrayLayer = 0;
+            imageViewCreate.subresourceRange.layerCount = 1;
+            imageViewCreate.image = swapchainImages[fb];
+            imageViewCreate.format = surface->Format.format;
+
+            surface->Framebuffers[fb].Texture.Aspect = VK_IMAGE_ASPECT_COLOR_BIT;
+            surface->Framebuffers[fb].Texture.Image = swapchainImages[fb];
+            IB_VKCHECK(vkCreateImageView(api->LogicalDevice, &imageViewCreate, NoVkAllocator, &surface->Framebuffers[fb].Texture.View));
+        }
+    }
+
     void initWin32GraphicsSurface(GraphicsAPI* api, SurfaceDesc desc, GraphicsSurface* outSurface)
     {
         outSurface->VulkanSurface = createWin32VkSurface(api->Instance, desc.Win32WindowHandle, desc.Win32InstanceHandle);
@@ -1015,69 +1090,7 @@ namespace IB
         }
 
         // Swapchain
-        {
-            VkSwapchainCreateInfoKHR swapchainCreate = {};
-            swapchainCreate.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
-            swapchainCreate.pNext = NULL;
-            swapchainCreate.minImageCount = FramebufferCount;
-            swapchainCreate.imageArrayLayers = 1;
-            swapchainCreate.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_STORAGE_BIT;
-            swapchainCreate.surface = outSurface->VulkanSurface;
-            swapchainCreate.imageFormat = outSurface->Format.format;
-            swapchainCreate.imageColorSpace = outSurface->Format.colorSpace;
-            swapchainCreate.imageExtent = outSurface->Extents;
-            swapchainCreate.preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
-            swapchainCreate.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
-            swapchainCreate.presentMode = outSurface->PresentMode;
-            swapchainCreate.clipped = VK_TRUE;
-            swapchainCreate.pQueueFamilyIndices = NULL;
-            swapchainCreate.queueFamilyIndexCount = 0;
-
-            uint32_t swapchainShareIndices[2];
-            if (api->Queues[GraphicsQueue::Graphics].Index != api->Queues[GraphicsQueue::Present].Index)
-            {
-                swapchainShareIndices[0] = api->Queues[GraphicsQueue::Graphics].Index;
-                swapchainShareIndices[1] = api->Queues[GraphicsQueue::Present].Index;
-
-                swapchainCreate.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
-                swapchainCreate.queueFamilyIndexCount = 2;
-                swapchainCreate.pQueueFamilyIndices = swapchainShareIndices;
-            }
-            else
-            {
-                swapchainCreate.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
-            }
-
-            IB_VKCHECK(vkCreateSwapchainKHR(api->LogicalDevice, &swapchainCreate, NoVkAllocator, &outSurface->Swapchain));
-
-            VkImage swapchainImages[FramebufferCount];
-
-            uint32_t swapchainImageCount = FramebufferCount;
-            IB_VKCHECK(vkGetSwapchainImagesKHR(api->LogicalDevice, outSurface->Swapchain, &swapchainImageCount, swapchainImages));
-            IB_ASSERT(swapchainImageCount >= FramebufferCount, "Too few swapchain images!");
-
-            for (uint32_t fb = 0; fb < FramebufferCount; fb++)
-            {
-                VkImageViewCreateInfo imageViewCreate = {};
-                imageViewCreate.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-                imageViewCreate.viewType = VK_IMAGE_VIEW_TYPE_2D;
-                imageViewCreate.components.r = VK_COMPONENT_SWIZZLE_R;
-                imageViewCreate.components.g = VK_COMPONENT_SWIZZLE_G;
-                imageViewCreate.components.b = VK_COMPONENT_SWIZZLE_B;
-                imageViewCreate.components.a = VK_COMPONENT_SWIZZLE_A;
-                imageViewCreate.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-                imageViewCreate.subresourceRange.baseMipLevel = 0;
-                imageViewCreate.subresourceRange.levelCount = 1;
-                imageViewCreate.subresourceRange.baseArrayLayer = 0;
-                imageViewCreate.subresourceRange.layerCount = 1;
-                imageViewCreate.image = swapchainImages[fb];
-                imageViewCreate.format = outSurface->Format.format;
-
-                outSurface->Framebuffers[fb].Texture.Aspect = VK_IMAGE_ASPECT_COLOR_BIT;
-                outSurface->Framebuffers[fb].Texture.Image = swapchainImages[fb];
-                IB_VKCHECK(vkCreateImageView(api->LogicalDevice, &imageViewCreate, NoVkAllocator, &outSurface->Framebuffers[fb].Texture.View));
-            }
-        }
+        buildSwapchain(api, outSurface);
 
         // Acquire semaphore
         {
@@ -1140,13 +1153,14 @@ namespace IB
         }
     }
 
-    void rebuildSurface(GraphicsAPI* /*api*/, GraphicsSurface* /*surface*/)
+    void rebuildSurface(GraphicsAPI* api, GraphicsSurface* surface)
     {
-        //vkDeviceWaitIdle(API.LogicalDevice);
-        //VkSurfaceCapabilitiesKHR surfaceCapabilities;
-        //IB_VKCHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(API.PhysicalDevice, RendererContext.Present.Surface, &surfaceCapabilities));
-        //IB_ASSERT(surfaceCapabilities.currentExtent.width != UINT32_MAX, "Surface extents are undefined.");
-        //buildSurfaceSwapchain(surfaceCapabilities.currentExtent);
+        vkDeviceWaitIdle(api->LogicalDevice);
+        VkSurfaceCapabilitiesKHR surfaceCapabilities;
+        IB_VKCHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(api->PhysicalDevice, surface->VulkanSurface, &surfaceCapabilities));
+        IB_ASSERT(surfaceCapabilities.currentExtent.width != UINT32_MAX, "Surface extents are undefined.");
+        surface->Extents = surfaceCapabilities.currentExtent;
+        buildSwapchain(api, surface);
     }
 }
 

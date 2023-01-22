@@ -1006,17 +1006,10 @@ namespace IB
         fragStage.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
 
         VkPipelineShaderStageCreateInfo shaderStages[] = {vertexStage, fragStage};
+
+        // Scissor and viewport are set dynamically
         VkRect2D scissor = {};
-        scissor.extent = RendererContext.Present.Surface.Extents;
-
         VkViewport viewport = {};
-        viewport.x = 0;
-        viewport.y = 0;
-        viewport.width = (float)RendererContext.Present.Surface.Extents.width;
-        viewport.height = (float)RendererContext.Present.Surface.Extents.height;
-        viewport.minDepth = 0.0f;
-        viewport.maxDepth = 1.0f;
-
         VkPipelineViewportStateCreateInfo viewportStateCreate = {};
         viewportStateCreate.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
         viewportStateCreate.viewportCount = 1;
@@ -1719,54 +1712,61 @@ namespace IB
         // Start the frame
         uint32_t fb = RendererContext.Present.ActiveFrame;
 
-        IB_VKCHECK(vkWaitForFences(API.LogicalDevice, 1, &RendererContext.Present.FrameBuffer[fb].FinishedFence, VK_TRUE, UINT64_MAX));
-        IB_VKCHECK(vkResetFences(API.LogicalDevice, 1, &RendererContext.Present.FrameBuffer[fb].FinishedFence));
-
-        // Wait for the staging we've queued up before we've submitted this frame to complete before we move on.
-        {
-            if (Staging.ActiveFenceCount > 0)
-            {
-                IB_VKCHECK(vkWaitForFences(API.LogicalDevice, Staging.ActiveFenceCount, Staging.Fences, VK_TRUE, UINT64_MAX));
-                IB_VKCHECK(vkResetFences(API.LogicalDevice, Staging.ActiveFenceCount, Staging.Fences));
-                Staging.ActiveFenceCount = 0;
-            }
-
-            if (Staging.Transfers.ActiveCount > 0)
-            {
-                freeCommandBuffers(&API, GraphicsQueue::Transfer, Staging.Transfers.ActiveCount, Staging.Transfers.Commands);
-                Staging.Transfers.ActiveCount = 0;
-            }
-
-            if (Staging.DescriptorUpdates.ActiveCount > 0)
-            {
-                vkUpdateDescriptorSets(API.LogicalDevice, Staging.DescriptorUpdates.ActiveCount, Staging.DescriptorUpdates.DescriptorWrites, 0, NULL);
-                Staging.DescriptorUpdates.ActiveCount = 0;
-            }
-
-            Staging.WriteOffset = 0;
-        }
-
-        // Cleanup our released material instances once we're sure they aren't in use anymore.
-        {
-            for (uint32_t i = 0; i < ForwardPass.Cleanup[fb].Count; i++)
-            {
-                IB::Bitset::clearSlot(ForwardPass.InstanceAllocations, ForwardPass.Cleanup[fb].Instances[i]);
-            }
-            ForwardPass.Cleanup[fb].Count = 0;
-        }
-
-        // Cleanup our released lights once we're sure they aren't in use anymore.
-        {
-            for (uint32_t i = 0; i < Lighting.Cleanup[fb].Count; i++)
-            {
-                IB::Bitset::clearSlot(Lighting.DirectionalLightAllocations, Lighting.Cleanup[fb].Lights[i]);
-            }
-            Lighting.Cleanup[fb].Count = 0;
-        }
-
         SurfacePrepareResult prepareResult;
-        if(prepareSurface(&API, { &RendererContext.Present.Surface, fb }, &prepareResult))
+        if(!prepareSurface(&API, { &RendererContext.Present.Surface, fb }, &prepareResult))
         {
+            if(prepareResult.SurfaceState == SurfaceState::ShouldRebuild)
+            {
+                rebuildSurface(&API, &RendererContext.Present.Surface);
+            }
+        }
+        else
+        {
+            IB_VKCHECK(vkWaitForFences(API.LogicalDevice, 1, &RendererContext.Present.FrameBuffer[fb].FinishedFence, VK_TRUE, UINT64_MAX));
+            IB_VKCHECK(vkResetFences(API.LogicalDevice, 1, &RendererContext.Present.FrameBuffer[fb].FinishedFence));
+
+            // Wait for the staging we've queued up before we've submitted this frame to complete before we move on.
+            {
+                if (Staging.ActiveFenceCount > 0)
+                {
+                    IB_VKCHECK(vkWaitForFences(API.LogicalDevice, Staging.ActiveFenceCount, Staging.Fences, VK_TRUE, UINT64_MAX));
+                    IB_VKCHECK(vkResetFences(API.LogicalDevice, Staging.ActiveFenceCount, Staging.Fences));
+                    Staging.ActiveFenceCount = 0;
+                }
+
+                if (Staging.Transfers.ActiveCount > 0)
+                {
+                    freeCommandBuffers(&API, GraphicsQueue::Transfer, Staging.Transfers.ActiveCount, Staging.Transfers.Commands);
+                    Staging.Transfers.ActiveCount = 0;
+                }
+
+                if (Staging.DescriptorUpdates.ActiveCount > 0)
+                {
+                    vkUpdateDescriptorSets(API.LogicalDevice, Staging.DescriptorUpdates.ActiveCount, Staging.DescriptorUpdates.DescriptorWrites, 0, NULL);
+                    Staging.DescriptorUpdates.ActiveCount = 0;
+                }
+
+                Staging.WriteOffset = 0;
+            }
+
+            // Cleanup our released material instances once we're sure they aren't in use anymore.
+            {
+                for (uint32_t i = 0; i < ForwardPass.Cleanup[fb].Count; i++)
+                {
+                    IB::Bitset::clearSlot(ForwardPass.InstanceAllocations, ForwardPass.Cleanup[fb].Instances[i]);
+                }
+                ForwardPass.Cleanup[fb].Count = 0;
+            }
+
+            // Cleanup our released lights once we're sure they aren't in use anymore.
+            {
+                for (uint32_t i = 0; i < Lighting.Cleanup[fb].Count; i++)
+                {
+                    IB::Bitset::clearSlot(Lighting.DirectionalLightAllocations, Lighting.Cleanup[fb].Lights[i]);
+                }
+                Lighting.Cleanup[fb].Count = 0;
+            }
+
             recordCommands(RendererContext.Present.FrameBuffer[fb].PrimaryCommandBuffer, fb, view);
 
             VkPipelineStageFlags dstStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
@@ -1788,15 +1788,9 @@ namespace IB
             {
                 rebuildSurface(&API, &RendererContext.Present.Surface);
             }
+
+            // Only advance our active frame if we actually rendered anything.
+            RendererContext.Present.ActiveFrame = (RendererContext.Present.ActiveFrame + 1) % FrameBufferCount;
         }
-        else
-        {
-            if(prepareResult.SurfaceState == SurfaceState::ShouldRebuild)
-            {
-                rebuildSurface(&API, &RendererContext.Present.Surface);
-            }
-        }
-        
-        RendererContext.Present.ActiveFrame = (RendererContext.Present.ActiveFrame + 1) % FrameBufferCount;
     }
 } // namespace IB
