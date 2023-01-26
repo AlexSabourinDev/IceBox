@@ -1119,7 +1119,7 @@ namespace IB
                 submitInfo.pCommandBuffers = &commandBuffer;
                 IB_VKCHECK(vkQueueSubmit(API.Queues[GraphicsQueue::Transfer].Queue, 1, &submitInfo, staging.Fence));
 
-                Staging.Transfers.Commands[Staging.Transfers.ActiveCount++] = commandBuffer;
+                Staging.Transfers.add(commandBuffer);
             }
         }
     }
@@ -1177,9 +1177,8 @@ namespace IB
 
         // Queue up our shader descriptor update
         {
-            uint32_t descriptorUpdateIndex = Staging.DescriptorUpdates.ActiveCount++;
-            VkDescriptorImageInfo* imageInfo = &Staging.DescriptorUpdates.DescriptorInfos[descriptorUpdateIndex];
-            VkWriteDescriptorSet* descriptorWrite = &Staging.DescriptorUpdates.DescriptorWrites[descriptorUpdateIndex];
+            VkDescriptorImageInfo* imageInfo = &Staging.DescriptorImageInfos.add();
+            VkWriteDescriptorSet* descriptorWrite = &Staging.DescriptorWrites.add();
 
             *imageInfo = {};
             imageInfo->imageView = RendererContext.Textures.Images[imageIndex].View;
@@ -1575,29 +1574,7 @@ namespace IB
             IB_VKCHECK(vkWaitForFences(API.LogicalDevice, 1, &RendererContext.Present.FrameBuffer[fb].FinishedFence, VK_TRUE, UINT64_MAX));
             IB_VKCHECK(vkResetFences(API.LogicalDevice, 1, &RendererContext.Present.FrameBuffer[fb].FinishedFence));
 
-            // Wait for the staging we've queued up before we've submitted this frame to complete before we move on.
-            {
-                if (Staging.ActiveFenceCount > 0)
-                {
-                    IB_VKCHECK(vkWaitForFences(API.LogicalDevice, Staging.ActiveFenceCount, Staging.Fences, VK_TRUE, UINT64_MAX));
-                    IB_VKCHECK(vkResetFences(API.LogicalDevice, Staging.ActiveFenceCount, Staging.Fences));
-                    Staging.ActiveFenceCount = 0;
-                }
-
-                if (Staging.Transfers.ActiveCount > 0)
-                {
-                    freeCommandBuffers(&API, GraphicsQueue::Transfer, Staging.Transfers.ActiveCount, Staging.Transfers.Commands);
-                    Staging.Transfers.ActiveCount = 0;
-                }
-
-                if (Staging.DescriptorUpdates.ActiveCount > 0)
-                {
-                    vkUpdateDescriptorSets(API.LogicalDevice, Staging.DescriptorUpdates.ActiveCount, Staging.DescriptorUpdates.DescriptorWrites, 0, NULL);
-                    Staging.DescriptorUpdates.ActiveCount = 0;
-                }
-
-                Staging.WriteOffset = 0;
-            }
+            flushStaging(&API, &Staging);
 
             // Cleanup our released material instances once we're sure they aren't in use anymore.
             {

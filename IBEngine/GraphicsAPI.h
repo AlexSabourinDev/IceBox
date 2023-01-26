@@ -4,6 +4,8 @@
 #define VK_USE_PLATFORM_WIN32_KHR
 #include <vulkan/vulkan.h>
 
+#include <utility>
+
 namespace IB
 {
     namespace VkMemory
@@ -119,6 +121,34 @@ namespace IB
 // Staging
 namespace IB
 {
+    template<typename T, uint32_t MaxSize>
+    struct FixedSizedQueue
+    {
+        template< typename... TArgs >
+        T &add(TArgs &&...args)
+        {
+            IB_ASSERT(Count < MaxSize, "We're out of space in our queue. Please assure that you have space before adding an element.");
+            Data[Count++] = T{std::forward<TArgs>(args)...};
+            return Data[Count-1];
+        }
+
+        T Data[MaxSize];
+        uint32_t Count = 0;
+    };
+
+    template<typename T, uint32_t MaxSize>
+    struct FixedSizedPool
+    {
+        T &alloc()
+        {
+            IB_ASSERT(Count < MaxSize, "We're out of space in our queue. Please assure that you have space before adding an element.");
+            return Data[Count++];
+        }
+
+        T Data[MaxSize];
+        uint32_t Count = 0;
+    };
+
     uint32_t constexpr StagingSize = 32 * 1024 * 1024; // 32MB of staging space
     uint32_t constexpr MaxStagingFenceCount = 128;
     uint32_t constexpr MaxTransferCount = 128;
@@ -130,21 +160,11 @@ namespace IB
         void* MappedMemory = nullptr;
         size_t WriteOffset = 0;
 
-        VkFence Fences[MaxStagingFenceCount];
-        uint32_t ActiveFenceCount = 0;
+        FixedSizedPool<VkFence, MaxStagingFenceCount> ActiveFences;
+        FixedSizedQueue<VkCommandBuffer, MaxTransferCount> Transfers;
 
-        struct
-        {
-            VkCommandBuffer Commands[MaxTransferCount];
-            uint32_t ActiveCount = 0;
-        } Transfers;
-
-        struct
-        {
-            VkDescriptorImageInfo DescriptorInfos[MaxDescriptorUpdateCount];
-            VkWriteDescriptorSet DescriptorWrites[MaxDescriptorUpdateCount];
-            uint32_t ActiveCount = 0;
-        } DescriptorUpdates;
+        FixedSizedQueue<VkDescriptorImageInfo, MaxDescriptorUpdateCount> DescriptorImageInfos;
+        FixedSizedQueue<VkWriteDescriptorSet, MaxDescriptorUpdateCount> DescriptorWrites;
     };
 
     struct StagingBuffer
@@ -1000,7 +1020,7 @@ namespace IB
         submitInfo.pCommandBuffers = &commandBuffer;
         IB_VKCHECK(vkQueueSubmit(api->Queues[GraphicsQueue::Transfer].Queue, 1, &submitInfo, stagingBuffer.Fence));
 
-        staging->Transfers.Commands[staging->Transfers.ActiveCount++] = commandBuffer;
+        staging->Transfers.add(commandBuffer);
     }
 }
 
@@ -1034,7 +1054,7 @@ namespace IB
         submitInfo.pCommandBuffers = &commandBuffer;
         IB_VKCHECK(vkQueueSubmit(api->Queues[GraphicsQueue::Transfer].Queue, 1, &submitInfo, staging.Fence));
 
-        stagingCore->Transfers.Commands[stagingCore->Transfers.ActiveCount++] = commandBuffer;
+        stagingCore->Transfers.add(commandBuffer);
     }
 }
 
@@ -1339,7 +1359,7 @@ namespace IB
             fenceCreateInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;        
             for (uint32_t i = 0; i < MaxStagingFenceCount; i++)
             {
-                IB_VKCHECK(vkCreateFence(api->LogicalDevice, &fenceCreateInfo, NoVkAllocator, &outStaging->Fences[i]));
+                IB_VKCHECK(vkCreateFence(api->LogicalDevice, &fenceCreateInfo, NoVkAllocator, &outStaging->ActiveFences.Data[i]));
             }
         }
     }
@@ -1351,7 +1371,7 @@ namespace IB
 
         for (uint32_t i = 0; i < MaxStagingFenceCount; i++)
         {
-            vkDestroyFence(api->LogicalDevice, staging->Fences[i], NoVkAllocator);
+            vkDestroyFence(api->LogicalDevice, staging->ActiveFences.Data[i], NoVkAllocator);
         }
     }
 
@@ -1368,11 +1388,35 @@ namespace IB
         stagingBuffer.Buffer = staging->Buffer;
         stagingBuffer.Memory = reinterpret_cast<uint8_t*>(staging->MappedMemory) + staging->WriteOffset;
         stagingBuffer.Offset = staging->WriteOffset;
-        IB_ASSERT(staging->ActiveFenceCount < MaxStagingFenceCount, "TODO: Handle flushing if we run out of fences.");
-        stagingBuffer.Fence = staging->Fences[staging->ActiveFenceCount++];
+        stagingBuffer.Fence = staging->ActiveFences.alloc();
         staging->WriteOffset += size;
 
         return stagingBuffer;
+    }
+
+    void flushStaging(GraphicsAPI* api, StagingCore* staging)
+    {
+        if (staging->ActiveFences.Count > 0)
+        {
+            IB_VKCHECK(vkWaitForFences(api->LogicalDevice, staging->ActiveFences.Count, staging->ActiveFences.Data, VK_TRUE, UINT64_MAX));
+            IB_VKCHECK(vkResetFences(api->LogicalDevice, staging->ActiveFences.Count, staging->ActiveFences.Data));
+            staging->ActiveFences.Count = 0;
+        }
+
+        if (staging->Transfers.Count > 0)
+        {
+            freeCommandBuffers(api, GraphicsQueue::Transfer, staging->Transfers.Count, staging->Transfers.Data);
+            staging->Transfers.Count = 0;
+        }
+
+        if (staging->DescriptorWrites.Count > 0)
+        {
+            vkUpdateDescriptorSets(api->LogicalDevice, staging->DescriptorWrites.Count, staging->DescriptorWrites.Data, 0, NULL);
+            staging->DescriptorWrites.Count = 0;
+            staging->DescriptorImageInfos.Count = 0;
+        }
+
+        staging->WriteOffset = 0;
     }
 }
 
