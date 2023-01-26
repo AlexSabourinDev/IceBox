@@ -96,21 +96,6 @@ namespace IB
 {
     namespace
     {
-        // Main Renderer
-        struct ImageAndView
-        {
-            enum ImageType
-            {
-                Color,
-                Depth
-            };
-
-            IB::VkMemory::Allocation Allocation;
-            VkImage Image;
-            VkImageView View;
-            ImageType Type;
-        };
-
         uint32_t constexpr MaxImageCount = 100;
         uint32_t constexpr MaxSamplerCount = 1000;
         uint32_t constexpr FrameBufferCount = 2;
@@ -134,7 +119,7 @@ namespace IB
 
             struct
             {
-                ImageAndView Images[MaxImageCount];
+                Texture Images[MaxImageCount];
                 uint32_t ImageCount = 0;
             } Textures;
 
@@ -239,7 +224,7 @@ namespace IB
 
             struct
             {
-                ImageAndView DepthImage;
+                Texture DepthImage;
             } FrameBuffer[FrameBufferCount];
             uint32_t InstanceCount = 0;
 
@@ -280,20 +265,22 @@ namespace IB
         Lighting Lighting;
         StagingCore Staging;
 
-        struct ImageAllocation
+        struct TextureAllocation
         {
-            uint32_t ImageUsage;
-            VkFormat Format;
+            VkImageUsageFlags Usage = {};
+            VkFormat Format = {};
             uint32_t Width = 0;
             uint32_t Height = 0;
             uint32_t Stride = 0;
-            ImageAndView::ImageType Type = ImageAndView::Color;
+            VkImageAspectFlags Aspect = 0;
         };
 
-        ImageAndView allocImageAndView(ImageAllocation alloc)
+        Texture allocTexture(TextureAllocation alloc)
         {
-            ImageAndView imageAndView;
-            imageAndView.Type = alloc.Type;
+            Texture texture;
+            texture.Aspect = alloc.Aspect;
+            texture.Width = alloc.Width;
+            texture.Height = alloc.Height;
 
             {
                 VkImageCreateInfo imageCreate = {};
@@ -305,17 +292,17 @@ namespace IB
                 imageCreate.arrayLayers = 1;
                 imageCreate.samples = VK_SAMPLE_COUNT_1_BIT;
                 imageCreate.tiling = VK_IMAGE_TILING_OPTIMAL;
-                imageCreate.usage = alloc.ImageUsage;
+                imageCreate.usage = alloc.Usage;
                 imageCreate.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
                 imageCreate.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
-                IB_VKCHECK(vkCreateImage(API.LogicalDevice, &imageCreate, IB::NoVkAllocator, &imageAndView.Image));
+                IB_VKCHECK(vkCreateImage(API.LogicalDevice, &imageCreate, IB::NoVkAllocator, &texture.Image));
             }
 
             // Allocation
             {
                 VkMemoryRequirements memoryRequirements;
-                vkGetImageMemoryRequirements(API.LogicalDevice, imageAndView.Image, &memoryRequirements);
+                vkGetImageMemoryRequirements(API.LogicalDevice, texture.Image, &memoryRequirements);
 
                 IB::VkMemory::AllocationRequest request;
                 request.Alignment = memoryRequirements.alignment;
@@ -327,33 +314,33 @@ namespace IB
                 request.TypeBits = memoryRequirements.memoryTypeBits;
                 request.Category = IB::VkMemory::Category::Image;
 
-                IB::VkMemory::Allocation *allocation = &imageAndView.Allocation;
+                IB::VkMemory::Allocation *allocation = &texture.Allocation;
                 *allocation = allocateDeviceMemory(&Allocator, request);
 
-                IB_VKCHECK(vkBindImageMemory(API.LogicalDevice, imageAndView.Image, allocation->Memory, allocation->Offset));
+                IB_VKCHECK(vkBindImageMemory(API.LogicalDevice, texture.Image, allocation->Memory, allocation->Offset));
             }
 
             // Image view
             {
                 VkImageSubresourceRange subresourceRange = {};
-                subresourceRange.aspectMask = (alloc.Type == ImageAndView::Color) ? VK_IMAGE_ASPECT_COLOR_BIT : VK_IMAGE_ASPECT_DEPTH_BIT;
+                subresourceRange.aspectMask = alloc.Aspect;
                 subresourceRange.levelCount = 1;
                 subresourceRange.layerCount = 1;
                 subresourceRange.baseMipLevel = 0;
 
                 VkImageViewCreateInfo imageCreateViewInfo = {};
                 imageCreateViewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-                imageCreateViewInfo.image = imageAndView.Image;
+                imageCreateViewInfo.image = texture.Image;
                 imageCreateViewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
                 imageCreateViewInfo.format = alloc.Format;
 
                 imageCreateViewInfo.components = {VK_COMPONENT_SWIZZLE_R, VK_COMPONENT_SWIZZLE_G, VK_COMPONENT_SWIZZLE_B, VK_COMPONENT_SWIZZLE_A};
                 imageCreateViewInfo.subresourceRange = subresourceRange;
 
-                IB_VKCHECK(vkCreateImageView(API.LogicalDevice, &imageCreateViewInfo, IB::NoVkAllocator, &imageAndView.View));
+                IB_VKCHECK(vkCreateImageView(API.LogicalDevice, &imageCreateViewInfo, IB::NoVkAllocator, &texture.View));
             }
 
-            return imageAndView;
+            return texture;
         }
     } // namespace
 } // namespace IB
@@ -366,41 +353,6 @@ namespace IB
         void getWindowHandleAndInstance(Window::Handle handle, HWND *window, HINSTANCE *instance);
         void getPlatformMessageData(WindowMessagePlatformData const *platformData, HWND *hwnd, UINT *msg, WPARAM *wparam, LPARAM *lparam);
     } // namespace Win32
-} // namespace IB
-
-namespace IB
-{
-namespace
-{
-
-    VkImageMemoryBarrier createImageBarrier(
-        VkAccessFlagBits sourceAccessMask,
-        VkAccessFlagBits dstAccessMask,
-        VkImageLayout oldLayout,
-        VkImageLayout newLayout,
-        IB::ImageAndView image)
-    {
-        VkImageSubresourceRange imageSubresource = {};
-        imageSubresource.aspectMask = (image.Type == ImageAndView::Color) ? VK_IMAGE_ASPECT_COLOR_BIT : VK_IMAGE_ASPECT_DEPTH_BIT;
-        imageSubresource.levelCount = 1;
-        imageSubresource.baseMipLevel = 0;
-        imageSubresource.baseArrayLayer = 0;
-        imageSubresource.layerCount = 1;
-
-        VkImageMemoryBarrier imageBarrier = {};
-        imageBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-        imageBarrier.oldLayout = oldLayout;
-        imageBarrier.newLayout = newLayout;
-        imageBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        imageBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        imageBarrier.image = image.Image;
-        imageBarrier.subresourceRange = imageSubresource;
-        imageBarrier.srcAccessMask = sourceAccessMask;
-        imageBarrier.dstAccessMask = dstAccessMask;
-
-        return imageBarrier;
-    }
-} // namespace
 } // namespace IB
 
 namespace IB
@@ -432,15 +384,15 @@ namespace IB
             {
                 // Depth image
                 {
-                    ImageAllocation imageAlloc = {};
-                    imageAlloc.ImageUsage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
-                    imageAlloc.Format = VK_FORMAT_D32_SFLOAT;
-                    imageAlloc.Width = RendererContext.Present.Surface.Extents.width;
-                    imageAlloc.Height = RendererContext.Present.Surface.Extents.height;
-                    imageAlloc.Stride = 4;
-                    imageAlloc.Type = ImageAndView::Depth;
+                    TextureAllocation textureAlloc = {};
+                    textureAlloc.Usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+                    textureAlloc.Format = VK_FORMAT_D32_SFLOAT;
+                    textureAlloc.Width = RendererContext.Present.Surface.Extents.width;
+                    textureAlloc.Height = RendererContext.Present.Surface.Extents.height;
+                    textureAlloc.Stride = 4;
+                    textureAlloc.Aspect = VK_IMAGE_ASPECT_DEPTH_BIT;
 
-                    ForwardPass.FrameBuffer[fb].DepthImage = allocImageAndView(imageAlloc);
+                    ForwardPass.FrameBuffer[fb].DepthImage = allocTexture(textureAlloc);
                 }
             }
 
@@ -1205,85 +1157,23 @@ namespace IB
 
         // Image
         uint32_t imageIndex = RendererContext.Textures.ImageCount++;
-        ImageAllocation imageAlloc = {};
-        imageAlloc.ImageUsage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
-        imageAlloc.Format = formats[desc.Format];
-        imageAlloc.Width = desc.Width;
-        imageAlloc.Height = desc.Height;
-        imageAlloc.Stride = formatSize[desc.Format];
+        TextureAllocation textureAlloc = {};
+        textureAlloc.Usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+        textureAlloc.Format = formats[desc.Format];
+        textureAlloc.Width = desc.Width;
+        textureAlloc.Height = desc.Height;
+        textureAlloc.Stride = formatSize[desc.Format];
+        textureAlloc.Aspect = VK_IMAGE_ASPECT_COLOR_BIT;
 
-        RendererContext.Textures.Images[imageIndex] = allocImageAndView(imageAlloc);
+        RendererContext.Textures.Images[imageIndex] = allocTexture(textureAlloc);
 
-        StagingBuffer staging = requestStagingBuffer(&Staging, desc.Width * desc.Height * formatSize[desc.Format], formatSize[desc.Format]);
-        memcpy(staging.Memory, desc.Data, desc.Width * desc.Height * formatSize[desc.Format]);
-
-        VkCommandBuffer commandBuffer = allocCommandBuffer(&API, GraphicsQueue::Transfer);
-
-        VkCommandBufferBeginInfo beginBufferInfo = {};
-        beginBufferInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-        beginBufferInfo.flags |= VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-
-        IB_VKCHECK(vkBeginCommandBuffer(commandBuffer, &beginBufferInfo));
-
-        // Image barrier UNDEFINED -> TRANSFER
-        {
-            VkPipelineStageFlags sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
-            VkPipelineStageFlags destinationStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
-            VkImageMemoryBarrier imageBarrier = createImageBarrier(
-                VkAccessFlagBits{},
-                VK_ACCESS_TRANSFER_WRITE_BIT,
-                VK_IMAGE_LAYOUT_UNDEFINED,
-                VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                RendererContext.Textures.Images[imageIndex]);
-            vkCmdPipelineBarrier(commandBuffer, sourceStage, destinationStage, 0, 0, NULL, 0, NULL, 1, &imageBarrier);
-        }
-
-        // Image copy
-        {
-            VkImageSubresourceLayers imageSubresource = {};
-            imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-            imageSubresource.mipLevel = 0;
-            imageSubresource.baseArrayLayer = 0;
-            imageSubresource.layerCount = 1;
-
-            VkExtent3D extent = {};
-            extent.width = desc.Width;
-            extent.height = desc.Height;
-            extent.depth = 1;
-
-            VkBufferImageCopy copyRegion = {};
-            copyRegion.bufferOffset = staging.Offset;
-            copyRegion.bufferRowLength = 0;
-            copyRegion.bufferImageHeight = 0;
-            copyRegion.imageSubresource = imageSubresource;
-            copyRegion.imageOffset = {};
-            copyRegion.imageExtent = extent;
-
-            vkCmdCopyBufferToImage(commandBuffer, staging.Buffer, RendererContext.Textures.Images[imageIndex].Image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copyRegion);
-        }
-
-        // Image barrier TRANSFER -> FRAGMENT_SHADER
-        {
-            VkPipelineStageFlags sourceStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
-            VkPipelineStageFlags destinationStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-            VkImageMemoryBarrier imageBarrier = createImageBarrier(
-                VK_ACCESS_TRANSFER_WRITE_BIT,
-                VK_ACCESS_SHADER_READ_BIT,
-                VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                RendererContext.Textures.Images[imageIndex]);
-            vkCmdPipelineBarrier(commandBuffer, sourceStage, destinationStage, 0, 0, NULL, 0, NULL, 1, &imageBarrier);
-        }
-
-        IB_VKCHECK(vkEndCommandBuffer(commandBuffer));
-
-        VkSubmitInfo submitInfo = {};
-        submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-        submitInfo.commandBufferCount = 1;
-        submitInfo.pCommandBuffers = &commandBuffer;
-        IB_VKCHECK(vkQueueSubmit(API.Queues[GraphicsQueue::Transfer].Queue, 1, &submitInfo, staging.Fence));
-
-        Staging.Transfers.Commands[Staging.Transfers.ActiveCount++] = commandBuffer;
+        uploadTexture(&API, &Staging, 
+            {
+                &RendererContext.Textures.Images[imageIndex],
+                desc.Data,
+                desc.Width * desc.Height * formatSize[desc.Format],
+                formatSize[desc.Format]
+            });
 
         // Queue up our shader descriptor update
         {
@@ -1476,12 +1366,12 @@ namespace IB
                 VkPipelineStageFlags sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
                 VkPipelineStageFlags destinationStage = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
 
-                VkImageMemoryBarrier depthBarrier = createImageBarrier(
+                VkImageMemoryBarrier depthBarrier = createMemoryBarrier(
+                    &ForwardPass.FrameBuffer[fb].DepthImage,
                     VkAccessFlagBits{},
                     VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
                     VK_IMAGE_LAYOUT_UNDEFINED,
-                    VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-                    ForwardPass.FrameBuffer[fb].DepthImage);
+                    VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
 
                 vkCmdPipelineBarrier(currentCommands, sourceStage, destinationStage, 0, 0, NULL, 0, NULL, 1, &depthBarrier);
             }

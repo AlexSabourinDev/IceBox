@@ -62,7 +62,7 @@ namespace IB
         };
     }
 }
-  
+
 // Core API
 namespace IB
 {
@@ -116,6 +116,55 @@ namespace IB
     void killGraphicsAPI(GraphicsAPI* graphicsAPI);
 }
 
+// Staging
+namespace IB
+{
+    uint32_t constexpr StagingSize = 32 * 1024 * 1024; // 32MB of staging space
+    uint32_t constexpr MaxStagingFenceCount = 128;
+    uint32_t constexpr MaxTransferCount = 128;
+    uint32_t constexpr MaxDescriptorUpdateCount = 128;
+    struct StagingCore
+    {
+        VkBuffer Buffer;
+        IB::VkMemory::Allocation Allocation;
+        void* MappedMemory = nullptr;
+        uint32_t WriteOffset = 0;
+
+        VkFence Fences[MaxStagingFenceCount];
+        uint32_t ActiveFenceCount = 0;
+
+        struct
+        {
+            VkCommandBuffer Commands[MaxTransferCount];
+            uint32_t ActiveCount = 0;
+        } Transfers;
+
+        struct
+        {
+            VkDescriptorImageInfo DescriptorInfos[MaxDescriptorUpdateCount];
+            VkWriteDescriptorSet DescriptorWrites[MaxDescriptorUpdateCount];
+            uint32_t ActiveCount = 0;
+        } DescriptorUpdates;
+    };
+
+    struct StagingBuffer
+    {
+        VkBuffer Buffer;
+        void* Memory;
+        uint32_t Offset;
+        VkFence Fence;
+    };
+
+    struct StagingDesc
+    {
+        VkMemory::Allocator* Allocator;
+    };
+
+    void initStaging(GraphicsAPI* api, StagingDesc desc, StagingCore* outStaging);
+    void killStaging(GraphicsAPI* api, VkMemory::Allocator* allocator, StagingCore* staging);
+    StagingBuffer requestStagingBuffer(StagingCore* staging, uint32_t size, uint32_t alignment = 1);
+}
+
 // Texture
 namespace IB
 {
@@ -125,6 +174,9 @@ namespace IB
         VkImage Image = {};
         VkImageView View = {};
         VkImageAspectFlags Aspect = {};
+
+        uint32_t Width = 0;
+        uint32_t Height = 0;
     };
 
     VkImageMemoryBarrier createMemoryBarrier(
@@ -133,6 +185,16 @@ namespace IB
         VkAccessFlagBits dstAccessMask,
         VkImageLayout oldLayout,
         VkImageLayout newLayout);
+
+    struct UploadTextureDesc
+    {
+        Texture* Texture;
+        uint8_t const* Data;
+        uint32_t DataSize;
+        uint32_t DataAlignment;
+    };
+
+    void uploadTexture(GraphicsAPI* api, StagingCore* staging, UploadTextureDesc desc);
 }
 
 // Command buffer
@@ -206,55 +268,6 @@ namespace IB
     };
     void presentSurface(GraphicsAPI* api, SurfacePresentDesc presentDesc, SurfacePresentResult* outPresentResult);
     void rebuildSurface(GraphicsAPI* api, GraphicsSurface* surface);
-}
-
-// Staging
-namespace IB
-{
-    uint32_t constexpr StagingSize = 32 * 1024 * 1024; // 32MB of staging space
-    uint32_t constexpr MaxStagingFenceCount = 128;
-    uint32_t constexpr MaxTransferCount = 128;
-    uint32_t constexpr MaxDescriptorUpdateCount = 128;
-    struct StagingCore
-    {
-        VkBuffer Buffer;
-        IB::VkMemory::Allocation Allocation;
-        void* MappedMemory = nullptr;
-        uint32_t WriteOffset = 0;
-
-        VkFence Fences[MaxStagingFenceCount];
-        uint32_t ActiveFenceCount = 0;
-
-        struct
-        {
-            VkCommandBuffer Commands[MaxTransferCount];
-            uint32_t ActiveCount = 0;
-        } Transfers;
-
-        struct
-        {
-            VkDescriptorImageInfo DescriptorInfos[MaxDescriptorUpdateCount];
-            VkWriteDescriptorSet DescriptorWrites[MaxDescriptorUpdateCount];
-            uint32_t ActiveCount = 0;
-        } DescriptorUpdates;
-    };
-
-    struct StagingBuffer
-    {
-        VkBuffer Buffer;
-        void* Memory;
-        uint32_t Offset;
-        VkFence Fence;
-    };
-
-    struct StagingDesc
-    {
-        VkMemory::Allocator* Allocator;
-    };
-
-    void initStaging(GraphicsAPI* api, StagingDesc desc, StagingCore* outStaging);
-    void killStaging(GraphicsAPI* api, VkMemory::Allocator* allocator, StagingCore* staging);
-    StagingBuffer requestStagingBuffer(StagingCore* staging, uint32_t size, uint32_t alignment = 1);
 }
 
 // TODO: Move to CPP when in a good place
@@ -899,6 +912,80 @@ namespace IB
         imageBarrier.dstAccessMask = dstAccessMask;
 
         return imageBarrier;
+    }
+
+    void uploadTexture(GraphicsAPI* api, StagingCore* staging, UploadTextureDesc desc)
+    {
+        StagingBuffer stagingBuffer = requestStagingBuffer(staging, desc.DataSize, desc.DataAlignment);
+        memcpy(stagingBuffer.Memory, desc.Data, desc.DataSize);
+
+        VkCommandBuffer commandBuffer = allocCommandBuffer(api, GraphicsQueue::Transfer);
+
+        VkCommandBufferBeginInfo beginBufferInfo = {};
+        beginBufferInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        beginBufferInfo.flags |= VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+        IB_VKCHECK(vkBeginCommandBuffer(commandBuffer, &beginBufferInfo));
+
+        // Image barrier UNDEFINED -> TRANSFER
+        {
+            VkPipelineStageFlags sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+            VkPipelineStageFlags destinationStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+            VkImageMemoryBarrier imageBarrier = createMemoryBarrier(
+                desc.Texture,
+                VkAccessFlagBits{},
+                VK_ACCESS_TRANSFER_WRITE_BIT,
+                VK_IMAGE_LAYOUT_UNDEFINED,
+                VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+            vkCmdPipelineBarrier(commandBuffer, sourceStage, destinationStage, 0, 0, NULL, 0, NULL, 1, &imageBarrier);
+        }
+
+        // Image copy
+        {
+            VkImageSubresourceLayers imageSubresource = {};
+            imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+            imageSubresource.mipLevel = 0;
+            imageSubresource.baseArrayLayer = 0;
+            imageSubresource.layerCount = 1;
+
+            VkExtent3D extent = {};
+            extent.width = desc.Texture->Width;
+            extent.height = desc.Texture->Height;
+            extent.depth = 1;
+
+            VkBufferImageCopy copyRegion = {};
+            copyRegion.bufferOffset = stagingBuffer.Offset;
+            copyRegion.bufferRowLength = 0;
+            copyRegion.bufferImageHeight = 0;
+            copyRegion.imageSubresource = imageSubresource;
+            copyRegion.imageOffset = {};
+            copyRegion.imageExtent = extent;
+
+            vkCmdCopyBufferToImage(commandBuffer, stagingBuffer.Buffer, desc.Texture->Image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copyRegion);
+        }
+
+        // Image barrier TRANSFER -> FRAGMENT_SHADER
+        {
+            VkPipelineStageFlags sourceStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+            VkPipelineStageFlags destinationStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+            VkImageMemoryBarrier imageBarrier = createMemoryBarrier(
+                desc.Texture,
+                VK_ACCESS_TRANSFER_WRITE_BIT,
+                VK_ACCESS_SHADER_READ_BIT,
+                VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+            vkCmdPipelineBarrier(commandBuffer, sourceStage, destinationStage, 0, 0, NULL, 0, NULL, 1, &imageBarrier);
+        }
+
+        IB_VKCHECK(vkEndCommandBuffer(commandBuffer));
+
+        VkSubmitInfo submitInfo = {};
+        submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        submitInfo.commandBufferCount = 1;
+        submitInfo.pCommandBuffers = &commandBuffer;
+        IB_VKCHECK(vkQueueSubmit(api->Queues[GraphicsQueue::Transfer].Queue, 1, &submitInfo, stagingBuffer.Fence));
+
+        staging->Transfers.Commands[staging->Transfers.ActiveCount++] = commandBuffer;
     }
 }
 
