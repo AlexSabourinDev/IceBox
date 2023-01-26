@@ -644,7 +644,7 @@ namespace IB
 // Core API
 namespace IB
 {
-    // #define IB_VKDEBUG
+    #define IB_VKDEBUG
 
     const char *InstanceExtensions[] = {VK_KHR_SURFACE_EXTENSION_NAME, VK_KHR_WIN32_SURFACE_EXTENSION_NAME};
     const char *DeviceExtensions[] = {VK_KHR_SWAPCHAIN_EXTENSION_NAME, VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME};
@@ -670,7 +670,7 @@ namespace IB
             appInfo.applicationVersion = 1;
             appInfo.pEngineName = "IceBox";
             appInfo.engineVersion = 1;
-            appInfo.apiVersion = VK_MAKE_VERSION(1, 2, VK_HEADER_VERSION);
+            appInfo.apiVersion = VK_MAKE_VERSION(1, 3, VK_HEADER_VERSION);
 
             VkInstanceCreateInfo createInfo = {};
             createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
