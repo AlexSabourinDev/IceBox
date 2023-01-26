@@ -1209,34 +1209,14 @@ namespace IB
         IB_ASSERT(instanceIndex != IB::Bitset::NoSlot, "Too many materials!");
         IB::Bitset::setSlot(ForwardPass.InstanceAllocations, instanceIndex);
 
-        StagingBuffer staging = requestStagingBuffer(&Staging, sizeof(ForwardMaterial));
-        memcpy(staging.Memory, &matData, sizeof(ForwardMaterial));
-
-        {
-            VkCommandBuffer commandBuffer = allocCommandBuffer(&API, GraphicsQueue::Transfer);
-
-            VkCommandBufferBeginInfo beginBufferInfo = {};
-            beginBufferInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-            beginBufferInfo.flags |= VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-
-            IB_VKCHECK(vkBeginCommandBuffer(commandBuffer, &beginBufferInfo));
-
-            VkBufferCopy copy = {};
-            copy.srcOffset = staging.Offset;
-            copy.dstOffset = instanceIndex * sizeof(ForwardMaterial);
-            copy.size = sizeof(ForwardMaterial);
-            vkCmdCopyBuffer(commandBuffer, staging.Buffer, ForwardPass.MaterialBuffer, 1, &copy);
-
-            IB_VKCHECK(vkEndCommandBuffer(commandBuffer));
-
-            VkSubmitInfo submitInfo = {};
-            submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-            submitInfo.commandBufferCount = 1;
-            submitInfo.pCommandBuffers = &commandBuffer;
-            IB_VKCHECK(vkQueueSubmit(API.Queues[GraphicsQueue::Transfer].Queue, 1, &submitInfo, staging.Fence));
-
-            Staging.Transfers.Commands[Staging.Transfers.ActiveCount++] = commandBuffer;
-        }
+        writeToBuffer(&API, &Staging, 
+            {
+                ForwardPass.MaterialBuffer,
+                &matData,
+                sizeof(ForwardMaterial),
+                1,
+                instanceIndex * sizeof(ForwardMaterial)
+            });
 
         return Material::toHandle(static_cast<uint32_t>(instanceIndex));
     }
@@ -1267,34 +1247,14 @@ namespace IB
         IB_ASSERT(instanceIndex != IB::Bitset::NoSlot, "Too many directional lights!");
         IB::Bitset::setSlot(Lighting.DirectionalLightAllocations, instanceIndex);
 
-        StagingBuffer staging = requestStagingBuffer(&Staging, sizeof(lightData));
-        memcpy(staging.Memory, &lightData, sizeof(lightData));
-
-        {
-            VkCommandBuffer commandBuffer = allocCommandBuffer(&API, GraphicsQueue::Transfer);
-
-            VkCommandBufferBeginInfo beginBufferInfo = {};
-            beginBufferInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-            beginBufferInfo.flags |= VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-
-            IB_VKCHECK(vkBeginCommandBuffer(commandBuffer, &beginBufferInfo));
-
-            VkBufferCopy copy = {};
-            copy.srcOffset = staging.Offset;
-            copy.dstOffset = instanceIndex * sizeof(DirectionalLight);
-            copy.size = sizeof(DirectionalLight);
-            vkCmdCopyBuffer(commandBuffer, staging.Buffer, Lighting.LightBuffer, 1, &copy);
-
-            IB_VKCHECK(vkEndCommandBuffer(commandBuffer));
-            
-            VkSubmitInfo submitInfo = {};
-            submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-            submitInfo.commandBufferCount = 1;
-            submitInfo.pCommandBuffers = &commandBuffer;
-            IB_VKCHECK(vkQueueSubmit(API.Queues[GraphicsQueue::Transfer].Queue, 1, &submitInfo, staging.Fence));
-
-            Staging.Transfers.Commands[Staging.Transfers.ActiveCount++] = commandBuffer;
-        }
+        writeToBuffer(&API, &Staging, 
+            {
+                Lighting.LightBuffer,
+                &lightData,
+                sizeof(DirectionalLight),
+                1,
+                instanceIndex * sizeof(DirectionalLight)
+            });
 
         return Light::toHandle(static_cast<uint32_t>(instanceIndex));
     }

@@ -128,7 +128,7 @@ namespace IB
         VkBuffer Buffer;
         IB::VkMemory::Allocation Allocation;
         void* MappedMemory = nullptr;
-        uint32_t WriteOffset = 0;
+        size_t WriteOffset = 0;
 
         VkFence Fences[MaxStagingFenceCount];
         uint32_t ActiveFenceCount = 0;
@@ -151,7 +151,7 @@ namespace IB
     {
         VkBuffer Buffer;
         void* Memory;
-        uint32_t Offset;
+        size_t Offset;
         VkFence Fence;
     };
 
@@ -162,7 +162,7 @@ namespace IB
 
     void initStaging(GraphicsAPI* api, StagingDesc desc, StagingCore* outStaging);
     void killStaging(GraphicsAPI* api, VkMemory::Allocator* allocator, StagingCore* staging);
-    StagingBuffer requestStagingBuffer(StagingCore* staging, uint32_t size, uint32_t alignment = 1);
+    StagingBuffer requestStagingBuffer(StagingCore* staging, size_t size, size_t alignment = 1);
 }
 
 // Texture
@@ -190,11 +190,26 @@ namespace IB
     {
         Texture* Texture;
         uint8_t const* Data;
-        uint32_t DataSize;
-        uint32_t DataAlignment;
+        uint32_t Size;
+        uint32_t Alignment;
     };
 
     void uploadTexture(GraphicsAPI* api, StagingCore* staging, UploadTextureDesc desc);
+}
+
+// Buffer
+namespace IB
+{
+    struct WriteToBufferDesc
+    {
+        VkBuffer Buffer = VK_NULL_HANDLE;
+        void const* Data = nullptr;
+        size_t Size = 0;
+        size_t Alignment = 1;
+        size_t WriteOffset = 0;
+    };
+
+    void writeToBuffer(GraphicsAPI* api, StagingCore* stagingCore, WriteToBufferDesc desc);
 }
 
 // Command buffer
@@ -916,8 +931,8 @@ namespace IB
 
     void uploadTexture(GraphicsAPI* api, StagingCore* staging, UploadTextureDesc desc)
     {
-        StagingBuffer stagingBuffer = requestStagingBuffer(staging, desc.DataSize, desc.DataAlignment);
-        memcpy(stagingBuffer.Memory, desc.Data, desc.DataSize);
+        StagingBuffer stagingBuffer = requestStagingBuffer(staging, desc.Size, desc.Alignment);
+        memcpy(stagingBuffer.Memory, desc.Data, desc.Size);
 
         VkCommandBuffer commandBuffer = allocCommandBuffer(api, GraphicsQueue::Transfer);
 
@@ -986,6 +1001,40 @@ namespace IB
         IB_VKCHECK(vkQueueSubmit(api->Queues[GraphicsQueue::Transfer].Queue, 1, &submitInfo, stagingBuffer.Fence));
 
         staging->Transfers.Commands[staging->Transfers.ActiveCount++] = commandBuffer;
+    }
+}
+
+// Buffer
+namespace IB
+{
+    void writeToBuffer(GraphicsAPI* api, StagingCore* stagingCore, WriteToBufferDesc desc)
+    {
+        StagingBuffer staging = requestStagingBuffer(stagingCore, desc.Size, desc.Alignment);
+        memcpy(staging.Memory, desc.Data, desc.Size);
+
+        VkCommandBuffer commandBuffer = allocCommandBuffer(api, GraphicsQueue::Transfer);
+
+        VkCommandBufferBeginInfo beginBufferInfo = {};
+        beginBufferInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        beginBufferInfo.flags |= VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+        IB_VKCHECK(vkBeginCommandBuffer(commandBuffer, &beginBufferInfo));
+
+        VkBufferCopy copy = {};
+        copy.srcOffset = staging.Offset;
+        copy.dstOffset = desc.WriteOffset;
+        copy.size = desc.Size;
+        vkCmdCopyBuffer(commandBuffer, staging.Buffer, desc.Buffer, 1, &copy);
+
+        IB_VKCHECK(vkEndCommandBuffer(commandBuffer));
+
+        VkSubmitInfo submitInfo = {};
+        submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        submitInfo.commandBufferCount = 1;
+        submitInfo.pCommandBuffers = &commandBuffer;
+        IB_VKCHECK(vkQueueSubmit(api->Queues[GraphicsQueue::Transfer].Queue, 1, &submitInfo, staging.Fence));
+
+        stagingCore->Transfers.Commands[stagingCore->Transfers.ActiveCount++] = commandBuffer;
     }
 }
 
@@ -1306,9 +1355,9 @@ namespace IB
         }
     }
 
-    StagingBuffer requestStagingBuffer(StagingCore* staging, uint32_t size, uint32_t alignment)
+    StagingBuffer requestStagingBuffer(StagingCore* staging, size_t size, size_t alignment)
     {
-        uint32_t alignmentBump = staging->WriteOffset % alignment;
+        size_t alignmentBump = staging->WriteOffset % alignment;
         alignmentBump = alignmentBump != 0 ? alignment - alignmentBump : alignmentBump;
 
         IB_ASSERT(staging->WriteOffset + size + alignmentBump < StagingSize, "TODO: Handle flushing our staging buffer if we reach the maximum.");
