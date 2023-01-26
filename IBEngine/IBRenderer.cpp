@@ -398,13 +398,7 @@ namespace IB
 
             for (uint32_t fb = 0; fb < FrameBufferCount; fb++)
             {
-                VkCommandBufferAllocateInfo commandBufferAllocateInfo = {};
-                commandBufferAllocateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-                commandBufferAllocateInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-                commandBufferAllocateInfo.commandBufferCount = 1;
-                commandBufferAllocateInfo.commandPool = API.Queues[GraphicsQueue::Graphics].CommandPool;
-
-                IB_VKCHECK(vkAllocateCommandBuffers(API.LogicalDevice, &commandBufferAllocateInfo, &RendererContext.Present.FrameBuffer[fb].PrimaryCommandBuffer));
+                RendererContext.Present.FrameBuffer[fb].PrimaryCommandBuffer = allocCommandBuffer(&API, GraphicsQueue::Graphics);
 
                 // Semaphore
                 VkSemaphoreCreateInfo semaphoreCreateInfo = {};
