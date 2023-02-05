@@ -207,6 +207,30 @@ namespace IB
             uint32_t AlbedoIndexAndFlags;
         };
 
+        struct ForwardPassInput
+        {
+            enum
+            {
+                Meshes,
+                Sampler,
+                Textures,
+                Materials,
+                DirectionalLights,
+                PerFrameData,
+                Count
+            };
+        };
+
+        ShaderInputDesc ForwardPassInputs[ForwardPassInput::Count] = 
+        {
+            { ForwardPassInput::Meshes, VK_SHADER_STAGE_VERTEX_BIT, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER },
+            { ForwardPassInput::Sampler, VK_SHADER_STAGE_FRAGMENT_BIT, VK_DESCRIPTOR_TYPE_SAMPLER },
+            { ForwardPassInput::Textures, VK_SHADER_STAGE_FRAGMENT_BIT, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, MaxImageCount, VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT },
+            { ForwardPassInput::Materials, VK_SHADER_STAGE_FRAGMENT_BIT, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER },
+            { ForwardPassInput::DirectionalLights, VK_SHADER_STAGE_FRAGMENT_BIT, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER },
+            { ForwardPassInput::PerFrameData, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER }
+        };
+
         uint32_t constexpr MaxMaterialInstanceCount = 100;
         struct ForwardPass
         {
@@ -217,7 +241,7 @@ namespace IB
             VkPipelineLayout PipelineLayout;
             VkPipeline Pipelines[SubpassCount];
 
-            VkDescriptorSet ShaderDescriptor;
+            ShaderBlock InputBlock;
             VkSampler Sampler;
             VkBuffer MaterialBuffer;
             IB::VkMemory::Allocation MaterialBufferAllocation;
@@ -415,30 +439,9 @@ namespace IB
         // Forward pass constant data
         {
             // Graphics pipeline
-            struct ForwardPassInput
-            {
-                enum
-                {
-                    Meshes,
-                    Sampler,
-                    Textures,
-                    Materials,
-                    DirectionalLights,
-                    PerFrameData,
-                    Count
-                };
-            };
-
             ForwardPass.ShaderLayout = allocShaderBlockLayout(&API,
                 ShaderBlockLayoutDesc{
-                    {
-                        ShaderInputDesc{ ForwardPassInput::Meshes, VK_SHADER_STAGE_VERTEX_BIT, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER },
-                        ShaderInputDesc{ ForwardPassInput::Sampler, VK_SHADER_STAGE_FRAGMENT_BIT, VK_DESCRIPTOR_TYPE_SAMPLER },
-                        ShaderInputDesc{ ForwardPassInput::Textures, VK_SHADER_STAGE_FRAGMENT_BIT, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, MaxImageCount, VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT },
-                        ShaderInputDesc{ ForwardPassInput::Materials, VK_SHADER_STAGE_FRAGMENT_BIT, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER },
-                        ShaderInputDesc{ ForwardPassInput::DirectionalLights, VK_SHADER_STAGE_FRAGMENT_BIT, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER },
-                        ShaderInputDesc{ ForwardPassInput::PerFrameData, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER }
-                    },
+                    ForwardPassInputs,
                     ForwardPassInput::Count
                 });
 
@@ -661,81 +664,24 @@ namespace IB
 
         // Write to our template descriptor set
         {
-            VkDescriptorSetAllocateInfo descriptorSetAlloc = {};
-            descriptorSetAlloc.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-            descriptorSetAlloc.descriptorPool = API.DescriptorPool;
-            descriptorSetAlloc.descriptorSetCount = 1;
-            descriptorSetAlloc.pSetLayouts = &ForwardPass.ShaderLayout.DescriptorSetLayout;
-            IB_VKCHECK(vkAllocateDescriptorSets(
-                API.LogicalDevice, &descriptorSetAlloc,
-                &ForwardPass.ShaderDescriptor));
+            ForwardPass.InputBlock = allocShaderBlock(&API, &ForwardPass.ShaderLayout);
 
-            VkDescriptorBufferInfo meshBufferInfo = {};
-            meshBufferInfo.buffer = Geometry.MeshDataBuffers;
-            meshBufferInfo.offset = 0;
-            meshBufferInfo.range = MeshBufferSize;
+            ShaderInputWrite writes[] =
+            {
+                { ForwardPassInputs[ForwardPassInput::Meshes], ShaderInputWrite::BufferWrite, VkDescriptorBufferInfo{ Geometry.MeshDataBuffers, 0, MeshBufferSize } },
+                { ForwardPassInputs[ForwardPassInput::Sampler], ShaderInputWrite::SamplerWrite, VkDescriptorBufferInfo{}, VkDescriptorImageInfo{ ForwardPass.Sampler } },
+                { ForwardPassInputs[ForwardPassInput::Materials], ShaderInputWrite::BufferWrite, VkDescriptorBufferInfo{ForwardPass.MaterialBuffer, 0, MaxMaterialInstanceCount * sizeof(ForwardMaterial) } },
+                { ForwardPassInputs[ForwardPassInput::DirectionalLights], ShaderInputWrite::BufferWrite, VkDescriptorBufferInfo{ Lighting.LightBuffer, 0, MaxDirectionalLightCount * sizeof(DirectionalLight) } },
+                { ForwardPassInputs[ForwardPassInput::PerFrameData], ShaderInputWrite::BufferWrite, VkDescriptorBufferInfo{IndirectDraw.PerFrameData.Buffer, 0, FrameBufferCount * MaxPerFrameDrawDataSize } },
+            };
 
-            VkWriteDescriptorSet writeGeometry = {};
-            writeGeometry.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            writeGeometry.dstSet = ForwardPass.ShaderDescriptor;
-            writeGeometry.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-            writeGeometry.dstBinding = 0;
-            writeGeometry.descriptorCount = 1;
-            writeGeometry.pBufferInfo = &meshBufferInfo;
-
-            VkDescriptorImageInfo samplerInfo = {};
-            samplerInfo.sampler = ForwardPass.Sampler;
-
-            VkWriteDescriptorSet writeSamplerSet = {};
-            writeSamplerSet.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            writeSamplerSet.dstSet = ForwardPass.ShaderDescriptor;
-            writeSamplerSet.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER;
-            writeSamplerSet.dstBinding = 1;
-            writeSamplerSet.descriptorCount = 1;
-            writeSamplerSet.pImageInfo = &samplerInfo;
-
-            VkDescriptorBufferInfo materialBufferInfo = {};
-            materialBufferInfo.buffer = ForwardPass.MaterialBuffer;
-            materialBufferInfo.offset = 0;
-            materialBufferInfo.range = MaxMaterialInstanceCount * sizeof(ForwardMaterial);
-
-            VkWriteDescriptorSet writeMaterials = {};
-            writeMaterials.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            writeMaterials.dstSet = ForwardPass.ShaderDescriptor;
-            writeMaterials.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-            writeMaterials.dstBinding = 3;
-            writeMaterials.descriptorCount = 1;
-            writeMaterials.pBufferInfo = &materialBufferInfo;
-
-            VkDescriptorBufferInfo lightBufferInfo = {};
-            lightBufferInfo.buffer = Lighting.LightBuffer;
-            lightBufferInfo.offset = 0;
-            lightBufferInfo.range = MaxDirectionalLightCount * sizeof(DirectionalLight);
-
-            VkWriteDescriptorSet writeLights = {};
-            writeLights.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            writeLights.dstSet = ForwardPass.ShaderDescriptor;
-            writeLights.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-            writeLights.dstBinding = 4;
-            writeLights.descriptorCount = 1;
-            writeLights.pBufferInfo = &lightBufferInfo;
-
-            VkDescriptorBufferInfo perFrameBufferInfo = {};
-            perFrameBufferInfo.buffer = IndirectDraw.PerFrameData.Buffer;
-            perFrameBufferInfo.offset = 0;
-            perFrameBufferInfo.range = FrameBufferCount * MaxPerFrameDrawDataSize;
-
-            VkWriteDescriptorSet writePerFrame = {};
-            writePerFrame.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            writePerFrame.dstSet = ForwardPass.ShaderDescriptor;
-            writePerFrame.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-            writePerFrame.dstBinding = 5;
-            writePerFrame.descriptorCount = 1;
-            writePerFrame.pBufferInfo = &perFrameBufferInfo;
-
-            VkWriteDescriptorSet writeDescriptorSets[] = {writeSamplerSet, writeGeometry, writeMaterials, writeLights, writePerFrame};
-            vkUpdateDescriptorSets(API.LogicalDevice, arrayCount(writeDescriptorSets), writeDescriptorSets, 0, NULL);
-        }
+            writeToShaderBlock(&API,
+                {
+                    &ForwardPass.InputBlock,
+                    writes,
+                    arrayCount(writes)
+                });
+            }
 
         // ImGui
         {
@@ -812,7 +758,7 @@ namespace IB
             freeDeviceMemory(&Allocator, RendererContext.Textures.Images[i].Allocation);
         }
 
-        freeShaderBlockLayout(&API, ForwardPass.ShaderLayout);
+        freeShaderBlockLayout(&API, &ForwardPass.ShaderLayout);
 
         vkDestroyPipelineLayout(API.LogicalDevice, ForwardPass.PipelineLayout, NoVkAllocator);
 
@@ -1154,7 +1100,7 @@ namespace IB
 
         RendererContext.Textures.Images[imageIndex] = allocTexture(textureAlloc);
 
-        uploadTexture(&API, &Staging, 
+        writeToTexture(&API, &Staging, 
             {
                 &RendererContext.Textures.Images[imageIndex],
                 desc.Data,
@@ -1173,7 +1119,7 @@ namespace IB
 
             *descriptorWrite = {};
             descriptorWrite->sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            descriptorWrite->dstSet = ForwardPass.ShaderDescriptor;
+            descriptorWrite->dstSet = ForwardPass.InputBlock.DescriptorSet;
             descriptorWrite->descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
             descriptorWrite->dstBinding = 2;
             descriptorWrite->dstArrayElement = imageIndex;
@@ -1374,7 +1320,7 @@ namespace IB
             scissor.extent = RendererContext.Present.Surface.Extents;
             vkCmdSetScissor(currentCommands, 0, 1, &scissor);
 
-            VkDescriptorSet set = ForwardPass.ShaderDescriptor;
+            VkDescriptorSet set = ForwardPass.InputBlock.DescriptorSet;
             vkCmdBindDescriptorSets(
                 currentCommands, VK_PIPELINE_BIND_POINT_GRAPHICS, ForwardPass.PipelineLayout,
                 0, 1, &set, 0, VK_NULL_HANDLE);

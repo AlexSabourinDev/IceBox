@@ -206,7 +206,7 @@ namespace IB
         VkImageLayout oldLayout,
         VkImageLayout newLayout);
 
-    struct UploadTextureDesc
+    struct WriteToTextureDesc
     {
         Texture* Texture;
         uint8_t const* Data;
@@ -214,7 +214,7 @@ namespace IB
         uint32_t Alignment;
     };
 
-    void uploadTexture(GraphicsAPI* api, StagingCore* staging, UploadTextureDesc desc);
+    void writeToTexture(GraphicsAPI* api, StagingCore* staging, WriteToTextureDesc desc);
 }
 
 // Buffer
@@ -317,10 +317,9 @@ namespace IB
         VkDescriptorBindingFlagsEXT BindingFlags;
     };
 
-    constexpr uint32_t MaxShaderInputPerBlock = 32;
     struct ShaderBlockLayoutDesc
     {
-        ShaderInputDesc Inputs[MaxShaderInputPerBlock];
+        ShaderInputDesc* Inputs;
         uint32_t Count;
     };
 
@@ -331,6 +330,39 @@ namespace IB
 
     ShaderBlockLayout allocShaderBlockLayout(GraphicsAPI* api, ShaderBlockLayoutDesc blockLayoutDesc);
     void freeShaderBlockLayout(GraphicsAPI* api, ShaderBlockLayout* layout);
+
+    struct ShaderBlock
+    {
+        VkDescriptorSet DescriptorSet;
+    };
+
+    ShaderBlock allocShaderBlock(GraphicsAPI* api, ShaderBlockLayout* layout);
+
+    struct ShaderInputWrite
+    {
+        enum Enum
+        {
+            BufferWrite,
+            TextureWrite,
+            SamplerWrite,
+        };
+
+        ShaderInputDesc Desc;
+        Enum Type;
+
+        // Write to the appropriate one based on the types
+        VkDescriptorBufferInfo Buffer;
+        VkDescriptorImageInfo ImageAndSampler;
+    };
+
+    struct WriteToShaderBlockDesc
+    {
+        ShaderBlock* Block;
+        ShaderInputWrite* Inputs;
+        uint32_t Count;
+    };
+
+    void writeToShaderBlock(GraphicsAPI* api, WriteToShaderBlockDesc desc);
 }
 
 // TODO: Move to CPP when in a good place
@@ -977,7 +1009,7 @@ namespace IB
         return imageBarrier;
     }
 
-    void uploadTexture(GraphicsAPI* api, StagingCore* staging, UploadTextureDesc desc)
+    void writeToTexture(GraphicsAPI* api, StagingCore* staging, WriteToTextureDesc desc)
     {
         StagingBuffer stagingBuffer = requestStagingBuffer(staging, desc.Size, desc.Alignment);
         memcpy(stagingBuffer.Memory, desc.Data, desc.Size);
@@ -1451,8 +1483,11 @@ namespace IB
 // Graphics pipelines
 namespace IB
 {
+    constexpr uint32_t MaxShaderInputPerBlock = 32;
     ShaderBlockLayout allocShaderBlockLayout(GraphicsAPI* api, ShaderBlockLayoutDesc blockLayoutDesc)
     {
+        IB_ASSERT(blockLayoutDesc.Count < MaxShaderInputPerBlock, "Too many shader inputs! Increase MaxShaderInputPerBlock.");
+
         ShaderBlockLayout blockLayout = {};
 
         VkDescriptorSetLayoutBinding bindings[MaxShaderInputPerBlock] = {};
@@ -1460,7 +1495,7 @@ namespace IB
         for(uint32_t i = 0; i < blockLayoutDesc.Count; i++)
         {
             bindings[i].stageFlags = blockLayoutDesc.Inputs[i].Shaders;
-            bindings[i].binding = blockLayoutDesc.Inputs[i].Index;
+            bindings[i].binding = i;
             bindings[i].descriptorType = blockLayoutDesc.Inputs[i].Type;
             bindings[i].descriptorCount = blockLayoutDesc.Inputs[i].ArraySize;
 
@@ -1485,6 +1520,52 @@ namespace IB
     void freeShaderBlockLayout(GraphicsAPI* api, ShaderBlockLayout* layout)
     {
         vkDestroyDescriptorSetLayout(api->LogicalDevice, layout->DescriptorSetLayout, NoVkAllocator);
+    }
+
+    ShaderBlock allocShaderBlock(GraphicsAPI* api, ShaderBlockLayout* layout)
+    {
+        ShaderBlock block = {};
+
+        VkDescriptorSetAllocateInfo descriptorSetAlloc = {};
+        descriptorSetAlloc.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+        descriptorSetAlloc.descriptorPool = api->DescriptorPool;
+        descriptorSetAlloc.descriptorSetCount = 1;
+        descriptorSetAlloc.pSetLayouts = &layout->DescriptorSetLayout;
+        IB_VKCHECK(vkAllocateDescriptorSets(
+            api->LogicalDevice, &descriptorSetAlloc,
+            &block.DescriptorSet));
+
+        return block;
+    }
+
+    void writeToShaderBlock(GraphicsAPI* api, WriteToShaderBlockDesc desc)
+    {
+        VkWriteDescriptorSet writes[MaxShaderInputPerBlock] = {};
+        IB_ASSERT(desc.Count < MaxShaderInputPerBlock, "Too many writes to our descriptor set.");
+
+        for(uint32_t i = 0; i < desc.Count; i++)
+        {
+            writes[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            writes[i].dstSet = desc.Block->DescriptorSet;
+            writes[i].descriptorType = desc.Inputs[i].Desc.Type;
+            writes[i].dstBinding = desc.Inputs[i].Desc.Index;
+            writes[i].descriptorCount = 1; // TODO: Support multiple array writes
+
+            if(desc.Inputs[i].Type == ShaderInputWrite::BufferWrite)
+            {
+                writes[i].pBufferInfo = &desc.Inputs[i].Buffer;
+            }
+            else if(desc.Inputs[i].Type == ShaderInputWrite::TextureWrite || desc.Inputs[i].Type == ShaderInputWrite::SamplerWrite)
+            {
+                writes[i].pImageInfo = &desc.Inputs[i].ImageAndSampler;
+            }
+            else
+            {
+                IB_ASSERT(false, "Unsupported shader write type.");
+            }
+        }
+
+        vkUpdateDescriptorSets(api->LogicalDevice, desc.Count, writes, 0, NULL);
     }
 }
 
