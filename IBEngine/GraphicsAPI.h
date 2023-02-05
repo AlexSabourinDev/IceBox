@@ -305,6 +305,34 @@ namespace IB
     void rebuildSurface(GraphicsAPI* api, GraphicsSurface* surface);
 }
 
+// Graphics pipeline
+namespace IB
+{
+    struct ShaderInputDesc
+    {
+        uint32_t Index;
+        VkShaderStageFlags Shaders;
+        VkDescriptorType Type;
+        uint32_t ArraySize = 1;
+        VkDescriptorBindingFlagsEXT BindingFlags;
+    };
+
+    constexpr uint32_t MaxShaderInputPerBlock = 32;
+    struct ShaderBlockLayoutDesc
+    {
+        ShaderInputDesc Inputs[MaxShaderInputPerBlock];
+        uint32_t Count;
+    };
+
+    struct ShaderBlockLayout
+    {
+        VkDescriptorSetLayout DescriptorSetLayout;
+    };
+
+    ShaderBlockLayout allocShaderBlockLayout(GraphicsAPI* api, ShaderBlockLayoutDesc blockLayoutDesc);
+    void freeShaderBlockLayout(GraphicsAPI* api, ShaderBlockLayout* layout);
+}
+
 // TODO: Move to CPP when in a good place
 #ifdef IB_GRAPHICS_API_IMPL
 
@@ -1417,6 +1445,46 @@ namespace IB
         }
 
         staging->WriteOffset = 0;
+    }
+}
+
+// Graphics pipelines
+namespace IB
+{
+    ShaderBlockLayout allocShaderBlockLayout(GraphicsAPI* api, ShaderBlockLayoutDesc blockLayoutDesc)
+    {
+        ShaderBlockLayout blockLayout = {};
+
+        VkDescriptorSetLayoutBinding bindings[MaxShaderInputPerBlock] = {};
+        VkDescriptorBindingFlagsEXT bindFlags[MaxShaderInputPerBlock] = {};
+        for(uint32_t i = 0; i < blockLayoutDesc.Count; i++)
+        {
+            bindings[i].stageFlags = blockLayoutDesc.Inputs[i].Shaders;
+            bindings[i].binding = blockLayoutDesc.Inputs[i].Index;
+            bindings[i].descriptorType = blockLayoutDesc.Inputs[i].Type;
+            bindings[i].descriptorCount = blockLayoutDesc.Inputs[i].ArraySize;
+
+            bindFlags[i] = blockLayoutDesc.Inputs[i].BindingFlags;
+        }
+
+        VkDescriptorSetLayoutBindingFlagsCreateInfoEXT extendedInfo = {};
+        extendedInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO_EXT;
+        extendedInfo.bindingCount = blockLayoutDesc.Count;
+        extendedInfo.pBindingFlags = bindFlags;
+
+        VkDescriptorSetLayoutCreateInfo createLayout = {};
+        createLayout.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+        createLayout.pNext = &extendedInfo;
+        createLayout.bindingCount = blockLayoutDesc.Count;
+        createLayout.pBindings = bindings;
+        IB_VKCHECK(vkCreateDescriptorSetLayout(api->LogicalDevice, &createLayout, NoVkAllocator, &blockLayout.DescriptorSetLayout));
+    
+        return blockLayout;
+    }
+
+    void freeShaderBlockLayout(GraphicsAPI* api, ShaderBlockLayout* layout)
+    {
+        vkDestroyDescriptorSetLayout(api->LogicalDevice, layout->DescriptorSetLayout, NoVkAllocator);
     }
 }
 

@@ -212,7 +212,7 @@ namespace IB
         {
             static uint32_t constexpr SubpassCount = 2;
 
-            VkDescriptorSetLayout ShaderLayout;
+            ShaderBlockLayout ShaderLayout;
 
             VkPipelineLayout PipelineLayout;
             VkPipeline Pipelines[SubpassCount];
@@ -415,61 +415,54 @@ namespace IB
         // Forward pass constant data
         {
             // Graphics pipeline
-
-            // Per material type binding
+            struct ForwardPassInput
             {
-                VkDescriptorSetLayoutBinding vertexBinding0 = {};
-                vertexBinding0.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-                vertexBinding0.binding = 0;
-                vertexBinding0.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-                vertexBinding0.descriptorCount = 1;
+                enum
+                {
+                    Meshes,
+                    Sampler,
+                    Textures,
+                    Materials,
+                    DirectionalLights,
+                    PerFrameData,
+                    Count
+                };
+            };
 
-                VkDescriptorSetLayoutBinding fragBinding0 = {};
-                fragBinding0.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-                fragBinding0.binding = 1;
-                fragBinding0.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER;
-                fragBinding0.descriptorCount = 1;
+            ForwardPass.ShaderLayout = allocShaderBlockLayout(&API,
+                ShaderBlockLayoutDesc{
+                    {
+                        ShaderInputDesc{ ForwardPassInput::Meshes, VK_SHADER_STAGE_VERTEX_BIT, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER },
+                        ShaderInputDesc{ ForwardPassInput::Sampler, VK_SHADER_STAGE_FRAGMENT_BIT, VK_DESCRIPTOR_TYPE_SAMPLER },
+                        ShaderInputDesc{ ForwardPassInput::Textures, VK_SHADER_STAGE_FRAGMENT_BIT, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, MaxImageCount, VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT },
+                        ShaderInputDesc{ ForwardPassInput::Materials, VK_SHADER_STAGE_FRAGMENT_BIT, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER },
+                        ShaderInputDesc{ ForwardPassInput::DirectionalLights, VK_SHADER_STAGE_FRAGMENT_BIT, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER },
+                        ShaderInputDesc{ ForwardPassInput::PerFrameData, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER }
+                    },
+                    ForwardPassInput::Count
+                });
 
-                VkDescriptorSetLayoutBinding fragBinding1 = {};
-                fragBinding1.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-                fragBinding1.binding = 2;
-                fragBinding1.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
-                fragBinding1.descriptorCount = MaxImageCount;
+            /*struct PushConstantDesc
+            {
+                VkShaderStageFlags Shaders;
+                uint32_t Offset;
+                uint32_t Size;
+            };
 
-                VkDescriptorSetLayoutBinding fragBinding2 = {};
-                fragBinding2.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-                fragBinding2.binding = 3;
-                fragBinding2.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-                fragBinding2.descriptorCount = 1;
+            struct GraphicsPipelineDesc
+            {
+                struct
+                {
+                    ShaderBlockLayout* Layouts;
+                    uint32_t Count;
+                } ShaderBlocks;
 
-                VkDescriptorSetLayoutBinding fragBinding3 = {};
-                fragBinding3.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-                fragBinding3.binding = 4;
-                fragBinding3.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-                fragBinding3.descriptorCount = 1;
-
-                VkDescriptorSetLayoutBinding perFrameBufferBinding = {};
-                perFrameBufferBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
-                perFrameBufferBinding.binding = 5;
-                perFrameBufferBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-                perFrameBufferBinding.descriptorCount = 1;
-
-                VkDescriptorSetLayoutBinding layoutBindings[] = {vertexBinding0, fragBinding0, fragBinding1, fragBinding2, fragBinding3, perFrameBufferBinding};
-
-                VkDescriptorBindingFlagsEXT bindFlags[] = {0, 0, VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT_EXT, 0, 0, 0};
-                VkDescriptorSetLayoutBindingFlagsCreateInfoEXT extendedInfo = {};
-                extendedInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO_EXT;
-                extendedInfo.bindingCount = arrayCount(bindFlags);
-                extendedInfo.pBindingFlags = bindFlags;
-                static_assert(arrayCount(bindFlags) == arrayCount(layoutBindings), "Binding counts must match!");
-
-                VkDescriptorSetLayoutCreateInfo createLayout = {};
-                createLayout.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-                createLayout.pNext = &extendedInfo;
-                createLayout.bindingCount = arrayCount(layoutBindings);
-                createLayout.pBindings = layoutBindings;
-                IB_VKCHECK(vkCreateDescriptorSetLayout(API.LogicalDevice, &createLayout, NoVkAllocator, &ForwardPass.ShaderLayout));
-            }
+                struct
+                {
+                    PushConstantDesc* Data;
+                    uint32_t Count;
+                } PushConstants;
+            };*/
 
             {
                 VkPushConstantRange pushConstant = {};
@@ -481,7 +474,7 @@ namespace IB
 
                 VkDescriptorSetLayout layouts[] =
                     {
-                        ForwardPass.ShaderLayout,
+                        ForwardPass.ShaderLayout.DescriptorSetLayout,
                     };
 
                 VkPipelineLayoutCreateInfo pipelineLayoutCreate = {};
@@ -672,7 +665,7 @@ namespace IB
             descriptorSetAlloc.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
             descriptorSetAlloc.descriptorPool = API.DescriptorPool;
             descriptorSetAlloc.descriptorSetCount = 1;
-            descriptorSetAlloc.pSetLayouts = &ForwardPass.ShaderLayout;
+            descriptorSetAlloc.pSetLayouts = &ForwardPass.ShaderLayout.DescriptorSetLayout;
             IB_VKCHECK(vkAllocateDescriptorSets(
                 API.LogicalDevice, &descriptorSetAlloc,
                 &ForwardPass.ShaderDescriptor));
@@ -819,7 +812,7 @@ namespace IB
             freeDeviceMemory(&Allocator, RendererContext.Textures.Images[i].Allocation);
         }
 
-        vkDestroyDescriptorSetLayout(API.LogicalDevice, ForwardPass.ShaderLayout, NoVkAllocator);
+        freeShaderBlockLayout(&API, ForwardPass.ShaderLayout);
 
         vkDestroyPipelineLayout(API.LogicalDevice, ForwardPass.PipelineLayout, NoVkAllocator);
 
