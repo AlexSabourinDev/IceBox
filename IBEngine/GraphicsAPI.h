@@ -289,7 +289,7 @@ namespace IB
 
     struct WriteToBufferDesc
     {
-        VkBuffer Buffer = VK_NULL_HANDLE;
+        GraphicsBuffer* Buffer = nullptr;
         void const* Data = nullptr;
         size_t Size = 0;
         size_t Alignment = 1;
@@ -1170,7 +1170,7 @@ namespace IB
         copy.srcOffset = staging.Offset;
         copy.dstOffset = desc.WriteOffset;
         copy.size = desc.Size;
-        vkCmdCopyBuffer(commandBuffer, staging.Buffer, desc.Buffer, 1, &copy);
+        vkCmdCopyBuffer(commandBuffer, staging.Buffer, desc.Buffer->VulkanBuffer, 1, &copy);
 
         IB_VKCHECK(vkEndCommandBuffer(commandBuffer));
 

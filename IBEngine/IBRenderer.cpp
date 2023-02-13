@@ -231,8 +231,7 @@ namespace IB
 
             ShaderBlock InputBlock;
             VkSampler Sampler;
-            VkBuffer MaterialBuffer;
-            IB::VkMemory::Allocation MaterialBufferAllocation;
+            GraphicsBuffer MaterialBuffer;
 
             struct
             {
@@ -258,8 +257,7 @@ namespace IB
 
         struct Lighting
         {
-            VkBuffer LightBuffer;
-            IB::VkMemory::Allocation LightBufferAllocation;
+            GraphicsBuffer LightBuffer;
             uint64_t DirectionalLightAllocations[IB::Bitset::bufferSize(MaxDirectionalLightCount)];
 
             struct
@@ -524,63 +522,23 @@ namespace IB
                 });
         }
 
-        // Material buffer
-        {
-            VkBufferCreateInfo bufferCreate = {};
-            bufferCreate.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-            bufferCreate.size = MaxMaterialInstanceCount * sizeof(ForwardMaterial);
-            bufferCreate.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT; // buffers created through create buffer can always be transfered to
+        ForwardPass.MaterialBuffer = allocGraphicsBuffer(&API,
+            {
+                MaxMaterialInstanceCount * sizeof(ForwardMaterial),
+                VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                0,
+                VkMemory::Category::Misc
+            });
 
-            VkBuffer *buffer = &ForwardPass.MaterialBuffer;
-            IB_VKCHECK(vkCreateBuffer(API.LogicalDevice, &bufferCreate, NoVkAllocator, buffer));
-
-            VkMemoryRequirements memoryRequirements;
-            vkGetBufferMemoryRequirements(API.LogicalDevice, *buffer, &memoryRequirements);
-
-            VkMemory::AllocationRequest request;
-            request.Alignment = memoryRequirements.alignment;
-            request.Size = MaxMaterialInstanceCount * sizeof(ForwardMaterial);
-            request.LogicalDevice = API.LogicalDevice;
-            request.PhysicalDevice = API.PhysicalDevice;
-            request.RequiredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-            request.PreferredFlags = 0;
-            request.TypeBits = memoryRequirements.memoryTypeBits;
-            request.Category = VkMemory::Category::Misc;
-
-            VkMemory::Allocation *allocation = &ForwardPass.MaterialBufferAllocation;
-            *allocation = allocateDeviceMemory(&API.Allocator, request);
-
-            IB_VKCHECK(vkBindBufferMemory(API.LogicalDevice, *buffer, allocation->Memory, allocation->Offset));
-        }
-
-        // Lights buffer
-        {
-            VkBufferCreateInfo bufferCreate = {};
-            bufferCreate.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-            bufferCreate.size = MaxDirectionalLightCount * sizeof(DirectionalLight);
-            bufferCreate.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT; // buffers created through create buffer can always be transfered to
-
-            VkBuffer *buffer = &Lighting.LightBuffer;
-            IB_VKCHECK(vkCreateBuffer(API.LogicalDevice, &bufferCreate, NoVkAllocator, buffer));
-
-            VkMemoryRequirements memoryRequirements;
-            vkGetBufferMemoryRequirements(API.LogicalDevice, *buffer, &memoryRequirements);
-
-            VkMemory::AllocationRequest request;
-            request.Alignment = memoryRequirements.alignment;
-            request.Size = MaxDirectionalLightCount * sizeof(DirectionalLight);
-            request.LogicalDevice = API.LogicalDevice;
-            request.PhysicalDevice = API.PhysicalDevice;
-            request.RequiredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-            request.PreferredFlags = 0;
-            request.TypeBits = memoryRequirements.memoryTypeBits;
-            request.Category = VkMemory::Category::Misc;
-
-            VkMemory::Allocation *allocation = &Lighting.LightBufferAllocation;
-            *allocation = allocateDeviceMemory(&API.Allocator, request);
-
-            IB_VKCHECK(vkBindBufferMemory(API.LogicalDevice, *buffer, allocation->Memory, allocation->Offset));
-        }
+        Lighting.LightBuffer = allocGraphicsBuffer(&API,
+            {
+                MaxDirectionalLightCount * sizeof(DirectionalLight),
+                VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                0,
+                VkMemory::Category::Misc
+            });
 
         // Create our sampler
         {
@@ -612,8 +570,8 @@ namespace IB
             {
                 { &ForwardPassInputs[ForwardPassInput::Meshes], ShaderInputWrite::BufferWrite, VkDescriptorBufferInfo{ Geometry.MeshDataBuffers.VulkanBuffer, 0, MeshBufferSize } },
                 { &ForwardPassInputs[ForwardPassInput::Sampler], ShaderInputWrite::SamplerWrite, VkDescriptorBufferInfo{}, VkDescriptorImageInfo{ ForwardPass.Sampler } },
-                { &ForwardPassInputs[ForwardPassInput::Materials], ShaderInputWrite::BufferWrite, VkDescriptorBufferInfo{ForwardPass.MaterialBuffer, 0, MaxMaterialInstanceCount * sizeof(ForwardMaterial) } },
-                { &ForwardPassInputs[ForwardPassInput::DirectionalLights], ShaderInputWrite::BufferWrite, VkDescriptorBufferInfo{ Lighting.LightBuffer, 0, MaxDirectionalLightCount * sizeof(DirectionalLight) } },
+                { &ForwardPassInputs[ForwardPassInput::Materials], ShaderInputWrite::BufferWrite, VkDescriptorBufferInfo{ForwardPass.MaterialBuffer.VulkanBuffer, 0, MaxMaterialInstanceCount * sizeof(ForwardMaterial) } },
+                { &ForwardPassInputs[ForwardPassInput::DirectionalLights], ShaderInputWrite::BufferWrite, VkDescriptorBufferInfo{ Lighting.LightBuffer.VulkanBuffer, 0, MaxDirectionalLightCount * sizeof(DirectionalLight) } },
                 { &ForwardPassInputs[ForwardPassInput::PerFrameData], ShaderInputWrite::BufferWrite, VkDescriptorBufferInfo{IndirectDraw.PerFrameData.VulkanBuffer, 0, FrameBufferCount * MaxPerFrameDrawDataSize } },
             };
 
@@ -709,11 +667,9 @@ namespace IB
         }
 
         vkDestroySampler(API.LogicalDevice, ForwardPass.Sampler, NoVkAllocator);
-        vkDestroyBuffer(API.LogicalDevice, ForwardPass.MaterialBuffer, NoVkAllocator);
-        freeDeviceMemory(&API.Allocator, ForwardPass.MaterialBufferAllocation);
 
-        vkDestroyBuffer(API.LogicalDevice, Lighting.LightBuffer, NoVkAllocator);
-        freeDeviceMemory(&API.Allocator, Lighting.LightBufferAllocation);
+        freeGraphicsBuffer(&API, &ForwardPass.MaterialBuffer);
+        freeGraphicsBuffer(&API, &Lighting.LightBuffer);
 
         for (uint32_t fb = 0; fb < FrameBufferCount; fb++)
         {
@@ -1081,7 +1037,7 @@ namespace IB
 
         writeToBuffer(&API, &Staging, 
             {
-                ForwardPass.MaterialBuffer,
+                &ForwardPass.MaterialBuffer,
                 &matData,
                 sizeof(ForwardMaterial),
                 1,
@@ -1119,7 +1075,7 @@ namespace IB
 
         writeToBuffer(&API, &Staging, 
             {
-                Lighting.LightBuffer,
+                &Lighting.LightBuffer,
                 &lightData,
                 sizeof(DirectionalLight),
                 1,
