@@ -73,6 +73,7 @@ namespace IB
             VkDeviceSize Offset = {};
             uint32_t Id = 0;
             uint32_t PoolIndex = 0;
+            uint8_t* CPUMemory = nullptr;
         };
 
         Allocation allocateDeviceMemory(Allocator *allocator, AllocationRequest request);
@@ -237,6 +238,7 @@ namespace IB
     {
         VkBuffer VulkanBuffer = VK_NULL_HANDLE;
         VkMemory::Allocation Allocation = {};
+        void* CPUMapping = nullptr;
     };
 
     struct GraphicsBufferDesc
@@ -520,22 +522,6 @@ namespace IB
             }
         }
 
-        void *mapAllocation(VkDevice logicalDevice, Allocator *allocator, Allocation allocation)
-        {
-            if (allocator->MemoryPools[allocation.PoolIndex].Map == nullptr)
-            {
-                unsigned int flags = 0;
-                IB_VKCHECK(vkMapMemory(logicalDevice, allocator->MemoryPools[allocation.PoolIndex].Memory, 0, VK_WHOLE_SIZE, flags, &allocator->MemoryPools[allocation.PoolIndex].Map));
-            }
-
-            return reinterpret_cast<uint8_t *>(allocator->MemoryPools[allocation.PoolIndex].Map) + allocation.Offset;
-        }
-
-        void unmapAllocation(Allocator * /*allocator*/, Allocation /*allocation*/)
-        {
-            // Does nothing
-        }
-
         Allocation allocateDeviceMemory(Allocator *allocator, AllocationRequest request)
         {
             uint32_t const memoryTypeIndex = findMemoryIndex(request.PhysicalDevice, request.TypeBits, request.RequiredFlags, request.PreferredFlags);
@@ -617,6 +603,18 @@ namespace IB
                     allocation.Offset = memoryBlock->Offset;
                     allocation.Id = memoryBlock->Id;
                     allocation.PoolIndex = foundPoolIndex;
+
+                    if(request.RequiredFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)
+                    {
+                        if (allocator->MemoryPools[allocation.PoolIndex].Map == nullptr)
+                        {
+                            unsigned int flags = 0;
+                            IB_VKCHECK(vkMapMemory(request.LogicalDevice, allocator->MemoryPools[allocation.PoolIndex].Memory, 0, VK_WHOLE_SIZE, flags, &allocator->MemoryPools[allocation.PoolIndex].Map));
+                        }
+
+                        allocation.CPUMemory = reinterpret_cast<uint8_t *>(allocator->MemoryPools[allocation.PoolIndex].Map) + allocation.Offset;
+                    }
+
                     return allocation;
                 }
             }
@@ -695,6 +693,17 @@ namespace IB
             allocation.Offset = allocationBlock->Offset;
             allocation.Id = allocationBlock->Id;
             allocation.PoolIndex = foundPoolIndex;
+
+            if(request.RequiredFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)
+            {
+                if (allocator->MemoryPools[allocation.PoolIndex].Map == nullptr)
+                {
+                    unsigned int flags = 0;
+                    IB_VKCHECK(vkMapMemory(request.LogicalDevice, allocator->MemoryPools[allocation.PoolIndex].Memory, 0, VK_WHOLE_SIZE, flags, &allocator->MemoryPools[allocation.PoolIndex].Map));
+                }
+
+                allocation.CPUMemory = reinterpret_cast<uint8_t *>(allocator->MemoryPools[allocation.PoolIndex].Map) + allocation.Offset;
+            }
             return allocation;
         }
 
@@ -1465,10 +1474,7 @@ namespace IB
             request.Category = VkMemory::Category::TransferSource;
 
             outStaging->Allocation = allocateDeviceMemory(desc.Allocator, request);
-            IB_VKCHECK(vkBindBufferMemory(api->LogicalDevice, outStaging->Buffer, outStaging->Allocation.Memory, outStaging->Allocation.Offset));
-
-            outStaging->MappedMemory = mapAllocation(api->LogicalDevice, desc.Allocator, outStaging->Allocation);
-        }
+            IB_VKCHECK(vkBindBufferMemory(api->LogicalDevice, outStaging->Buffer, outStaging->Allocation.Memory, outStaging->Allocation.Offset));        }
 
         // Fences
         {
@@ -1503,7 +1509,7 @@ namespace IB
 
         StagingBuffer stagingBuffer = {};
         stagingBuffer.Buffer = staging->Buffer;
-        stagingBuffer.Memory = reinterpret_cast<uint8_t*>(staging->MappedMemory) + staging->WriteOffset;
+        stagingBuffer.Memory = reinterpret_cast<uint8_t*>(staging->Allocation.CPUMemory) + staging->WriteOffset;
         stagingBuffer.Offset = staging->WriteOffset;
         stagingBuffer.Fence = staging->ActiveFences.alloc();
         staging->WriteOffset += size;

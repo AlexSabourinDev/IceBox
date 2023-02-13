@@ -188,14 +188,12 @@ namespace IB
             {
                 VkBuffer Buffer;
                 IB::VkMemory::Allocation Allocation;
-                uint8_t *MappedMemory = nullptr;
             } FrameBuffer[FrameBufferCount];
 
             struct
             {
                 VkBuffer Buffer;
                 IB::VkMemory::Allocation Allocation;
-                uint8_t *MappedMemory = nullptr;
             } PerFrameData;
         };
         IndirectDraw IndirectDraw;
@@ -522,8 +520,6 @@ namespace IB
 
             IndirectDraw.FrameBuffer[fb].Allocation = allocateDeviceMemory(&API.Allocator, request);
             IB_VKCHECK(vkBindBufferMemory(API.LogicalDevice, IndirectDraw.FrameBuffer[fb].Buffer, IndirectDraw.FrameBuffer[fb].Allocation.Memory, IndirectDraw.FrameBuffer[fb].Allocation.Offset));
-
-            IndirectDraw.FrameBuffer[fb].MappedMemory = reinterpret_cast<uint8_t*>(mapAllocation(API.LogicalDevice, &API.Allocator, IndirectDraw.FrameBuffer[fb].Allocation));
         }
 
         {
@@ -549,8 +545,6 @@ namespace IB
 
             IndirectDraw.PerFrameData.Allocation = allocateDeviceMemory(&API.Allocator, request);
             IB_VKCHECK(vkBindBufferMemory(API.LogicalDevice, IndirectDraw.PerFrameData.Buffer, IndirectDraw.PerFrameData.Allocation.Memory, IndirectDraw.PerFrameData.Allocation.Offset));
-
-            IndirectDraw.PerFrameData.MappedMemory = reinterpret_cast<uint8_t *>(mapAllocation(API.LogicalDevice, &API.Allocator, IndirectDraw.PerFrameData.Allocation));
         }
 
         // Mesh buffer
@@ -1317,10 +1311,10 @@ namespace IB
             uint32_t perFrameDataWriteIndex = MaxPerFrameDrawDataSize * fb;
             PerFrameData perFrameData;
             perFrameData.WorldToProjection = view.ViewProj;
-            memcpy(IndirectDraw.PerFrameData.MappedMemory + perFrameDataWriteIndex, &perFrameData, sizeof(PerFrameData));
+            memcpy(IndirectDraw.PerFrameData.Allocation.CPUMemory + perFrameDataWriteIndex, &perFrameData, sizeof(PerFrameData));
             perFrameDataWriteIndex += sizeof(PerFrameData);
 
-            memcpy(IndirectDraw.PerFrameData.MappedMemory + perFrameDataWriteIndex, &view.DirectionalLights.Count, sizeof(uint32_t));
+            memcpy(IndirectDraw.PerFrameData.Allocation.CPUMemory + perFrameDataWriteIndex, &view.DirectionalLights.Count, sizeof(uint32_t));
             perFrameDataWriteIndex += sizeof(uint32_t);
             for (uint32_t dirLight = 0; dirLight < view.DirectionalLights.Count; dirLight++)
             {
@@ -1330,7 +1324,7 @@ namespace IB
                     {view.DirectionalLights.Lights[dirLight].Direction,
                         bitcast<float>(Light::toValue(view.DirectionalLights.Lights[dirLight].Light))};
                 
-                memcpy(IndirectDraw.PerFrameData.MappedMemory + perFrameDataWriteIndex, &directionalLightInstance, sizeof(directionalLightInstance));
+                memcpy(IndirectDraw.PerFrameData.Allocation.CPUMemory + perFrameDataWriteIndex, &directionalLightInstance, sizeof(directionalLightInstance));
                 perFrameDataWriteIndex += sizeof(directionalLightInstance);
             }
 
@@ -1379,7 +1373,7 @@ namespace IB
                         drawIndexed.vertexOffset = 0;
                         drawIndexed.firstInstance = passDrawCount;
 
-                        memcpy(IndirectDraw.FrameBuffer[fb].MappedMemory + indirectDrawCount * sizeof(VkDrawIndexedIndirectCommand), &drawIndexed, sizeof(VkDrawIndexedIndirectCommand));
+                        memcpy(IndirectDraw.FrameBuffer[fb].Allocation.CPUMemory + indirectDrawCount * sizeof(VkDrawIndexedIndirectCommand), &drawIndexed, sizeof(VkDrawIndexedIndirectCommand));
                         indirectDrawCount += 1;
 
                         passDrawCount += batch->Meshes[mesh].Count;
@@ -1389,7 +1383,7 @@ namespace IB
                             perInstanceData.LocalToWorld = batch->Meshes[mesh].Transforms[inst];
                             perInstanceData.VertexOffset = Geometry.Meshes[meshIndex].VertexOffset;
                             perInstanceData.MaterialIndex = materialIndex;
-                            memcpy(IndirectDraw.PerFrameData.MappedMemory + perFrameDataWriteIndex, &perInstanceData, sizeof(PerInstanceData));
+                            memcpy(IndirectDraw.PerFrameData.Allocation.CPUMemory + perFrameDataWriteIndex, &perInstanceData, sizeof(PerInstanceData));
                             perFrameDataWriteIndex += sizeof(PerInstanceData);
                         }
                     }
