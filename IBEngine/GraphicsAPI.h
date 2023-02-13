@@ -169,7 +169,6 @@ namespace IB
     uint32_t constexpr StagingSize = 32 * 1024 * 1024; // 32MB of staging space
     uint32_t constexpr MaxStagingFenceCount = 128;
     uint32_t constexpr MaxTransferCount = 128;
-    uint32_t constexpr MaxDescriptorUpdateCount = 128;
     struct StagingCore
     {
         VkBuffer Buffer;
@@ -179,9 +178,6 @@ namespace IB
 
         FixedSizedPool<VkFence, MaxStagingFenceCount> ActiveFences;
         FixedSizedQueue<VkCommandBuffer, MaxTransferCount> Transfers;
-
-        FixedSizedQueue<VkDescriptorImageInfo, MaxDescriptorUpdateCount> DescriptorImageInfos;
-        FixedSizedQueue<VkWriteDescriptorSet, MaxDescriptorUpdateCount> DescriptorWrites;
     };
 
     struct StagingBuffer
@@ -1528,13 +1524,6 @@ namespace IB
         {
             freeCommandBuffers(api, GraphicsQueue::Transfer, staging->Transfers.Count, staging->Transfers.Data);
             staging->Transfers.Count = 0;
-        }
-
-        if (staging->DescriptorWrites.Count > 0)
-        {
-            vkUpdateDescriptorSets(api->LogicalDevice, staging->DescriptorWrites.Count, staging->DescriptorWrites.Data, 0, NULL);
-            staging->DescriptorWrites.Count = 0;
-            staging->DescriptorImageInfos.Count = 0;
         }
 
         staging->WriteOffset = 0;

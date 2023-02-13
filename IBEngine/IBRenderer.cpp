@@ -287,6 +287,13 @@ namespace IB
         Lighting Lighting;
         StagingCore Staging;
 
+        uint32_t constexpr MaxDescriptorUpdateCount = 128;
+        struct
+        {
+            FixedSizedQueue<VkDescriptorImageInfo, MaxDescriptorUpdateCount> ImageInfos;
+            FixedSizedQueue<VkWriteDescriptorSet, MaxDescriptorUpdateCount> Writes;
+        } DescriptorUpdates;
+
         struct TextureAllocation
         {
             VkImageUsageFlags Usage = {};
@@ -1090,8 +1097,8 @@ namespace IB
 
         // Queue up our shader descriptor update
         {
-            VkDescriptorImageInfo* imageInfo = &Staging.DescriptorImageInfos.add();
-            VkWriteDescriptorSet* descriptorWrite = &Staging.DescriptorWrites.add();
+            VkDescriptorImageInfo* imageInfo = &DescriptorUpdates.ImageInfos.add();
+            VkWriteDescriptorSet* descriptorWrite = &DescriptorUpdates.Writes.add();
 
             *imageInfo = {};
             imageInfo->imageView = RendererContext.Textures.Images[imageIndex].View;
@@ -1488,6 +1495,14 @@ namespace IB
             IB_VKCHECK(vkResetFences(API.LogicalDevice, 1, &RendererContext.Present.FrameBuffer[fb].FinishedFence));
 
             flushStaging(&API, &Staging);
+
+            // Descriptor updates
+            if (DescriptorUpdates.Writes.Count > 0)
+            {
+                vkUpdateDescriptorSets(API.LogicalDevice, DescriptorUpdates.Writes.Count, DescriptorUpdates.Writes.Data, 0, NULL);
+                DescriptorUpdates.Writes.Count = 0;
+                DescriptorUpdates.ImageInfos.Count = 0;
+            }
 
             // Cleanup our released material instances once we're sure they aren't in use anymore.
             {
