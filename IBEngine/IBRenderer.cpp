@@ -4,6 +4,7 @@
 #include "IBBinary.h"
 
 #define IB_GRAPHICS_API_IMPL
+#define IB_GRAPHICS_CONSTANTS
 #include "GraphicsAPI.h"
 
 #include <stdlib.h>
@@ -567,49 +568,6 @@ namespace IB
             }
         }
 
-        VkPipelineRasterizationStateCreateInfo constexpr rasterCullBackFaceCCW =
-        {
-            .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
-            .polygonMode = VK_POLYGON_MODE_FILL,
-            .cullMode = VK_CULL_MODE_BACK_BIT,
-            .frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE,
-            .lineWidth = 1.0f
-        };
-
-        VkPipelineRasterizationStateCreateInfo constexpr rasterNoCull =
-        {
-            .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
-            .polygonMode = VK_POLYGON_MODE_FILL,
-            .cullMode = VK_CULL_MODE_NONE,
-            .lineWidth = 1.0f
-        };
-
-        VkPipelineVertexInputStateCreateInfo constexpr nullVertexDesc = { .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO };
-        VkPipelineInputAssemblyStateCreateInfo constexpr inputAssemblyTriangleList = { .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO, .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST };
-
-        VkPipelineDepthStencilStateCreateInfo constexpr depthLessTestWriteNoStencil = 
-        {
-            .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
-            .depthTestEnable = VK_TRUE,
-            .depthWriteEnable = VK_TRUE,
-            .depthCompareOp = VK_COMPARE_OP_LESS,
-            .stencilTestEnable = VK_FALSE,
-            .minDepthBounds = 0.0f,
-            .maxDepthBounds = 1.0f,
-        };
-
-        VkPipelineColorBlendAttachmentState constexpr defaultAlphaBlend =
-        {
-            .blendEnable = VK_TRUE,
-            .srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA,
-            .dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
-            .colorBlendOp = VK_BLEND_OP_ADD,
-            .srcAlphaBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA,
-            .dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
-            .alphaBlendOp = VK_BLEND_OP_ADD,
-            .colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT
-        };
-
         ShaderDesc const shaders[] =
         {
             {
@@ -628,7 +586,7 @@ namespace IB
 
         RenderTargetDesc const screenRenderTarget = 
         {
-            .BlendDesc = defaultAlphaBlend,
+            .BlendDesc = BlendDescAlphaBlend,
             .Format = RendererContext.Present.Surface.Format.format
         };
 
@@ -645,11 +603,11 @@ namespace IB
             .ShaderDescs = { shaders, arrayCount(shaders) },
             .PushConstants = { &pushConstant, 1 },
             .ShaderBlockLayouts = { shaderLayouts, 1 },
-            .VertexDesc = nullVertexDesc,
-            .InputAssemblyDesc = inputAssemblyTriangleList,
-            .RasterizationDesc = rasterCullBackFaceCCW,
+            .VertexDesc = VertexInputNull,
+            .InputAssemblyDesc = InputAssemblyTriangleList,
+            .RasterizationDesc = RasterizationCullBackFaceCCW,
             .RenderTargetDescs = { &screenRenderTarget, 1 },
-            .DepthDesc = { depthLessTestWriteNoStencil, VK_FORMAT_D32_SFLOAT },
+            .DepthDesc = { DepthStateLessTestWriteNoStencil, VK_FORMAT_D32_SFLOAT },
         });
 
         GraphicsPipeline defaultDebugFoward = allocGraphicsPipeline(&API,
@@ -657,11 +615,11 @@ namespace IB
             .ShaderDescs = { shaders, arrayCount(shaders) },
             .PushConstants = { &pushConstant, 1 },
             .ShaderBlockLayouts = { shaderLayouts, 1 },
-            .VertexDesc = nullVertexDesc,
-            .InputAssemblyDesc = inputAssemblyTriangleList,
-            .RasterizationDesc = rasterNoCull,
+            .VertexDesc = VertexInputNull,
+            .InputAssemblyDesc = InputAssemblyTriangleList,
+            .RasterizationDesc = RasterizationNoCull,
             .RenderTargetDescs = { &screenRenderTarget, 1 },
-            .DepthDesc =  { depthLessTestWriteNoStencil, VK_FORMAT_D32_SFLOAT },
+            .DepthDesc =  { DepthStateLessTestWriteNoStencil, VK_FORMAT_D32_SFLOAT },
         });
         
         
