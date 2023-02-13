@@ -55,6 +55,18 @@ namespace IB
             uint32_t FreeBlockCount = 0;
         };
 
+        struct AllocationRequest
+        {
+            VkPhysicalDevice PhysicalDevice;
+            VkDevice LogicalDevice;
+            VkDeviceSize Size;
+            VkDeviceSize Alignment;
+            uint32_t TypeBits;
+            VkMemoryPropertyFlags RequiredFlags;
+            VkMemoryPropertyFlags PreferredFlags;
+            Category::Enum Category;
+        };
+
         struct Allocation
         {
             VkDeviceMemory Memory = {};
@@ -62,6 +74,9 @@ namespace IB
             uint32_t Id = 0;
             uint32_t PoolIndex = 0;
         };
+
+        Allocation allocateDeviceMemory(Allocator *allocator, AllocationRequest request);
+        void freeDeviceMemory(Allocator *allocator, Allocation allocation);
     }
 }
 
@@ -98,6 +113,8 @@ namespace IB
 
         VkDescriptorPool DescriptorPool;
         VkPipelineCache PipelineCache;
+
+        VkMemory::Allocator Allocator;
 
         struct
         {
@@ -220,6 +237,58 @@ namespace IB
 // Buffer
 namespace IB
 {
+    struct GraphicsBuffer
+    {
+        VkBuffer VulkanBuffer = VK_NULL_HANDLE;
+        VkMemory::Allocation Allocation = {};
+    };
+
+    struct GraphicsBufferDesc
+    {
+        size_t Size;
+        VkBufferUsageFlags Usage;
+        VkMemoryPropertyFlags RequiredMemoryFlags;
+        VkMemoryPropertyFlags PreferredMemoryFlags;
+        VkMemory::Category::Enum MemoryCategory;
+    };
+
+    GraphicsBuffer allocGraphicsBuffer(GraphicsAPI* api, GraphicsBufferDesc desc)
+    {
+        GraphicsBuffer buffer;
+
+        VkBufferCreateInfo bufferCreate = {};
+        bufferCreate.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+        bufferCreate.size = desc.Size;
+        bufferCreate.usage = desc.Usage; // buffers created through create buffer can always be transfered to
+
+        IB_VKCHECK(vkCreateBuffer(api->LogicalDevice, &bufferCreate, NoVkAllocator, &buffer.VulkanBuffer));
+
+        VkMemoryRequirements memoryRequirements;
+        vkGetBufferMemoryRequirements(api->LogicalDevice, buffer.VulkanBuffer, &memoryRequirements);
+
+        VkMemory::AllocationRequest request;
+        request.Alignment = memoryRequirements.alignment;
+        request.Size = desc.Size;
+        request.LogicalDevice = api->LogicalDevice;
+        request.PhysicalDevice = api->PhysicalDevice;
+        request.RequiredFlags = desc.RequiredMemoryFlags;
+        request.PreferredFlags = desc.PreferredMemoryFlags;
+        request.TypeBits = memoryRequirements.memoryTypeBits;
+        request.Category = desc.MemoryCategory;
+
+        buffer.Allocation = allocateDeviceMemory(&api->Allocator, request);
+
+        IB_VKCHECK(vkBindBufferMemory(api->LogicalDevice, buffer.VulkanBuffer, buffer.Allocation.Memory, buffer.Allocation.Offset));
+    
+        return buffer;
+    }
+
+    void freeGraphicsBuffer(GraphicsAPI* api, GraphicsBuffer* buffer)
+    {
+        vkDestroyBuffer(api->LogicalDevice, buffer->VulkanBuffer, NoVkAllocator);
+        freeDeviceMemory(&api->Allocator, buffer->Allocation);
+    }
+
     struct WriteToBufferDesc
     {
         VkBuffer Buffer = VK_NULL_HANDLE;
@@ -347,7 +416,7 @@ namespace IB
             SamplerWrite,
         };
 
-        ShaderInputDesc Desc;
+        ShaderInputDesc* Desc;
         Enum Type;
 
         // Write to the appropriate one based on the types
@@ -391,18 +460,6 @@ namespace IB
             1024 * 1024 * 64,
             1024 * 1024 * 64,
             1024 * 1024 * 512,
-        };
-
-        struct AllocationRequest
-        {
-            VkPhysicalDevice PhysicalDevice;
-            VkDevice LogicalDevice;
-            VkDeviceSize Size;
-            VkDeviceSize Alignment;
-            uint32_t TypeBits;
-            VkMemoryPropertyFlags RequiredFlags;
-            VkMemoryPropertyFlags PreferedFlags;
-            Category::Enum Category;
         };
 
         uint32_t findMemoryIndex(VkPhysicalDevice physicalDevice, uint32_t typeBits, VkMemoryPropertyFlags requiredFlags, VkMemoryPropertyFlags preferedFlags)
@@ -485,7 +542,7 @@ namespace IB
 
         Allocation allocateDeviceMemory(Allocator *allocator, AllocationRequest request)
         {
-            uint32_t const memoryTypeIndex = findMemoryIndex(request.PhysicalDevice, request.TypeBits, request.RequiredFlags, request.PreferedFlags);
+            uint32_t const memoryTypeIndex = findMemoryIndex(request.PhysicalDevice, request.TypeBits, request.RequiredFlags, request.PreferredFlags);
             IB_ASSERT(memoryTypeIndex != UINT32_MAX, "Invalid memory type index.");
 
             uint32_t foundPoolIndex = UINT32_MAX;
@@ -924,6 +981,8 @@ namespace IB
             }
         }
 
+        VkMemory::initAllocator(&outGraphicsAPI->Allocator);
+
         // Create the descriptor pools
         {
             VkDescriptorPoolSize descriptorPoolSizes[5];
@@ -973,6 +1032,8 @@ namespace IB
         vkDestroyPipelineCache(graphicsAPI->LogicalDevice, graphicsAPI->PipelineCache, NoVkAllocator);
         vkDestroyDescriptorPool(graphicsAPI->LogicalDevice, graphicsAPI->DescriptorPool, NoVkAllocator);
        
+        VkMemory::killAllocator(graphicsAPI->LogicalDevice, &graphicsAPI->Allocator);
+
         vkDestroyDevice(graphicsAPI->LogicalDevice, NoVkAllocator);
         vkDestroyInstance(graphicsAPI->Instance, NoVkAllocator);
     }
@@ -1403,7 +1464,7 @@ namespace IB
             request.LogicalDevice = api->LogicalDevice;
             request.PhysicalDevice = api->PhysicalDevice;
             request.RequiredFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-            request.PreferedFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+            request.PreferredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
             request.TypeBits = memoryRequirements.memoryTypeBits;
             request.Category = VkMemory::Category::TransferSource;
 
@@ -1540,15 +1601,17 @@ namespace IB
 
     void writeToShaderBlock(GraphicsAPI* api, WriteToShaderBlockDesc desc)
     {
-        VkWriteDescriptorSet writes[MaxShaderInputPerBlock] = {};
-        IB_ASSERT(desc.Count < MaxShaderInputPerBlock, "Too many writes to our descriptor set.");
+        constexpr uint32_t MaxShaderWrites = 256;
+
+        VkWriteDescriptorSet writes[MaxShaderWrites] = {};
+        IB_ASSERT(desc.Count < MaxShaderWrites, "Too many writes to our descriptor set.");
 
         for(uint32_t i = 0; i < desc.Count; i++)
         {
             writes[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
             writes[i].dstSet = desc.Block->DescriptorSet;
-            writes[i].descriptorType = desc.Inputs[i].Desc.Type;
-            writes[i].dstBinding = desc.Inputs[i].Desc.Index;
+            writes[i].descriptorType = desc.Inputs[i].Desc->Type;
+            writes[i].dstBinding = desc.Inputs[i].Desc->Index;
             writes[i].descriptorCount = 1; // TODO: Support multiple array writes
 
             if(desc.Inputs[i].Type == ShaderInputWrite::BufferWrite)

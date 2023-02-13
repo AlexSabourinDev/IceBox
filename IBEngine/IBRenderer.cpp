@@ -156,8 +156,7 @@ namespace IB
             uint32_t FreeIndexCount = 0;
 
             // Maintained as a series of chunks
-            VkBuffer MeshDataBuffers;
-            IB::VkMemory::Allocation Allocation;
+            GraphicsBuffer MeshDataBuffers;
         };
 
         uint32_t constexpr MaxIndirectDraws = 1024;
@@ -282,7 +281,6 @@ namespace IB
         };
 
         GraphicsAPI API;
-        VkMemory::Allocator Allocator;
         Context RendererContext;
         ForwardPass ForwardPass;
         Geometry Geometry;
@@ -334,12 +332,12 @@ namespace IB
                 request.LogicalDevice = API.LogicalDevice;
                 request.PhysicalDevice = API.PhysicalDevice;
                 request.RequiredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-                request.PreferedFlags = 0;
+                request.PreferredFlags = 0;
                 request.TypeBits = memoryRequirements.memoryTypeBits;
                 request.Category = IB::VkMemory::Category::Image;
 
                 IB::VkMemory::Allocation *allocation = &texture.Allocation;
-                *allocation = allocateDeviceMemory(&Allocator, request);
+                *allocation = allocateDeviceMemory(&API.Allocator, request);
 
                 IB_VKCHECK(vkBindImageMemory(API.LogicalDevice, texture.Image, allocation->Memory, allocation->Offset));
             }
@@ -387,8 +385,7 @@ namespace IB
         HINSTANCE instanceHandle;
         Win32::getWindowHandleAndInstance(desc.Window, &windowHandle, &instanceHandle);
         initGraphicsAPI({windowHandle, instanceHandle}, &API);
-        VkMemory::initAllocator(&Allocator);
-        initStaging(&API, {&Allocator}, &Staging);
+        initStaging(&API, {&API.Allocator}, &Staging);
 
         {
             VkFenceCreateInfo fenceCreateInfo = {};
@@ -494,6 +491,8 @@ namespace IB
         // Indirect Draw Buffer
         for (uint32_t fb = 0; fb < FrameBufferCount; fb++)
         {
+
+
             VkBufferCreateInfo bufferCreate = {};
             bufferCreate.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
             bufferCreate.size = MaxIndirectDraws * sizeof(VkDrawIndexedIndirectCommand);
@@ -510,14 +509,14 @@ namespace IB
             request.LogicalDevice = API.LogicalDevice;
             request.PhysicalDevice = API.PhysicalDevice;
             request.RequiredFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-            request.PreferedFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+            request.PreferredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
             request.TypeBits = memoryRequirements.memoryTypeBits;
             request.Category = VkMemory::Category::Misc;
 
-            IndirectDraw.FrameBuffer[fb].Allocation = allocateDeviceMemory(&Allocator, request);
+            IndirectDraw.FrameBuffer[fb].Allocation = allocateDeviceMemory(&API.Allocator, request);
             IB_VKCHECK(vkBindBufferMemory(API.LogicalDevice, IndirectDraw.FrameBuffer[fb].Buffer, IndirectDraw.FrameBuffer[fb].Allocation.Memory, IndirectDraw.FrameBuffer[fb].Allocation.Offset));
 
-            IndirectDraw.FrameBuffer[fb].MappedMemory = reinterpret_cast<uint8_t*>(mapAllocation(API.LogicalDevice, &Allocator, IndirectDraw.FrameBuffer[fb].Allocation));
+            IndirectDraw.FrameBuffer[fb].MappedMemory = reinterpret_cast<uint8_t*>(mapAllocation(API.LogicalDevice, &API.Allocator, IndirectDraw.FrameBuffer[fb].Allocation));
         }
 
         {
@@ -537,14 +536,14 @@ namespace IB
             request.LogicalDevice = API.LogicalDevice;
             request.PhysicalDevice = API.PhysicalDevice;
             request.RequiredFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-            request.PreferedFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+            request.PreferredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
             request.TypeBits = memoryRequirements.memoryTypeBits;
             request.Category = VkMemory::Category::Misc;
 
-            IndirectDraw.PerFrameData.Allocation = allocateDeviceMemory(&Allocator, request);
+            IndirectDraw.PerFrameData.Allocation = allocateDeviceMemory(&API.Allocator, request);
             IB_VKCHECK(vkBindBufferMemory(API.LogicalDevice, IndirectDraw.PerFrameData.Buffer, IndirectDraw.PerFrameData.Allocation.Memory, IndirectDraw.PerFrameData.Allocation.Offset));
 
-            IndirectDraw.PerFrameData.MappedMemory = reinterpret_cast<uint8_t *>(mapAllocation(API.LogicalDevice, &Allocator, IndirectDraw.PerFrameData.Allocation));
+            IndirectDraw.PerFrameData.MappedMemory = reinterpret_cast<uint8_t *>(mapAllocation(API.LogicalDevice, &API.Allocator, IndirectDraw.PerFrameData.Allocation));
         }
 
         // Mesh buffer
@@ -555,31 +554,14 @@ namespace IB
             }
             Geometry.FreeIndexCount = MaxMeshCount;
 
-            VkBufferCreateInfo bufferCreate = {};
-            bufferCreate.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-            bufferCreate.size = MeshBufferSize;
-            bufferCreate.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT; // buffers created through create buffer can always be transfered to
-
-            VkBuffer *buffer = &Geometry.MeshDataBuffers;
-            IB_VKCHECK(vkCreateBuffer(API.LogicalDevice, &bufferCreate, NoVkAllocator, buffer));
-
-            VkMemoryRequirements memoryRequirements;
-            vkGetBufferMemoryRequirements(API.LogicalDevice, *buffer, &memoryRequirements);
-
-            VkMemory::AllocationRequest request;
-            request.Alignment = memoryRequirements.alignment;
-            request.Size = MeshBufferSize;
-            request.LogicalDevice = API.LogicalDevice;
-            request.PhysicalDevice = API.PhysicalDevice;
-            request.RequiredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-            request.PreferedFlags = 0;
-            request.TypeBits = memoryRequirements.memoryTypeBits;
-            request.Category = VkMemory::Category::Mesh;
-
-            VkMemory::Allocation *allocation = &Geometry.Allocation;
-            *allocation = allocateDeviceMemory(&Allocator, request);
-
-            IB_VKCHECK(vkBindBufferMemory(API.LogicalDevice, *buffer, allocation->Memory, allocation->Offset));
+            Geometry.MeshDataBuffers = allocGraphicsBuffer(&API,
+                {
+                    MeshBufferSize,
+                    VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+                    VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                    0,
+                    VkMemory::Category::Mesh
+                });
         }
 
         // Material buffer
@@ -601,12 +583,12 @@ namespace IB
             request.LogicalDevice = API.LogicalDevice;
             request.PhysicalDevice = API.PhysicalDevice;
             request.RequiredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-            request.PreferedFlags = 0;
+            request.PreferredFlags = 0;
             request.TypeBits = memoryRequirements.memoryTypeBits;
             request.Category = VkMemory::Category::Misc;
 
             VkMemory::Allocation *allocation = &ForwardPass.MaterialBufferAllocation;
-            *allocation = allocateDeviceMemory(&Allocator, request);
+            *allocation = allocateDeviceMemory(&API.Allocator, request);
 
             IB_VKCHECK(vkBindBufferMemory(API.LogicalDevice, *buffer, allocation->Memory, allocation->Offset));
         }
@@ -630,12 +612,12 @@ namespace IB
             request.LogicalDevice = API.LogicalDevice;
             request.PhysicalDevice = API.PhysicalDevice;
             request.RequiredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-            request.PreferedFlags = 0;
+            request.PreferredFlags = 0;
             request.TypeBits = memoryRequirements.memoryTypeBits;
             request.Category = VkMemory::Category::Misc;
 
             VkMemory::Allocation *allocation = &Lighting.LightBufferAllocation;
-            *allocation = allocateDeviceMemory(&Allocator, request);
+            *allocation = allocateDeviceMemory(&API.Allocator, request);
 
             IB_VKCHECK(vkBindBufferMemory(API.LogicalDevice, *buffer, allocation->Memory, allocation->Offset));
         }
@@ -668,11 +650,11 @@ namespace IB
 
             ShaderInputWrite writes[] =
             {
-                { ForwardPassInputs[ForwardPassInput::Meshes], ShaderInputWrite::BufferWrite, VkDescriptorBufferInfo{ Geometry.MeshDataBuffers, 0, MeshBufferSize } },
-                { ForwardPassInputs[ForwardPassInput::Sampler], ShaderInputWrite::SamplerWrite, VkDescriptorBufferInfo{}, VkDescriptorImageInfo{ ForwardPass.Sampler } },
-                { ForwardPassInputs[ForwardPassInput::Materials], ShaderInputWrite::BufferWrite, VkDescriptorBufferInfo{ForwardPass.MaterialBuffer, 0, MaxMaterialInstanceCount * sizeof(ForwardMaterial) } },
-                { ForwardPassInputs[ForwardPassInput::DirectionalLights], ShaderInputWrite::BufferWrite, VkDescriptorBufferInfo{ Lighting.LightBuffer, 0, MaxDirectionalLightCount * sizeof(DirectionalLight) } },
-                { ForwardPassInputs[ForwardPassInput::PerFrameData], ShaderInputWrite::BufferWrite, VkDescriptorBufferInfo{IndirectDraw.PerFrameData.Buffer, 0, FrameBufferCount * MaxPerFrameDrawDataSize } },
+                { &ForwardPassInputs[ForwardPassInput::Meshes], ShaderInputWrite::BufferWrite, VkDescriptorBufferInfo{ Geometry.MeshDataBuffers.VulkanBuffer, 0, MeshBufferSize } },
+                { &ForwardPassInputs[ForwardPassInput::Sampler], ShaderInputWrite::SamplerWrite, VkDescriptorBufferInfo{}, VkDescriptorImageInfo{ ForwardPass.Sampler } },
+                { &ForwardPassInputs[ForwardPassInput::Materials], ShaderInputWrite::BufferWrite, VkDescriptorBufferInfo{ForwardPass.MaterialBuffer, 0, MaxMaterialInstanceCount * sizeof(ForwardMaterial) } },
+                { &ForwardPassInputs[ForwardPassInput::DirectionalLights], ShaderInputWrite::BufferWrite, VkDescriptorBufferInfo{ Lighting.LightBuffer, 0, MaxDirectionalLightCount * sizeof(DirectionalLight) } },
+                { &ForwardPassInputs[ForwardPassInput::PerFrameData], ShaderInputWrite::BufferWrite, VkDescriptorBufferInfo{IndirectDraw.PerFrameData.Buffer, 0, FrameBufferCount * MaxPerFrameDrawDataSize } },
             };
 
             writeToShaderBlock(&API,
@@ -745,17 +727,16 @@ namespace IB
             vkDestroyFence(API.LogicalDevice, RendererContext.Present.FrameBuffer[fb].FinishedFence, NoVkAllocator);
             vkDestroyImage(API.LogicalDevice, ForwardPass.FrameBuffer[fb].DepthImage.Image, NoVkAllocator);
             vkDestroyImageView(API.LogicalDevice, ForwardPass.FrameBuffer[fb].DepthImage.View, NoVkAllocator);
-            freeDeviceMemory(&Allocator, ForwardPass.FrameBuffer[fb].DepthImage.Allocation);
+            freeDeviceMemory(&API.Allocator, ForwardPass.FrameBuffer[fb].DepthImage.Allocation);
         }
 
-        vkDestroyBuffer(API.LogicalDevice, Geometry.MeshDataBuffers, NoVkAllocator);
-        freeDeviceMemory(&Allocator, Geometry.Allocation);
+        freeGraphicsBuffer(&API, &Geometry.MeshDataBuffers);
 
         for (uint32_t i = 0; i < RendererContext.Textures.ImageCount; i++)
         {
             vkDestroyImage(API.LogicalDevice, RendererContext.Textures.Images[i].Image, NoVkAllocator);
             vkDestroyImageView(API.LogicalDevice, RendererContext.Textures.Images[i].View, NoVkAllocator);
-            freeDeviceMemory(&Allocator, RendererContext.Textures.Images[i].Allocation);
+            freeDeviceMemory(&API.Allocator, RendererContext.Textures.Images[i].Allocation);
         }
 
         freeShaderBlockLayout(&API, &ForwardPass.ShaderLayout);
@@ -769,24 +750,23 @@ namespace IB
 
         vkDestroySampler(API.LogicalDevice, ForwardPass.Sampler, NoVkAllocator);
         vkDestroyBuffer(API.LogicalDevice, ForwardPass.MaterialBuffer, NoVkAllocator);
-        freeDeviceMemory(&Allocator, ForwardPass.MaterialBufferAllocation);
+        freeDeviceMemory(&API.Allocator, ForwardPass.MaterialBufferAllocation);
 
         vkDestroyBuffer(API.LogicalDevice, Lighting.LightBuffer, NoVkAllocator);
-        freeDeviceMemory(&Allocator, Lighting.LightBufferAllocation);
+        freeDeviceMemory(&API.Allocator, Lighting.LightBufferAllocation);
 
         for (uint32_t fb = 0; fb < FrameBufferCount; fb++)
         {
             vkDestroyBuffer(API.LogicalDevice, IndirectDraw.FrameBuffer[fb].Buffer, NoVkAllocator);
-            freeDeviceMemory(&Allocator, IndirectDraw.FrameBuffer[fb].Allocation);
+            freeDeviceMemory(&API.Allocator, IndirectDraw.FrameBuffer[fb].Allocation);
         }
 
         vkDestroyBuffer(API.LogicalDevice, IndirectDraw.PerFrameData.Buffer, NoVkAllocator);
-        freeDeviceMemory(&Allocator, IndirectDraw.PerFrameData.Allocation);
+        freeDeviceMemory(&API.Allocator, IndirectDraw.PerFrameData.Allocation);
 
         vkDestroyFence(API.LogicalDevice, RendererContext.Present.ImmediateFence, NoVkAllocator);
 
-        killStaging(&API, &Allocator, &Staging);
-        VkMemory::killAllocator(API.LogicalDevice, &Allocator);
+        killStaging(&API, &API.Allocator, &Staging);
         killGraphicsAPI(&API);
     }
 
@@ -1008,7 +988,7 @@ namespace IB
 
                 if (copyCount > 0)
                 {
-                    vkCmdCopyBuffer(commandBuffer, Geometry.MeshDataBuffers, Geometry.MeshDataBuffers, copyCount, copyRegions);
+                    vkCmdCopyBuffer(commandBuffer, Geometry.MeshDataBuffers.VulkanBuffer, Geometry.MeshDataBuffers.VulkanBuffer, copyCount, copyRegions);
                 }
             }
 
@@ -1039,7 +1019,7 @@ namespace IB
                 meshCopy.dstOffset = Geometry.Meshes[meshIndex].VertexOffset;
                 meshCopy.size = vertexSize + indexSize;
 
-                vkCmdCopyBuffer(commandBuffer, staging.Buffer, Geometry.MeshDataBuffers, 1, &meshCopy);
+                vkCmdCopyBuffer(commandBuffer, staging.Buffer, Geometry.MeshDataBuffers.VulkanBuffer, 1, &meshCopy);
             }
 
             // End our command buffer
@@ -1325,7 +1305,7 @@ namespace IB
                 currentCommands, VK_PIPELINE_BIND_POINT_GRAPHICS, ForwardPass.PipelineLayout,
                 0, 1, &set, 0, VK_NULL_HANDLE);
 
-            vkCmdBindIndexBuffer(currentCommands, Geometry.MeshDataBuffers, 0, VK_INDEX_TYPE_UINT16);
+            vkCmdBindIndexBuffer(currentCommands, Geometry.MeshDataBuffers.VulkanBuffer, 0, VK_INDEX_TYPE_UINT16);
 
             uint32_t perFrameDataWriteIndex = MaxPerFrameDrawDataSize * fb;
             PerFrameData perFrameData;
