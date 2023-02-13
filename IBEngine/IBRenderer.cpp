@@ -280,84 +280,6 @@ namespace IB
             FixedSizedQueue<VkDescriptorImageInfo, MaxDescriptorUpdateCount> ImageInfos;
             FixedSizedQueue<VkWriteDescriptorSet, MaxDescriptorUpdateCount> Writes;
         } DescriptorUpdates;
-
-        struct TextureAllocation
-        {
-            VkImageUsageFlags Usage = {};
-            VkFormat Format = {};
-            uint32_t Width = 0;
-            uint32_t Height = 0;
-            uint32_t Stride = 0;
-            VkImageAspectFlags Aspect = 0;
-        };
-
-        Texture allocTexture(TextureAllocation alloc)
-        {
-            Texture texture;
-            texture.Aspect = alloc.Aspect;
-            texture.Width = alloc.Width;
-            texture.Height = alloc.Height;
-
-            {
-                VkImageCreateInfo imageCreate = {};
-                imageCreate.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-                imageCreate.imageType = VK_IMAGE_TYPE_2D;
-                imageCreate.format = alloc.Format;
-                imageCreate.extent = VkExtent3D{alloc.Width, alloc.Height, 1};
-                imageCreate.mipLevels = 1;
-                imageCreate.arrayLayers = 1;
-                imageCreate.samples = VK_SAMPLE_COUNT_1_BIT;
-                imageCreate.tiling = VK_IMAGE_TILING_OPTIMAL;
-                imageCreate.usage = alloc.Usage;
-                imageCreate.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-                imageCreate.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-
-                IB_VKCHECK(vkCreateImage(API.LogicalDevice, &imageCreate, IB::NoVkAllocator, &texture.Image));
-            }
-
-            // Allocation
-            {
-                VkMemoryRequirements memoryRequirements;
-                vkGetImageMemoryRequirements(API.LogicalDevice, texture.Image, &memoryRequirements);
-
-                IB::VkMemory::AllocationRequest request;
-                request.Alignment = memoryRequirements.alignment;
-                request.Size = alloc.Width * alloc.Height * alloc.Stride;
-                request.LogicalDevice = API.LogicalDevice;
-                request.PhysicalDevice = API.PhysicalDevice;
-                request.RequiredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-                request.PreferredFlags = 0;
-                request.TypeBits = memoryRequirements.memoryTypeBits;
-                request.Category = IB::VkMemory::Category::Image;
-
-                IB::VkMemory::Allocation *allocation = &texture.Allocation;
-                *allocation = allocateDeviceMemory(&API.Allocator, request);
-
-                IB_VKCHECK(vkBindImageMemory(API.LogicalDevice, texture.Image, allocation->Memory, allocation->Offset));
-            }
-
-            // Image view
-            {
-                VkImageSubresourceRange subresourceRange = {};
-                subresourceRange.aspectMask = alloc.Aspect;
-                subresourceRange.levelCount = 1;
-                subresourceRange.layerCount = 1;
-                subresourceRange.baseMipLevel = 0;
-
-                VkImageViewCreateInfo imageCreateViewInfo = {};
-                imageCreateViewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-                imageCreateViewInfo.image = texture.Image;
-                imageCreateViewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-                imageCreateViewInfo.format = alloc.Format;
-
-                imageCreateViewInfo.components = {VK_COMPONENT_SWIZZLE_R, VK_COMPONENT_SWIZZLE_G, VK_COMPONENT_SWIZZLE_B, VK_COMPONENT_SWIZZLE_A};
-                imageCreateViewInfo.subresourceRange = subresourceRange;
-
-                IB_VKCHECK(vkCreateImageView(API.LogicalDevice, &imageCreateViewInfo, IB::NoVkAllocator, &texture.View));
-            }
-
-            return texture;
-        }
     } // namespace
 } // namespace IB
 
@@ -399,7 +321,7 @@ namespace IB
             {
                 // Depth image
                 {
-                    TextureAllocation textureAlloc = {};
+                    TextureDesc textureAlloc = {};
                     textureAlloc.Usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
                     textureAlloc.Format = VK_FORMAT_D32_SFLOAT;
                     textureAlloc.Width = RendererContext.Present.Surface.Extents.width;
@@ -407,7 +329,7 @@ namespace IB
                     textureAlloc.Stride = 4;
                     textureAlloc.Aspect = VK_IMAGE_ASPECT_DEPTH_BIT;
 
-                    ForwardPass.FrameBuffer[fb].DepthImage = allocTexture(textureAlloc);
+                    ForwardPass.FrameBuffer[fb].DepthImage = allocTexture(&API, textureAlloc);
                 }
             }
 
@@ -643,18 +565,14 @@ namespace IB
             freeCommandBuffer(&API, GraphicsQueue::Graphics, RendererContext.Present.FrameBuffer[fb].PrimaryCommandBuffer);
             vkDestroySemaphore(API.LogicalDevice, RendererContext.Present.FrameBuffer[fb].FinishedSemaphore, NoVkAllocator);
             vkDestroyFence(API.LogicalDevice, RendererContext.Present.FrameBuffer[fb].FinishedFence, NoVkAllocator);
-            vkDestroyImage(API.LogicalDevice, ForwardPass.FrameBuffer[fb].DepthImage.Image, NoVkAllocator);
-            vkDestroyImageView(API.LogicalDevice, ForwardPass.FrameBuffer[fb].DepthImage.View, NoVkAllocator);
-            freeDeviceMemory(&API.Allocator, ForwardPass.FrameBuffer[fb].DepthImage.Allocation);
+            freeTexture(&API, &ForwardPass.FrameBuffer[fb].DepthImage);
         }
 
         freeGraphicsBuffer(&API, &Geometry.MeshDataBuffers);
 
         for (uint32_t i = 0; i < RendererContext.Textures.ImageCount; i++)
         {
-            vkDestroyImage(API.LogicalDevice, RendererContext.Textures.Images[i].Image, NoVkAllocator);
-            vkDestroyImageView(API.LogicalDevice, RendererContext.Textures.Images[i].View, NoVkAllocator);
-            freeDeviceMemory(&API.Allocator, RendererContext.Textures.Images[i].Allocation);
+            freeTexture(&API, &RendererContext.Textures.Images[i]);
         }
 
         freeShaderBlockLayout(&API, &ForwardPass.ShaderLayout);
@@ -984,7 +902,7 @@ namespace IB
 
         // Image
         uint32_t imageIndex = RendererContext.Textures.ImageCount++;
-        TextureAllocation textureAlloc = {};
+        TextureDesc textureAlloc = {};
         textureAlloc.Usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
         textureAlloc.Format = formats[desc.Format];
         textureAlloc.Width = desc.Width;
@@ -992,7 +910,7 @@ namespace IB
         textureAlloc.Stride = formatSize[desc.Format];
         textureAlloc.Aspect = VK_IMAGE_ASPECT_COLOR_BIT;
 
-        RendererContext.Textures.Images[imageIndex] = allocTexture(textureAlloc);
+        RendererContext.Textures.Images[imageIndex] = allocTexture(&API, textureAlloc);
 
         writeToTexture(&API, &Staging, 
             {

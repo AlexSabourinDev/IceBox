@@ -213,6 +213,19 @@ namespace IB
         uint32_t Height = 0;
     };
 
+    struct TextureDesc
+    {
+        VkImageUsageFlags Usage = {};
+        VkFormat Format = {};
+        uint32_t Width = 0;
+        uint32_t Height = 0;
+        uint32_t Stride = 0;
+        VkImageAspectFlags Aspect = 0;
+    };
+
+    Texture allocTexture(GraphicsAPI* api, TextureDesc desc);
+    void freeTexture(GraphicsAPI* api, Texture* texture);
+
     VkImageMemoryBarrier createMemoryBarrier(
         Texture const* texture,
         VkAccessFlagBits sourceAccessMask,
@@ -250,42 +263,8 @@ namespace IB
         VkMemory::Category::Enum MemoryCategory;
     };
 
-    GraphicsBuffer allocGraphicsBuffer(GraphicsAPI* api, GraphicsBufferDesc desc)
-    {
-        GraphicsBuffer buffer;
-
-        VkBufferCreateInfo bufferCreate = {};
-        bufferCreate.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-        bufferCreate.size = desc.Size;
-        bufferCreate.usage = desc.Usage; // buffers created through create buffer can always be transfered to
-
-        IB_VKCHECK(vkCreateBuffer(api->LogicalDevice, &bufferCreate, NoVkAllocator, &buffer.VulkanBuffer));
-
-        VkMemoryRequirements memoryRequirements;
-        vkGetBufferMemoryRequirements(api->LogicalDevice, buffer.VulkanBuffer, &memoryRequirements);
-
-        VkMemory::AllocationRequest request;
-        request.Alignment = memoryRequirements.alignment;
-        request.Size = desc.Size;
-        request.LogicalDevice = api->LogicalDevice;
-        request.PhysicalDevice = api->PhysicalDevice;
-        request.RequiredFlags = desc.RequiredMemoryFlags;
-        request.PreferredFlags = desc.PreferredMemoryFlags;
-        request.TypeBits = memoryRequirements.memoryTypeBits;
-        request.Category = desc.MemoryCategory;
-
-        buffer.Allocation = allocateDeviceMemory(&api->Allocator, request);
-
-        IB_VKCHECK(vkBindBufferMemory(api->LogicalDevice, buffer.VulkanBuffer, buffer.Allocation.Memory, buffer.Allocation.Offset));
-    
-        return buffer;
-    }
-
-    void freeGraphicsBuffer(GraphicsAPI* api, GraphicsBuffer* buffer)
-    {
-        vkDestroyBuffer(api->LogicalDevice, buffer->VulkanBuffer, NoVkAllocator);
-        freeDeviceMemory(&api->Allocator, buffer->Allocation);
-    }
+    GraphicsBuffer allocGraphicsBuffer(GraphicsAPI* api, GraphicsBufferDesc desc);
+    void freeGraphicsBuffer(GraphicsAPI* api, GraphicsBuffer* buffer);
 
     struct WriteToBufferDesc
     {
@@ -1047,6 +1026,82 @@ namespace IB
 // Texture
 namespace IB
 {
+    Texture allocTexture(GraphicsAPI* api, TextureDesc desc)
+    {
+        Texture texture;
+        texture.Aspect = desc.Aspect;
+        texture.Width = desc.Width;
+        texture.Height = desc.Height;
+
+        {
+            VkImageCreateInfo imageCreate = {};
+            imageCreate.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+            imageCreate.imageType = VK_IMAGE_TYPE_2D;
+            imageCreate.format = desc.Format;
+            imageCreate.extent = VkExtent3D{desc.Width, desc.Height, 1};
+            imageCreate.mipLevels = 1;
+            imageCreate.arrayLayers = 1;
+            imageCreate.samples = VK_SAMPLE_COUNT_1_BIT;
+            imageCreate.tiling = VK_IMAGE_TILING_OPTIMAL;
+            imageCreate.usage = desc.Usage;
+            imageCreate.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+            imageCreate.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+            IB_VKCHECK(vkCreateImage(api->LogicalDevice, &imageCreate, NoVkAllocator, &texture.Image));
+        }
+
+        // Allocation
+        {
+            VkMemoryRequirements memoryRequirements;
+            vkGetImageMemoryRequirements(api->LogicalDevice, texture.Image, &memoryRequirements);
+
+            IB::VkMemory::AllocationRequest request;
+            request.Alignment = memoryRequirements.alignment;
+            request.Size = desc.Width * desc.Height * desc.Stride;
+            request.LogicalDevice = api->LogicalDevice;
+            request.PhysicalDevice = api->PhysicalDevice;
+            request.RequiredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+            request.PreferredFlags = 0;
+            request.TypeBits = memoryRequirements.memoryTypeBits;
+            request.Category = IB::VkMemory::Category::Image;
+
+            VkMemory::Allocation *allocation = &texture.Allocation;
+            *allocation = allocateDeviceMemory(&api->Allocator, request);
+
+            IB_VKCHECK(vkBindImageMemory(api->LogicalDevice, texture.Image, allocation->Memory, allocation->Offset));
+        }
+
+        // Image view
+        {
+            VkImageSubresourceRange subresourceRange = {};
+            subresourceRange.aspectMask = desc.Aspect;
+            subresourceRange.levelCount = 1;
+            subresourceRange.layerCount = 1;
+            subresourceRange.baseMipLevel = 0;
+
+            VkImageViewCreateInfo imageCreateViewInfo = {};
+            imageCreateViewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+            imageCreateViewInfo.image = texture.Image;
+            imageCreateViewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+            imageCreateViewInfo.format = desc.Format;
+
+            imageCreateViewInfo.components = {VK_COMPONENT_SWIZZLE_R, VK_COMPONENT_SWIZZLE_G, VK_COMPONENT_SWIZZLE_B, VK_COMPONENT_SWIZZLE_A};
+            imageCreateViewInfo.subresourceRange = subresourceRange;
+
+            IB_VKCHECK(vkCreateImageView(api->LogicalDevice, &imageCreateViewInfo, NoVkAllocator, &texture.View));
+        }
+
+        return texture;
+    }
+
+    void freeTexture(GraphicsAPI* api, Texture* texture)
+    {
+        vkDestroyImage(api->LogicalDevice, texture->Image, NoVkAllocator);
+        vkDestroyImageView(api->LogicalDevice, texture->View, NoVkAllocator);
+        freeDeviceMemory(&api->Allocator, texture->Allocation);
+    }
+
+
     VkImageMemoryBarrier createMemoryBarrier(
         Texture* texture,
         VkAccessFlagBits sourceAccessMask,
@@ -1153,6 +1208,43 @@ namespace IB
 // Buffer
 namespace IB
 {
+    GraphicsBuffer allocGraphicsBuffer(GraphicsAPI* api, GraphicsBufferDesc desc)
+    {
+        GraphicsBuffer buffer;
+
+        VkBufferCreateInfo bufferCreate = {};
+        bufferCreate.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+        bufferCreate.size = desc.Size;
+        bufferCreate.usage = desc.Usage; // buffers created through create buffer can always be transfered to
+
+        IB_VKCHECK(vkCreateBuffer(api->LogicalDevice, &bufferCreate, NoVkAllocator, &buffer.VulkanBuffer));
+
+        VkMemoryRequirements memoryRequirements;
+        vkGetBufferMemoryRequirements(api->LogicalDevice, buffer.VulkanBuffer, &memoryRequirements);
+
+        VkMemory::AllocationRequest request;
+        request.Alignment = memoryRequirements.alignment;
+        request.Size = desc.Size;
+        request.LogicalDevice = api->LogicalDevice;
+        request.PhysicalDevice = api->PhysicalDevice;
+        request.RequiredFlags = desc.RequiredMemoryFlags;
+        request.PreferredFlags = desc.PreferredMemoryFlags;
+        request.TypeBits = memoryRequirements.memoryTypeBits;
+        request.Category = desc.MemoryCategory;
+
+        buffer.Allocation = allocateDeviceMemory(&api->Allocator, request);
+
+        IB_VKCHECK(vkBindBufferMemory(api->LogicalDevice, buffer.VulkanBuffer, buffer.Allocation.Memory, buffer.Allocation.Offset));
+    
+        return buffer;
+    }
+
+    void freeGraphicsBuffer(GraphicsAPI* api, GraphicsBuffer* buffer)
+    {
+        vkDestroyBuffer(api->LogicalDevice, buffer->VulkanBuffer, NoVkAllocator);
+        freeDeviceMemory(&api->Allocator, buffer->Allocation);
+    }
+
     void writeToBuffer(GraphicsAPI* api, StagingCore* stagingCore, WriteToBufferDesc desc)
     {
         StagingBuffer staging = requestStagingBuffer(stagingCore, desc.Size, desc.Alignment);
