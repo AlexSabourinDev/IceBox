@@ -131,7 +131,7 @@ namespace IB
                 // And the cleanup thread only writes null handles
                 // The thread communication strategy isn't perfect here
                 // But it's fine for our use case since we just need our pipelines to be cleaned up "at some point"
-                VkPipeline Pipelines[MaxPipelineCleanups] = {};
+                GraphicsPipeline Pipelines[MaxPipelineCleanups] = {};
             } Cleanup;
         };
 
@@ -226,8 +226,7 @@ namespace IB
 
             ShaderBlockLayout ShaderLayout;
 
-            VkPipelineLayout PipelineLayout;
-            VkPipeline Pipelines[SubpassCount];
+            GraphicsPipeline Pipelines[SubpassCount];
 
             ShaderBlock InputBlock;
             VkSampler Sampler;
@@ -319,18 +318,15 @@ namespace IB
 
             for (uint32_t fb = 0; fb < FrameBufferCount; fb++)
             {
-                // Depth image
-                {
-                    TextureDesc textureAlloc = {};
-                    textureAlloc.Usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
-                    textureAlloc.Format = VK_FORMAT_D32_SFLOAT;
-                    textureAlloc.Width = RendererContext.Present.Surface.Extents.width;
-                    textureAlloc.Height = RendererContext.Present.Surface.Extents.height;
-                    textureAlloc.Stride = 4;
-                    textureAlloc.Aspect = VK_IMAGE_ASPECT_DEPTH_BIT;
+                TextureDesc textureAlloc = {};
+                textureAlloc.Usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+                textureAlloc.Format = VK_FORMAT_D32_SFLOAT;
+                textureAlloc.Width = RendererContext.Present.Surface.Extents.width;
+                textureAlloc.Height = RendererContext.Present.Surface.Extents.height;
+                textureAlloc.Stride = 4;
+                textureAlloc.Aspect = VK_IMAGE_ASPECT_DEPTH_BIT;
 
-                    ForwardPass.FrameBuffer[fb].DepthImage = allocTexture(&API, textureAlloc);
-                }
+                ForwardPass.FrameBuffer[fb].DepthImage = allocTexture(&API, textureAlloc);
             }
 
             for (uint32_t fb = 0; fb < FrameBufferCount; fb++)
@@ -354,54 +350,8 @@ namespace IB
             // Graphics pipeline
             ForwardPass.ShaderLayout = allocShaderBlockLayout(&API,
                 ShaderBlockLayoutDesc{
-                    ForwardPassInputs,
-                    ForwardPassInput::Count
+                    { ForwardPassInputs, ForwardPassInput::Count }
                 });
-
-            /*struct PushConstantDesc
-            {
-                VkShaderStageFlags Shaders;
-                uint32_t Offset;
-                uint32_t Size;
-            };
-
-            struct GraphicsPipelineDesc
-            {
-                struct
-                {
-                    ShaderBlockLayout* Layouts;
-                    uint32_t Count;
-                } ShaderBlocks;
-
-                struct
-                {
-                    PushConstantDesc* Data;
-                    uint32_t Count;
-                } PushConstants;
-            };*/
-
-            {
-                VkPushConstantRange pushConstant = {};
-                pushConstant.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
-                pushConstant.offset = 0;
-                pushConstant.size = 256;
-
-                VkPushConstantRange pushConstantRanges[] = { pushConstant };
-
-                VkDescriptorSetLayout layouts[] =
-                    {
-                        ForwardPass.ShaderLayout.DescriptorSetLayout,
-                    };
-
-                VkPipelineLayoutCreateInfo pipelineLayoutCreate = {};
-                pipelineLayoutCreate.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-                pipelineLayoutCreate.setLayoutCount = arrayCount(layouts);
-                pipelineLayoutCreate.pSetLayouts = layouts;
-                pipelineLayoutCreate.pushConstantRangeCount = arrayCount(pushConstantRanges);
-                pipelineLayoutCreate.pPushConstantRanges = pushConstantRanges;
-
-                IB_VKCHECK(vkCreatePipelineLayout(API.LogicalDevice, &pipelineLayoutCreate, NoVkAllocator, &ForwardPass.PipelineLayout));
-            }
         }
 
         // Indirect Draw Buffer
@@ -500,8 +450,7 @@ namespace IB
             writeToShaderBlock(&API,
                 {
                     &ForwardPass.InputBlock,
-                    writes,
-                    arrayCount(writes)
+                    { writes, arrayCount(writes) }
                 });
             }
 
@@ -577,11 +526,9 @@ namespace IB
 
         freeShaderBlockLayout(&API, &ForwardPass.ShaderLayout);
 
-        vkDestroyPipelineLayout(API.LogicalDevice, ForwardPass.PipelineLayout, NoVkAllocator);
-
         for (uint32_t i = 0; i < arrayCount(ForwardPass.Pipelines); i++)
         {
-            vkDestroyPipeline(API.LogicalDevice, ForwardPass.Pipelines[i], NoVkAllocator);
+            freeGraphicsPipeline(&API, &ForwardPass.Pipelines[i]);
         }
 
         vkDestroySampler(API.LogicalDevice, ForwardPass.Sampler, NoVkAllocator);
@@ -607,11 +554,11 @@ namespace IB
         // Queue up our pipelines for cleanup by our rendering thread
         for (uint32_t i = 0; i < arrayCount(ForwardPass.Pipelines); i++)
         {
-            if (ForwardPass.Pipelines[i] != VK_NULL_HANDLE)
+            if (ForwardPass.Pipelines[i].VulkanPipeline != VK_NULL_HANDLE)
             {
                 for (uint32_t pip = 0; pip < MaxPipelineCleanups; pip++)
                 {
-                    if (RendererContext.Cleanup.Pipelines[pip] == VK_NULL_HANDLE)
+                    if (RendererContext.Cleanup.Pipelines[pip].VulkanPipeline == VK_NULL_HANDLE)
                     {
                         RendererContext.Cleanup.Pipelines[pip] = ForwardPass.Pipelines[i];
                         break;
@@ -620,152 +567,109 @@ namespace IB
             }
         }
 
-        VkShaderModule vertexShader = {};
+        VkPipelineRasterizationStateCreateInfo constexpr rasterCullBackFaceCCW =
+        {
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+            .polygonMode = VK_POLYGON_MODE_FILL,
+            .cullMode = VK_CULL_MODE_BACK_BIT,
+            .frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE,
+            .lineWidth = 1.0f
+        };
 
-        VkShaderModuleCreateInfo createVShader = {};
-        createVShader.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-        createVShader.pCode = (const uint32_t *)desc.VShader;
-        createVShader.codeSize = desc.VShaderSize;
-        IB_VKCHECK(vkCreateShaderModule(API.LogicalDevice, &createVShader, NoVkAllocator, &vertexShader));
+        VkPipelineRasterizationStateCreateInfo constexpr rasterNoCull =
+        {
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+            .polygonMode = VK_POLYGON_MODE_FILL,
+            .cullMode = VK_CULL_MODE_NONE,
+            .lineWidth = 1.0f
+        };
 
-        VkShaderModule fragShader = {};
+        VkPipelineVertexInputStateCreateInfo constexpr nullVertexDesc = { .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO };
+        VkPipelineInputAssemblyStateCreateInfo constexpr inputAssemblyTriangleList = { .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO, .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST };
 
-        VkShaderModuleCreateInfo createFShader = {};
-        createFShader.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-        createFShader.pCode = (const uint32_t *)desc.FShader;
-        createFShader.codeSize = desc.FShaderSize;
-        IB_VKCHECK(vkCreateShaderModule(API.LogicalDevice, &createFShader, NoVkAllocator, &fragShader));
+        VkPipelineDepthStencilStateCreateInfo constexpr depthLessTestWriteNoStencil = 
+        {
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
+            .depthTestEnable = VK_TRUE,
+            .depthWriteEnable = VK_TRUE,
+            .depthCompareOp = VK_COMPARE_OP_LESS,
+            .stencilTestEnable = VK_FALSE,
+            .minDepthBounds = 0.0f,
+            .maxDepthBounds = 1.0f,
+        };
 
-        VkPipelineVertexInputStateCreateInfo vertexInputCreate = {};
-        vertexInputCreate.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+        VkPipelineColorBlendAttachmentState constexpr defaultAlphaBlend =
+        {
+            .blendEnable = VK_TRUE,
+            .srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA,
+            .dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
+            .colorBlendOp = VK_BLEND_OP_ADD,
+            .srcAlphaBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA,
+            .dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
+            .alphaBlendOp = VK_BLEND_OP_ADD,
+            .colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT
+        };
 
-        // Input Assembly
-        VkPipelineInputAssemblyStateCreateInfo inputAssemblyCreate = {};
-        inputAssemblyCreate.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
-        inputAssemblyCreate.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+        ShaderDesc const shaders[] =
+        {
+            {
+                .EntryPoint = "vertexMain",
+                .Code = desc.VShader,
+                .CodeSize = desc.VShaderSize,
+                .Stage = VK_SHADER_STAGE_VERTEX_BIT
+            },
+            {
+                .EntryPoint = "fragMain",
+                .Code = desc.FShader,
+                .CodeSize = desc.FShaderSize,
+                .Stage = VK_SHADER_STAGE_FRAGMENT_BIT
+            }
+        };
 
-        // Rasterization
-        VkPipelineRasterizationStateCreateInfo rasterizationCreate = {};
-        rasterizationCreate.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
-        rasterizationCreate.rasterizerDiscardEnable = VK_FALSE;
-        rasterizationCreate.depthBiasEnable = VK_FALSE;
-        rasterizationCreate.depthClampEnable = VK_FALSE;
-        rasterizationCreate.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
-        rasterizationCreate.lineWidth = 1.0f;
-        rasterizationCreate.polygonMode = VK_POLYGON_MODE_FILL;
-        rasterizationCreate.cullMode = VK_CULL_MODE_BACK_BIT;
+        RenderTargetDesc const screenRenderTarget = 
+        {
+            .BlendDesc = defaultAlphaBlend,
+            .Format = RendererContext.Present.Surface.Format.format
+        };
 
-        VkPipelineRasterizationStateCreateInfo rasterizationCreateNoCull = rasterizationCreate;
-        rasterizationCreateNoCull.cullMode = VK_CULL_MODE_NONE;
+        VkPushConstantRange const pushConstant =
+        {
+            .stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+            .offset = 0,
+            .size = 256,
+        };
 
-        VkPipelineColorBlendAttachmentState colorBlendAttachment = {};
-        colorBlendAttachment.blendEnable = VK_TRUE;
-        colorBlendAttachment.colorBlendOp = VK_BLEND_OP_ADD;
-        colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
-        colorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-        colorBlendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
-        colorBlendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
-        colorBlendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-        colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+        ShaderBlockLayout const* shaderLayouts[] = {&ForwardPass.ShaderLayout};
+        GraphicsPipeline defaultFoward = allocGraphicsPipeline(&API,
+        {
+            .ShaderDescs = { shaders, arrayCount(shaders) },
+            .PushConstants = { &pushConstant, 1 },
+            .ShaderBlockLayouts = { shaderLayouts, 1 },
+            .VertexDesc = nullVertexDesc,
+            .InputAssemblyDesc = inputAssemblyTriangleList,
+            .RasterizationDesc = rasterCullBackFaceCCW,
+            .RenderTargetDescs = { &screenRenderTarget, 1 },
+            .DepthDesc = { depthLessTestWriteNoStencil, VK_FORMAT_D32_SFLOAT },
+        });
 
-        // All color buffers have the same attachments
-        VkPipelineColorBlendAttachmentState colorAttachments[] = {colorBlendAttachment};
-
-        VkPipelineColorBlendStateCreateInfo colorBlendCreate = {};
-        colorBlendCreate.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
-        colorBlendCreate.attachmentCount = arrayCount(colorAttachments);
-        colorBlendCreate.pAttachments = colorAttachments;
-
-        VkPipelineDepthStencilStateCreateInfo depthStencilCreate = {};
-        depthStencilCreate.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
-        depthStencilCreate.depthTestEnable = VK_TRUE;
-        depthStencilCreate.depthWriteEnable = VK_TRUE;
-        depthStencilCreate.depthCompareOp = VK_COMPARE_OP_LESS;
-        depthStencilCreate.depthBoundsTestEnable = VK_FALSE;
-        depthStencilCreate.minDepthBounds = 0.0f;
-        depthStencilCreate.maxDepthBounds = 1.0f;
-        depthStencilCreate.stencilTestEnable = VK_FALSE;
-
-        VkPipelineMultisampleStateCreateInfo multisampleCreate = {};
-        multisampleCreate.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
-        multisampleCreate.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
-
-        VkPipelineShaderStageCreateInfo vertexStage = {};
-        vertexStage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-        vertexStage.pName = "vertexMain";
-        vertexStage.module = vertexShader;
-        vertexStage.stage = VK_SHADER_STAGE_VERTEX_BIT;
-
-        VkPipelineShaderStageCreateInfo fragStage = {};
-        fragStage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-        fragStage.pName = "fragMain";
-        fragStage.module = fragShader;
-        fragStage.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-
-        VkPipelineShaderStageCreateInfo shaderStages[] = {vertexStage, fragStage};
-
-        // Scissor and viewport are set dynamically
-        VkRect2D scissor = {};
-        VkViewport viewport = {};
-        VkPipelineViewportStateCreateInfo viewportStateCreate = {};
-        viewportStateCreate.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
-        viewportStateCreate.viewportCount = 1;
-        viewportStateCreate.pViewports = &viewport;
-        viewportStateCreate.scissorCount = 1;
-        viewportStateCreate.pScissors = &scissor;
-
-        VkPipelineRenderingCreateInfoKHR pipelineRenderingCreateInfo = {};
-        pipelineRenderingCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO_KHR;
-        pipelineRenderingCreateInfo.colorAttachmentCount = 1;
-        pipelineRenderingCreateInfo.pColorAttachmentFormats = &RendererContext.Present.Surface.Format.format;
-        pipelineRenderingCreateInfo.depthAttachmentFormat = VK_FORMAT_D32_SFLOAT;
-
-        VkGraphicsPipelineCreateInfo baseGraphicsPipelineCreate = {};
-        baseGraphicsPipelineCreate.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-        baseGraphicsPipelineCreate.pNext = &pipelineRenderingCreateInfo;
-        baseGraphicsPipelineCreate.layout = ForwardPass.PipelineLayout;
-        baseGraphicsPipelineCreate.pVertexInputState = &vertexInputCreate;
-        baseGraphicsPipelineCreate.pInputAssemblyState = &inputAssemblyCreate;
-        baseGraphicsPipelineCreate.pRasterizationState = &rasterizationCreate;
-        baseGraphicsPipelineCreate.pColorBlendState = &colorBlendCreate;
-        baseGraphicsPipelineCreate.pDepthStencilState = &depthStencilCreate;
-        baseGraphicsPipelineCreate.pMultisampleState = &multisampleCreate;
-
-        VkDynamicState dynamicStates[] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
-
-        VkPipelineDynamicStateCreateInfo dynamicStateCreate = {};
-        dynamicStateCreate.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
-        dynamicStateCreate.dynamicStateCount = arrayCount(dynamicStates);
-        dynamicStateCreate.pDynamicStates = dynamicStates;
-
-        baseGraphicsPipelineCreate.pDynamicState = &dynamicStateCreate;
-        baseGraphicsPipelineCreate.pViewportState = &viewportStateCreate;
-        baseGraphicsPipelineCreate.stageCount = arrayCount(shaderStages);
-        baseGraphicsPipelineCreate.pStages = shaderStages;
-
-        baseGraphicsPipelineCreate.flags = VK_PIPELINE_CREATE_ALLOW_DERIVATIVES_BIT;
-        VkGraphicsPipelineCreateInfo subpass0Pipeline = baseGraphicsPipelineCreate;
-        subpass0Pipeline.subpass = 0;
-
-        VkGraphicsPipelineCreateInfo debugGeoPipeline = baseGraphicsPipelineCreate;
-        debugGeoPipeline.pRasterizationState = &rasterizationCreateNoCull;
-        debugGeoPipeline.subpass = 0;
-
-        VkGraphicsPipelineCreateInfo pipelineCreateInfo[] = {subpass0Pipeline, debugGeoPipeline};
-        static_assert(arrayCount(pipelineCreateInfo) == ForwardPass::SubpassCount, "Number of created pipelines is not correct.");
-        VkPipeline createdPipelines[ForwardPass::SubpassCount];
-        IB_VKCHECK(vkCreateGraphicsPipelines(API.LogicalDevice, API.PipelineCache, arrayCount(pipelineCreateInfo), pipelineCreateInfo, NoVkAllocator, createdPipelines));
-
+        GraphicsPipeline defaultDebugFoward = allocGraphicsPipeline(&API,
+        {
+            .ShaderDescs = { shaders, arrayCount(shaders) },
+            .PushConstants = { &pushConstant, 1 },
+            .ShaderBlockLayouts = { shaderLayouts, 1 },
+            .VertexDesc = nullVertexDesc,
+            .InputAssemblyDesc = inputAssemblyTriangleList,
+            .RasterizationDesc = rasterNoCull,
+            .RenderTargetDescs = { &screenRenderTarget, 1 },
+            .DepthDesc =  { depthLessTestWriteNoStencil, VK_FORMAT_D32_SFLOAT },
+        });
+        
+        
         // Write our pipelines after our call due to the fact that we expect this function to be called from another thread
         // And we'd like to assure that our writes are done at the right time.
         threadRelease();
-        for (uint32_t i = 0; i < ForwardPass::SubpassCount; i++)
-        {
-            ForwardPass.Pipelines[i] = createdPipelines[i];
-        }
-
-        vkDestroyShaderModule(API.LogicalDevice, vertexShader, NoVkAllocator);
-        vkDestroyShaderModule(API.LogicalDevice, fragShader, NoVkAllocator);
+        ForwardPass.Pipelines[0] = defaultFoward;
+        ForwardPass.Pipelines[1] = defaultDebugFoward;
     }
 
     namespace
@@ -1132,11 +1036,6 @@ namespace IB
             scissor.extent = RendererContext.Present.Surface.Extents;
             vkCmdSetScissor(currentCommands, 0, 1, &scissor);
 
-            VkDescriptorSet set = ForwardPass.InputBlock.DescriptorSet;
-            vkCmdBindDescriptorSets(
-                currentCommands, VK_PIPELINE_BIND_POINT_GRAPHICS, ForwardPass.PipelineLayout,
-                0, 1, &set, 0, VK_NULL_HANDLE);
-
             vkCmdBindIndexBuffer(currentCommands, Geometry.MeshDataBuffers.VulkanBuffer, 0, VK_INDEX_TYPE_UINT16);
 
             uint32_t perFrameDataWriteIndex = MaxPerFrameDrawDataSize * fb;
@@ -1178,14 +1077,19 @@ namespace IB
                     vkCmdClearAttachments(currentCommands, 1, &depthAttachment, 1, &clearArea);
                 }
 
-                if (ForwardPass.Pipelines[passIndex] == VK_NULL_HANDLE)
+                if (ForwardPass.Pipelines[passIndex].VulkanPipeline == VK_NULL_HANDLE)
                 {
                     continue;
                 }
 
+                VkDescriptorSet set = ForwardPass.InputBlock.DescriptorSet;
+                vkCmdBindDescriptorSets(
+                    currentCommands, VK_PIPELINE_BIND_POINT_GRAPHICS, ForwardPass.Pipelines[passIndex].Layout,
+                    0, 1, &set, 0, VK_NULL_HANDLE);
+
                 uint32_t passIndirectDrawCountOffset = indirectDrawCount;
                 ViewDesc::ForwardPass const *pass = &view.Forward.Passes[passIndex];
-                vkCmdBindPipeline(currentCommands, VK_PIPELINE_BIND_POINT_GRAPHICS, ForwardPass.Pipelines[passIndex]);
+                vkCmdBindPipeline(currentCommands, VK_PIPELINE_BIND_POINT_GRAPHICS, ForwardPass.Pipelines[passIndex].VulkanPipeline);
 
                 uint32_t passDrawCount = 0;
                 for (uint32_t i = 0; i < pass->BatchCount; i++)
@@ -1237,7 +1141,7 @@ namespace IB
                         pushConstantBatchData.InstanceDataOffsetAndFlags = pushConstantBatchData.InstanceDataOffsetAndFlags | 0x80000000;
                     }
 
-                    vkCmdPushConstants(currentCommands, ForwardPass.PipelineLayout,
+                    vkCmdPushConstants(currentCommands, ForwardPass.Pipelines[passIndex].Layout,
                                         VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(pushConstantBatchData), &pushConstantBatchData);
 
                     vkCmdDrawIndexedIndirect(currentCommands, IndirectDraw.FrameDraws[fb].VulkanBuffer, passIndirectDrawCountOffset * sizeof(VkDrawIndexedIndirectCommand), passDrawCount, sizeof(VkDrawIndexedIndirectCommand));
@@ -1295,11 +1199,11 @@ namespace IB
         // Cleanup our pipelines
         for (uint32_t i = 0; i < MaxPipelineCleanups; i++)
         {
-            if (RendererContext.Cleanup.Pipelines[i] != VK_NULL_HANDLE)
+            if (RendererContext.Cleanup.Pipelines[i].VulkanPipeline != VK_NULL_HANDLE)
             {
                 vkDeviceWaitIdle(API.LogicalDevice);
-                vkDestroyPipeline(API.LogicalDevice, RendererContext.Cleanup.Pipelines[i], NoVkAllocator);
-                RendererContext.Cleanup.Pipelines[i] = VK_NULL_HANDLE;
+                freeGraphicsPipeline(&API, &RendererContext.Cleanup.Pipelines[i]);
+                RendererContext.Cleanup.Pipelines[i] = {};
             }
         }
 

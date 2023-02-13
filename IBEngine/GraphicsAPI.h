@@ -167,6 +167,13 @@ namespace IB
         uint32_t Count = 0;
     };
 
+    template<typename T>
+    struct Range
+    {
+        T* Data;
+        uint32_t Count;
+    };
+
     uint32_t constexpr StagingSize = 32 * 1024 * 1024; // 32MB of staging space
     uint32_t constexpr MaxStagingFenceCount = 128;
     uint32_t constexpr MaxTransferCount = 128;
@@ -365,8 +372,7 @@ namespace IB
 
     struct ShaderBlockLayoutDesc
     {
-        ShaderInputDesc* Inputs;
-        uint32_t Count;
+        Range<ShaderInputDesc const> Inputs;
     };
 
     struct ShaderBlockLayout
@@ -404,11 +410,53 @@ namespace IB
     struct WriteToShaderBlockDesc
     {
         ShaderBlock* Block;
-        ShaderInputWrite* Inputs;
-        uint32_t Count;
+        Range<ShaderInputWrite const> Inputs;
     };
 
     void writeToShaderBlock(GraphicsAPI* api, WriteToShaderBlockDesc desc);
+
+    struct ShaderDesc
+    {
+        char const* EntryPoint;
+        uint8_t const* Code;
+        size_t CodeSize;
+        VkShaderStageFlagBits Stage; 
+    };
+
+    struct RenderTargetDesc
+    {
+        VkPipelineColorBlendAttachmentState BlendDesc;
+        VkFormat Format;
+    };
+
+    struct DepthRenderTargetDesc
+    {
+        VkPipelineDepthStencilStateCreateInfo DepthStateDesc;
+        VkFormat Format;
+    };
+
+    struct GraphicsPipelineDesc
+    {
+        Range<ShaderDesc const> ShaderDescs;
+        Range<VkPushConstantRange const> PushConstants;
+        Range<ShaderBlockLayout const*> ShaderBlockLayouts;
+
+        VkPipelineVertexInputStateCreateInfo VertexDesc;
+        VkPipelineInputAssemblyStateCreateInfo InputAssemblyDesc;
+        VkPipelineRasterizationStateCreateInfo RasterizationDesc;
+
+        Range<RenderTargetDesc const> RenderTargetDescs;
+        DepthRenderTargetDesc DepthDesc;
+    };
+
+    struct GraphicsPipeline
+    {
+        VkPipelineLayout Layout;
+        VkPipeline VulkanPipeline;
+    };
+
+    GraphicsPipeline allocGraphicsPipeline(GraphicsAPI* api, GraphicsPipelineDesc desc);
+    void freeGraphicsPipeline(GraphicsAPI* api, GraphicsPipeline* pipeline);
 }
 
 // TODO: Move to CPP when in a good place
@@ -1634,31 +1682,31 @@ namespace IB
     constexpr uint32_t MaxShaderInputPerBlock = 32;
     ShaderBlockLayout allocShaderBlockLayout(GraphicsAPI* api, ShaderBlockLayoutDesc blockLayoutDesc)
     {
-        IB_ASSERT(blockLayoutDesc.Count < MaxShaderInputPerBlock, "Too many shader inputs! Increase MaxShaderInputPerBlock.");
+        IB_ASSERT(blockLayoutDesc.Inputs.Count < MaxShaderInputPerBlock, "Too many shader inputs! Increase MaxShaderInputPerBlock.");
 
         ShaderBlockLayout blockLayout = {};
 
         VkDescriptorSetLayoutBinding bindings[MaxShaderInputPerBlock] = {};
         VkDescriptorBindingFlagsEXT bindFlags[MaxShaderInputPerBlock] = {};
-        for(uint32_t i = 0; i < blockLayoutDesc.Count; i++)
+        for(uint32_t i = 0; i < blockLayoutDesc.Inputs.Count; i++)
         {
-            bindings[i].stageFlags = blockLayoutDesc.Inputs[i].Shaders;
+            bindings[i].stageFlags = blockLayoutDesc.Inputs.Data[i].Shaders;
             bindings[i].binding = i;
-            bindings[i].descriptorType = blockLayoutDesc.Inputs[i].Type;
-            bindings[i].descriptorCount = blockLayoutDesc.Inputs[i].ArraySize;
+            bindings[i].descriptorType = blockLayoutDesc.Inputs.Data[i].Type;
+            bindings[i].descriptorCount = blockLayoutDesc.Inputs.Data[i].ArraySize;
 
-            bindFlags[i] = blockLayoutDesc.Inputs[i].BindingFlags;
+            bindFlags[i] = blockLayoutDesc.Inputs.Data[i].BindingFlags;
         }
 
         VkDescriptorSetLayoutBindingFlagsCreateInfoEXT extendedInfo = {};
         extendedInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO_EXT;
-        extendedInfo.bindingCount = blockLayoutDesc.Count;
+        extendedInfo.bindingCount = blockLayoutDesc.Inputs.Count;
         extendedInfo.pBindingFlags = bindFlags;
 
         VkDescriptorSetLayoutCreateInfo createLayout = {};
         createLayout.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
         createLayout.pNext = &extendedInfo;
-        createLayout.bindingCount = blockLayoutDesc.Count;
+        createLayout.bindingCount = blockLayoutDesc.Inputs.Count;
         createLayout.pBindings = bindings;
         IB_VKCHECK(vkCreateDescriptorSetLayout(api->LogicalDevice, &createLayout, NoVkAllocator, &blockLayout.DescriptorSetLayout));
     
@@ -1691,23 +1739,23 @@ namespace IB
         constexpr uint32_t MaxShaderWrites = 256;
 
         VkWriteDescriptorSet writes[MaxShaderWrites] = {};
-        IB_ASSERT(desc.Count < MaxShaderWrites, "Too many writes to our descriptor set.");
+        IB_ASSERT(desc.Inputs.Count < MaxShaderWrites, "Too many writes to our descriptor set.");
 
-        for(uint32_t i = 0; i < desc.Count; i++)
+        for(uint32_t i = 0; i < desc.Inputs.Count; i++)
         {
             writes[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
             writes[i].dstSet = desc.Block->DescriptorSet;
-            writes[i].descriptorType = desc.Inputs[i].Desc->Type;
-            writes[i].dstBinding = desc.Inputs[i].Desc->Index;
+            writes[i].descriptorType = desc.Inputs.Data[i].Desc->Type;
+            writes[i].dstBinding = desc.Inputs.Data[i].Desc->Index;
             writes[i].descriptorCount = 1; // TODO: Support multiple array writes
 
-            if(desc.Inputs[i].Type == ShaderInputWrite::BufferWrite)
+            if(desc.Inputs.Data[i].Type == ShaderInputWrite::BufferWrite)
             {
-                writes[i].pBufferInfo = &desc.Inputs[i].Buffer;
+                writes[i].pBufferInfo = &desc.Inputs.Data[i].Buffer;
             }
-            else if(desc.Inputs[i].Type == ShaderInputWrite::TextureWrite || desc.Inputs[i].Type == ShaderInputWrite::SamplerWrite)
+            else if(desc.Inputs.Data[i].Type == ShaderInputWrite::TextureWrite || desc.Inputs.Data[i].Type == ShaderInputWrite::SamplerWrite)
             {
-                writes[i].pImageInfo = &desc.Inputs[i].ImageAndSampler;
+                writes[i].pImageInfo = &desc.Inputs.Data[i].ImageAndSampler;
             }
             else
             {
@@ -1715,7 +1763,149 @@ namespace IB
             }
         }
 
-        vkUpdateDescriptorSets(api->LogicalDevice, desc.Count, writes, 0, NULL);
+        vkUpdateDescriptorSets(api->LogicalDevice, desc.Inputs.Count, writes, 0, NULL);
+    }
+
+    GraphicsPipeline allocGraphicsPipeline(GraphicsAPI* api, GraphicsPipelineDesc desc)
+    {
+        GraphicsPipeline graphicsPipeline;
+
+        // Pipeline layout
+        {
+            uint32_t constexpr MaxDescriptorSetLayout = 32;
+            IB_ASSERT(desc.ShaderBlockLayouts.Count < MaxDescriptorSetLayout, "Too many shader block layouts. Increase the maximum.");
+
+            VkDescriptorSetLayout layouts[MaxDescriptorSetLayout];
+            for(uint32_t i = 0; i < desc.ShaderBlockLayouts.Count; i++)
+            {
+                layouts[i] = desc.ShaderBlockLayouts.Data[i]->DescriptorSetLayout;
+            }
+
+            VkPipelineLayoutCreateInfo pipelineLayoutCreate =
+            {
+                .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+                .setLayoutCount = desc.ShaderBlockLayouts.Count,
+                .pSetLayouts = layouts,
+                .pushConstantRangeCount = desc.PushConstants.Count,
+                .pPushConstantRanges = desc.PushConstants.Data
+            };
+
+            IB_VKCHECK(vkCreatePipelineLayout(api->LogicalDevice, &pipelineLayoutCreate, NoVkAllocator, &graphicsPipeline.Layout));
+        }
+
+        VkGraphicsPipelineCreateInfo graphicsPipelineCreate = {};
+        graphicsPipelineCreate.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+        graphicsPipelineCreate.flags = VK_PIPELINE_CREATE_ALLOW_DERIVATIVES_BIT;
+
+        // Shaders
+        uint32_t constexpr MaxShaderCount = 32;
+
+        VkShaderModule shaderModules[MaxShaderCount] = {};
+        VkPipelineShaderStageCreateInfo shaderStages[MaxShaderCount] = {};
+        {
+            IB_ASSERT(desc.ShaderDescs.Count < MaxShaderCount,
+                "Too many shaders. Is our input data valid? Or can we have more than 32 shader pipelines these days?");
+        
+            for(uint32_t i = 0; i < desc.ShaderDescs.Count; i++)
+            {
+                VkShaderModuleCreateInfo createShader = {};
+                createShader.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+                createShader.pCode = (const uint32_t *)desc.ShaderDescs.Data[i].Code;
+                createShader.codeSize = desc.ShaderDescs.Data[i].CodeSize;
+                IB_VKCHECK(vkCreateShaderModule(api->LogicalDevice, &createShader, NoVkAllocator, &shaderModules[i]));
+
+                shaderStages[i].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+                shaderStages[i].pName = desc.ShaderDescs.Data[i].EntryPoint;
+                shaderStages[i].module = shaderModules[i];
+                shaderStages[i].stage = desc.ShaderDescs.Data[i].Stage;
+            }
+
+            graphicsPipelineCreate.stageCount = desc.ShaderDescs.Count;
+            graphicsPipelineCreate.pStages = shaderStages;
+        }
+            
+        graphicsPipelineCreate.layout = graphicsPipeline.Layout;
+        graphicsPipelineCreate.pVertexInputState = &desc.VertexDesc;
+        graphicsPipelineCreate.pInputAssemblyState = &desc.InputAssemblyDesc;
+        graphicsPipelineCreate.pRasterizationState = &desc.RasterizationDesc;
+
+        // Rendertarget state
+        {
+            uint32_t constexpr MaxRenderTarget = 32;
+            IB_ASSERT(desc.RenderTargetDescs.Count < MaxRenderTarget, "Too many rendertargets bound. Increase the limit or check your arguments.");
+            
+            VkPipelineColorBlendAttachmentState colorBlendAttachments[MaxRenderTarget] = {};
+            VkFormat colorFormats[MaxRenderTarget] = {};
+            for(uint32_t i = 0; i < desc.RenderTargetDescs.Count; i++)
+            {
+                colorBlendAttachments[i] = desc.RenderTargetDescs.Data[i].BlendDesc;
+                colorFormats[i] = desc.RenderTargetDescs.Data[i].Format;
+            }
+            
+            VkPipelineColorBlendStateCreateInfo const colorBlendCreate =
+            {
+                .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+                .attachmentCount = desc.RenderTargetDescs.Count,
+                .pAttachments = colorBlendAttachments,
+            };
+            graphicsPipelineCreate.pColorBlendState = &colorBlendCreate;
+
+            VkPipelineRenderingCreateInfoKHR const pipelineRenderingCreateInfo =
+            {
+                .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO_KHR,
+                .colorAttachmentCount = desc.RenderTargetDescs.Count,
+                .pColorAttachmentFormats = colorFormats,
+                .depthAttachmentFormat = desc.DepthDesc.Format
+            };
+
+            graphicsPipelineCreate.pNext = &pipelineRenderingCreateInfo;
+            graphicsPipelineCreate.pDepthStencilState = &desc.DepthDesc.DepthStateDesc;
+        }
+
+
+        {
+            VkPipelineMultisampleStateCreateInfo multisampleCreate =
+            {
+                .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
+                .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT,
+            };
+            graphicsPipelineCreate.pMultisampleState = &multisampleCreate;
+        }
+
+        // Scissor and viewport are set dynamically
+        {
+            VkRect2D scissor = {};
+            VkViewport viewport = {};
+            VkPipelineViewportStateCreateInfo viewportStateCreate = {};
+            viewportStateCreate.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+            viewportStateCreate.viewportCount = 1;
+            viewportStateCreate.pViewports = &viewport;
+            viewportStateCreate.scissorCount = 1;
+            viewportStateCreate.pScissors = &scissor;
+            VkDynamicState constexpr dynamicStates[] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
+            VkPipelineDynamicStateCreateInfo dynamicStateCreate = {};
+            dynamicStateCreate.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+            dynamicStateCreate.dynamicStateCount = arrayCount(dynamicStates);
+            dynamicStateCreate.pDynamicStates = dynamicStates;
+
+            graphicsPipelineCreate.pDynamicState = &dynamicStateCreate;
+            graphicsPipelineCreate.pViewportState = &viewportStateCreate;
+        }
+
+        IB_VKCHECK(vkCreateGraphicsPipelines(api->LogicalDevice, api->PipelineCache, 1, &graphicsPipelineCreate, NoVkAllocator, &graphicsPipeline.VulkanPipeline));
+
+        for(uint32_t i = 0; i < desc.ShaderDescs.Count; i++)
+        {
+            vkDestroyShaderModule(api->LogicalDevice, shaderModules[i], NoVkAllocator);
+        }
+
+        return graphicsPipeline;
+    }
+
+    void freeGraphicsPipeline(GraphicsAPI* api, GraphicsPipeline* pipeline)
+    {
+        vkDestroyPipeline(api->LogicalDevice, pipeline->VulkanPipeline, NoVkAllocator);
+        vkDestroyPipelineLayout(api->LogicalDevice, pipeline->Layout, NoVkAllocator);
     }
 }
 
