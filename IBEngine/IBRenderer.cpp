@@ -184,17 +184,8 @@ namespace IB
             + sizeof(DirectionalLightInstance) * MaxDirectionalLightInstances;
         struct IndirectDraw
         {
-            struct
-            {
-                VkBuffer Buffer;
-                IB::VkMemory::Allocation Allocation;
-            } FrameBuffer[FrameBufferCount];
-
-            struct
-            {
-                VkBuffer Buffer;
-                IB::VkMemory::Allocation Allocation;
-            } PerFrameData;
+            GraphicsBuffer FrameDraws[FrameBufferCount];
+            GraphicsBuffer PerFrameData;
         };
         IndirectDraw IndirectDraw;
 
@@ -496,56 +487,24 @@ namespace IB
         // Indirect Draw Buffer
         for (uint32_t fb = 0; fb < FrameBufferCount; fb++)
         {
+            IndirectDraw.FrameDraws[fb] = allocGraphicsBuffer(&API,
+                {
+                    MaxIndirectDraws * sizeof(VkDrawIndexedIndirectCommand),
+                    VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT,
+                    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                    VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                    VkMemory::Category::Misc
+                });
+            }
 
-
-            VkBufferCreateInfo bufferCreate = {};
-            bufferCreate.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-            bufferCreate.size = MaxIndirectDraws * sizeof(VkDrawIndexedIndirectCommand);
-            bufferCreate.usage = VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT;
-
-            IB_VKCHECK(vkCreateBuffer(API.LogicalDevice, &bufferCreate, NoVkAllocator, &IndirectDraw.FrameBuffer[fb].Buffer));
-
-            VkMemoryRequirements memoryRequirements;
-            vkGetBufferMemoryRequirements(API.LogicalDevice, IndirectDraw.FrameBuffer[fb].Buffer, &memoryRequirements);
-
-            VkMemory::AllocationRequest request;
-            request.Alignment = memoryRequirements.alignment;
-            request.Size = MaxIndirectDraws * sizeof(VkDrawIndexedIndirectCommand);
-            request.LogicalDevice = API.LogicalDevice;
-            request.PhysicalDevice = API.PhysicalDevice;
-            request.RequiredFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-            request.PreferredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-            request.TypeBits = memoryRequirements.memoryTypeBits;
-            request.Category = VkMemory::Category::Misc;
-
-            IndirectDraw.FrameBuffer[fb].Allocation = allocateDeviceMemory(&API.Allocator, request);
-            IB_VKCHECK(vkBindBufferMemory(API.LogicalDevice, IndirectDraw.FrameBuffer[fb].Buffer, IndirectDraw.FrameBuffer[fb].Allocation.Memory, IndirectDraw.FrameBuffer[fb].Allocation.Offset));
-        }
-
-        {
-            VkBufferCreateInfo bufferCreate = {};
-            bufferCreate.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-            bufferCreate.size = FrameBufferCount * MaxPerFrameDrawDataSize;
-            bufferCreate.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
-
-            IB_VKCHECK(vkCreateBuffer(API.LogicalDevice, &bufferCreate, NoVkAllocator, &IndirectDraw.PerFrameData.Buffer));
-
-            VkMemoryRequirements memoryRequirements;
-            vkGetBufferMemoryRequirements(API.LogicalDevice, IndirectDraw.PerFrameData.Buffer, &memoryRequirements);
-
-            VkMemory::AllocationRequest request;
-            request.Alignment = memoryRequirements.alignment;
-            request.Size = FrameBufferCount * MaxPerFrameDrawDataSize;
-            request.LogicalDevice = API.LogicalDevice;
-            request.PhysicalDevice = API.PhysicalDevice;
-            request.RequiredFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-            request.PreferredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-            request.TypeBits = memoryRequirements.memoryTypeBits;
-            request.Category = VkMemory::Category::Misc;
-
-            IndirectDraw.PerFrameData.Allocation = allocateDeviceMemory(&API.Allocator, request);
-            IB_VKCHECK(vkBindBufferMemory(API.LogicalDevice, IndirectDraw.PerFrameData.Buffer, IndirectDraw.PerFrameData.Allocation.Memory, IndirectDraw.PerFrameData.Allocation.Offset));
-        }
+        IndirectDraw.PerFrameData = allocGraphicsBuffer(&API,
+                {
+                    FrameBufferCount * MaxPerFrameDrawDataSize,
+                    VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                    VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                    VkMemory::Category::Misc
+                });
 
         // Mesh buffer
         {
@@ -655,7 +614,7 @@ namespace IB
                 { &ForwardPassInputs[ForwardPassInput::Sampler], ShaderInputWrite::SamplerWrite, VkDescriptorBufferInfo{}, VkDescriptorImageInfo{ ForwardPass.Sampler } },
                 { &ForwardPassInputs[ForwardPassInput::Materials], ShaderInputWrite::BufferWrite, VkDescriptorBufferInfo{ForwardPass.MaterialBuffer, 0, MaxMaterialInstanceCount * sizeof(ForwardMaterial) } },
                 { &ForwardPassInputs[ForwardPassInput::DirectionalLights], ShaderInputWrite::BufferWrite, VkDescriptorBufferInfo{ Lighting.LightBuffer, 0, MaxDirectionalLightCount * sizeof(DirectionalLight) } },
-                { &ForwardPassInputs[ForwardPassInput::PerFrameData], ShaderInputWrite::BufferWrite, VkDescriptorBufferInfo{IndirectDraw.PerFrameData.Buffer, 0, FrameBufferCount * MaxPerFrameDrawDataSize } },
+                { &ForwardPassInputs[ForwardPassInput::PerFrameData], ShaderInputWrite::BufferWrite, VkDescriptorBufferInfo{IndirectDraw.PerFrameData.VulkanBuffer, 0, FrameBufferCount * MaxPerFrameDrawDataSize } },
             };
 
             writeToShaderBlock(&API,
@@ -758,15 +717,13 @@ namespace IB
 
         for (uint32_t fb = 0; fb < FrameBufferCount; fb++)
         {
-            vkDestroyBuffer(API.LogicalDevice, IndirectDraw.FrameBuffer[fb].Buffer, NoVkAllocator);
-            freeDeviceMemory(&API.Allocator, IndirectDraw.FrameBuffer[fb].Allocation);
+            freeGraphicsBuffer(&API, &IndirectDraw.FrameDraws[fb]);
         }
 
-        vkDestroyBuffer(API.LogicalDevice, IndirectDraw.PerFrameData.Buffer, NoVkAllocator);
-        freeDeviceMemory(&API.Allocator, IndirectDraw.PerFrameData.Allocation);
+        freeGraphicsBuffer(&API, &IndirectDraw.PerFrameData);
 
         vkDestroyFence(API.LogicalDevice, RendererContext.Present.ImmediateFence, NoVkAllocator);
-
+        
         killStaging(&API, &API.Allocator, &Staging);
         killGraphicsAPI(&API);
     }
@@ -1373,7 +1330,7 @@ namespace IB
                         drawIndexed.vertexOffset = 0;
                         drawIndexed.firstInstance = passDrawCount;
 
-                        memcpy(IndirectDraw.FrameBuffer[fb].Allocation.CPUMemory + indirectDrawCount * sizeof(VkDrawIndexedIndirectCommand), &drawIndexed, sizeof(VkDrawIndexedIndirectCommand));
+                        memcpy(IndirectDraw.FrameDraws[fb].Allocation.CPUMemory + indirectDrawCount * sizeof(VkDrawIndexedIndirectCommand), &drawIndexed, sizeof(VkDrawIndexedIndirectCommand));
                         indirectDrawCount += 1;
 
                         passDrawCount += batch->Meshes[mesh].Count;
@@ -1409,7 +1366,7 @@ namespace IB
                     vkCmdPushConstants(currentCommands, ForwardPass.PipelineLayout,
                                         VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(pushConstantBatchData), &pushConstantBatchData);
 
-                    vkCmdDrawIndexedIndirect(currentCommands, IndirectDraw.FrameBuffer[fb].Buffer, passIndirectDrawCountOffset * sizeof(VkDrawIndexedIndirectCommand), passDrawCount, sizeof(VkDrawIndexedIndirectCommand));
+                    vkCmdDrawIndexedIndirect(currentCommands, IndirectDraw.FrameDraws[fb].VulkanBuffer, passIndirectDrawCountOffset * sizeof(VkDrawIndexedIndirectCommand), passDrawCount, sizeof(VkDrawIndexedIndirectCommand));
                 }
             }
 
